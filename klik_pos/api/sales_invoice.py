@@ -893,7 +893,10 @@ def get_invoice_details(invoice_id):
 @frappe.whitelist()
 def mark_invoice_as_printed(invoice_name):
 	try:
-		frappe.db.set_value("Sales Invoice", invoice_name, "custom_is_printed", 1, update_modified=False)
+		frappe.db.sql(
+			"UPDATE `tabSales Invoice` SET custom_is_printed = 1 WHERE name = %s",
+			(invoice_name,)
+		)
 		return {"success": True}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error marking invoice {invoice_name} as printed")
