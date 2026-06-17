@@ -155,7 +155,7 @@ export default function RetailPOSLayout() {
         </div>
       )}
       
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 pb-8">
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 pb-2">
         <div className="flex-1 overflow-hidden ml-20">
           <MenuGrid
             onRefreshStock={handleRefreshStock}

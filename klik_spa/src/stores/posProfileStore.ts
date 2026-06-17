@@ -38,6 +38,7 @@ export interface POSProfile {
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_cart_item_insertion_position?: "Top" | "Bottom";
+  hide_images?: boolean | number;
   custom_show_item_code_in_product_list?: boolean | number;
   custom_enhanced_search?: boolean | number;
   custom_scale_barcodes_start_with?: string;

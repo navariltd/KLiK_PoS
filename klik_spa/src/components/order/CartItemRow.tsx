@@ -393,18 +393,16 @@ export const CartItemRow = ({
     <>
       <div
         data-cart-item-id={itemId}
-        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}
+        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : "rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"}
       >
-        <div className={isMobile ? "p-3" : "px-2 py-2"}>
+        <div
+          className={isMobile ? "p-3" : "px-2 py-2 cursor-pointer"}
+          onClick={onToggleExpand}
+        >
           {/* Row 1: name + remove */}
           <div className="flex items-start gap-1">
             <div className="flex-1 min-w-0">
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                title="Show/Hide Details"
-                className="w-full text-left font-semibold text-gray-900 dark:text-white cursor-pointer text-sm leading-tight flex items-start gap-1"
-              >
+              <div className="w-full font-semibold text-gray-900 dark:text-white text-sm leading-tight flex items-start gap-1">
                 <svg
                   className={`flex-shrink-0 w-3 h-3 mt-0.5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 ${
                     isExpanded ? "rotate-90" : ""
@@ -416,7 +414,7 @@ export const CartItemRow = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
                 <span className="min-w-0 break-words">{item.name}</span>
-              </button>
+              </div>
               {!!posDetails?.custom_show_item_code_in_product_list && (item.item_code || item.id) && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 font-mono leading-tight pl-4">
                   {item.item_code || item.id}
@@ -427,7 +425,7 @@ export const CartItemRow = ({
               </p>
             </div>
             <button
-              onClick={() => onRemoveItem?.(item.id)}
+              onClick={(e) => { e.stopPropagation(); onRemoveItem?.(item.id); }}
               className={`flex-shrink-0 ${
                 isMobile ? "w-8 h-8" : "w-6 h-6"
               } rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-800 hover:text-red-600 dark:hover:text-red-400 transition-colors`}

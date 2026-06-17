@@ -222,7 +222,7 @@ export default function MainPOSScreen() {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} pb-12`}>
+    <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} pb-2`}>
       {posReady && <RetailPOSLayout />}
 
       {!posReady && !showOpeningModal && (

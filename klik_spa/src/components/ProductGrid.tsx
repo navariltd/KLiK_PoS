@@ -44,6 +44,7 @@ export default function ProductGrid({
   const defaultView = posDetails?.custom_default_view || "Grid View";
   const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
   const showItemCode = !!posDetails?.custom_show_item_code_in_product_list;
+  const hideImages = !!posDetails?.hide_images;
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const isSalespersonLockActive = requiresSalespersonPin && !activeSalesperson && !isRestoring;
 
@@ -179,6 +180,7 @@ export default function ProductGrid({
           isMobile={isMobile}
           showItemCode={showItemCode}
           scannerOnly={scannerOnly}
+          hideImages={hideImages}
         />
 
         {onLoadMore && (
