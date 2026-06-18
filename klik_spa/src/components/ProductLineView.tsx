@@ -14,6 +14,9 @@ interface ProductLineViewProps {
   scannerOnly?: boolean
   showItemCode?: boolean
   hideImages?: boolean
+  focusedIndex?: number
+  onItemFocus?: (index: number) => void
+  onItemKeyDown?: (index: number, item: MenuItem, e: React.KeyboardEvent<HTMLDivElement>) => void
 }
 
 export default function ProductLineView({
@@ -23,6 +26,9 @@ export default function ProductLineView({
   scannerOnly = false,
   showItemCode = false,
   hideImages = false,
+  focusedIndex = -1,
+  onItemFocus,
+  onItemKeyDown,
 }: ProductLineViewProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | number | null>(null)
   const [hoveredImageId, setHoveredImageId] = useState<string | number | null>(null)
@@ -72,7 +78,7 @@ export default function ProductLineView({
           )}
 
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
-            {items.map((item) => {
+            {items.map((item, rowIndex) => {
               const isServiceItem = item.is_stock_item === false
               const isOutOfStock = item.is_stock_item !== false && item.available <= 0
               const isDisabled = isOutOfStock || scannerOnly
@@ -93,12 +99,19 @@ export default function ProductLineView({
               const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0
               const variantCount = item.is_variant_template ? item.variant_count || 0 : 0
 
+              const isRowFocused = focusedIndex === rowIndex;
               return (
                 <div
                   key={item.id}
-                  className={`relative ${isMobile ? "px-3 py-2" : "grid grid-cols-12 gap-3 px-3 py-1.5"} hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    !isDisabled && "cursor-pointer"
-                  }`}
+                  tabIndex={0}
+                  data-product-index={rowIndex}
+                  onFocus={() => onItemFocus?.(rowIndex)}
+                  onKeyDown={(e) => onItemKeyDown?.(rowIndex, item, e)}
+                  className={`relative outline-none ${isMobile ? "px-3 py-2" : "grid grid-cols-12 gap-3 px-3 py-1.5"} transition-colors ${
+                    isRowFocused
+                      ? "bg-beveren-50 dark:bg-beveren-900/20 ring-inset ring-2 ring-beveren-400/50"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                  } ${!isDisabled && "cursor-pointer"}`}
                   onClick={() => !isDisabled && onAddToCart(item)}
                 >
                   {/* Image zoom preview — rendered at row level to escape column clipping */}
@@ -144,7 +157,7 @@ export default function ProductLineView({
                             }}
                             className={`text-gray-400 hover:text-blue-500 text-sm focus:outline-none transition-colors ${isDisabled ? "opacity-60" : ""}`}
                           >
-                            ℹ️
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                           </button>
                           {hoveredItemId === item.id && !isMobile && (
                             <ProductTooltip

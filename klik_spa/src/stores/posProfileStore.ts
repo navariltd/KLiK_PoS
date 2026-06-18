@@ -24,6 +24,7 @@ export interface POSProfile {
   allow_price_list_switching?: boolean | number;
   hide_unavailable_items?: boolean;
   custom_use_scanner_fully?: boolean;
+  auto_add_item_to_cart?: boolean | number;
   custom_hide_expected_amount?: boolean;
   write_off_limit?: number;
   write_off_account?: string;
@@ -44,6 +45,7 @@ export interface POSProfile {
   custom_scale_barcodes_start_with?: string;
   is_tax_included_in_basic_rate?: boolean | number | string;
   warehouse?: string;
+  allow_warehouse_change?: boolean | number;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;
   [key: string]: unknown;
@@ -101,6 +103,7 @@ interface POSDetailsState {
   resetOpeningStatus: () => void;
   refreshAll: () => Promise<void>;
   setAuthenticated: (status: boolean) => void;
+  setWarehouse: (warehouse: string | null) => void;
 }
 
 const CACHE_DURATION = 10 * 60 * 1000;
@@ -141,6 +144,10 @@ export const usePOSProfileStore = create<POSDetailsState>()(
 
       setAuthenticated: (status: boolean) => {
         set({ isAuthenticated: status });
+      },
+
+      setWarehouse: (warehouse: string | null) => {
+        set({ warehouse });
       },
 
       fetchPOSProfiles: async (force = false) => {

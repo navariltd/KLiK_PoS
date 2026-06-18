@@ -168,7 +168,12 @@ export const useProductStore = create<ProductStoreState>()(
           if (priceList) {
             params.append('price_list', priceList);
           }
-          
+
+          const selectedWarehouse = usePOSProfileStore.getState().warehouse;
+          if (selectedWarehouse) {
+            params.append('warehouse', selectedWarehouse);
+          }
+
           if (search) params.append('search', search);
           if (category && category !== 'all') params.append('category', category);
           

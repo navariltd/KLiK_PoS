@@ -7,7 +7,7 @@ interface SearchBarProps {
   searchQuery: string
   onSearchChange: (query: string) => void
   onScanBarcode?: () => void
-  onSearchKeyPress?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onSearchKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
   isMobile?: boolean
 }
 
@@ -15,7 +15,7 @@ export default function SearchBar({
   searchQuery,
   onSearchChange,
   onScanBarcode,
-  onSearchKeyPress,
+  onSearchKeyDown,
   isMobile = false
 }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
@@ -31,10 +31,11 @@ export default function SearchBar({
     <div className={`relative ${isMobile ? "w-full" : "w-full max-w-3xl"}`}>
       <div className="relative flex items-center">
         <input
+          id="pos-search-input"
           type="text"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          onKeyPress={onSearchKeyPress}
+          onKeyDown={onSearchKeyDown}
           placeholder={getPlaceholder()}
           className={`flex-1 px-4 py-1.5 pl-10 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 text-sm ${
             isFocused ? "shadow-lg" : "shadow-sm"

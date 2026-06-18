@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Minus, Plus, X, Copy, Package, ChevronDown, ChevronUp, AlertTriangle, Eye } from "lucide-react";
+import { Minus, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle, Eye } from "lucide-react";
 import { toast } from "react-toastify";
 import type { BundleEntry, CartItem } from "../../../types";
 import { QuantityInput } from "./QuantityInput";
@@ -425,6 +425,15 @@ export const CartItemRow = ({
               </p>
             </div>
             <button
+              onClick={(e) => { e.stopPropagation(); setShowProductModal(true); }}
+              className={`flex-shrink-0 ${
+                isMobile ? "w-8 h-8" : "w-6 h-6"
+              } rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
+              title="View full details"
+            >
+              <Eye size={isMobile ? 14 : 11} />
+            </button>
+            <button
               onClick={(e) => { e.stopPropagation(); onRemoveItem?.(item.id); }}
               className={`flex-shrink-0 ${
                 isMobile ? "w-8 h-8" : "w-6 h-6"
@@ -445,7 +454,7 @@ export const CartItemRow = ({
 
             <div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-full overflow-hidden">
               <button
-                onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+                onClick={(e) => { e.stopPropagation(); onUpdateQuantity(item.id, item.quantity - 1); }}
                 className={`${
                   isMobile ? "w-7 h-7" : "w-6 h-6"
                 } flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400 transition-colors`}
@@ -472,7 +481,8 @@ export const CartItemRow = ({
                 className={`${isMobile ? "w-9" : "w-8"} text-center font-semibold text-gray-900 dark:text-white text-sm border-x border-gray-200 dark:border-gray-600 py-0.5 bg-transparent focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               />
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const next = item.quantity + 1;
                   if (item.available > 0 && next > item.available) {
                     toast.warning(`Only ${item.available} units available.`);
@@ -826,25 +836,6 @@ export const CartItemRow = ({
               <></>
             )}
 
-              <div className="grid grid-cols-2 gap-3 my-3">
-                <button
-                  type="button"
-                  onClick={() => onDuplicateItem(item)}
-                  className="flex items-center justify-center gap-2 px-3 py-4 rounded-md border border-dashed border-beveren-400 dark:border-beveren-500 text-beveren-600 dark:text-beveren-400 bg-beveren-50 dark:bg-beveren-900/20 hover:bg-beveren-100 dark:hover:bg-beveren-900/40 transition-colors text-sm font-medium"
-                  title="Add another line for the same product with a different batch, serial or UOM"
-                >
-                  <Copy size={isMobile ? 15 : 13} />
-                  Duplicate Line
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowProductModal(true)}
-                  className="flex items-center justify-center gap-2 px-3 py-4 rounded-md border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors text-sm font-medium"
-                >
-                  <Eye size={isMobile ? 15 : 13} />
-                  View Full Details
-                </button>
-              </div>
             </div>
           </div>
         ) : (

@@ -1,4 +1,4 @@
-import { X, Printer, MailPlus, MessageCirclePlus, MessageSquarePlus, Eye, Loader2 } from "lucide-react";
+import { X, Printer, MailPlus, MessageCirclePlus, MessageSquarePlus, Eye, Loader2, ClipboardCopy } from "lucide-react";
 import { handlePrintInvoice } from "../../utils/printHandler";
 
 interface PaymentHeaderProps {
@@ -13,6 +13,7 @@ interface PaymentHeaderProps {
   handleViewInvoice: (invoice: any) => void;
   finalizeCompletedOrderState: (afterClear?: () => void) => void;
   posDetails: any;
+  onCopyOrder: () => void;
 }
 
 export default function PaymentHeader({
@@ -27,6 +28,7 @@ export default function PaymentHeader({
   handleViewInvoice,
   finalizeCompletedOrderState,
   posDetails,
+  onCopyOrder,
 }: PaymentHeaderProps) {
   if (invoiceSubmitted) {
     return (
@@ -39,6 +41,13 @@ export default function PaymentHeader({
               <span className="text-sm">Printing...</span>
             </div>
           )}
+          <button
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            title="Copy order to clipboard"
+            onClick={onCopyOrder}
+          >
+            <ClipboardCopy size={20} />
+          </button>
           <button
             className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg"
             title="Print"
@@ -86,7 +95,16 @@ export default function PaymentHeader({
 
   return (
     <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Order Summary</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Order Summary</h2>
+        <button
+          onClick={onCopyOrder}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          title="Copy order to clipboard"
+        >
+          <ClipboardCopy size={18} />
+        </button>
+      </div>
       <button
         onClick={() => onClose(invoiceSubmitted)}
         disabled={isProcessingPayment || isHoldingOrder}

@@ -1503,6 +1503,51 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return false;
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F10' && !e.shiftKey) {
+        e.preventDefault();
+        if (!isActionButtonDisabled()) handleCompletePayment();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, isActionButtonDisabled, handleCompletePayment]);
+
+  const buildOrderText = () => {
+    const lines: string[] = [];
+    if (invoiceSubmitted && invoiceData?.name) {
+      lines.push(`Invoice: ${invoiceData.name}`);
+      if (invoiceData.posting_date) lines.push(`Date: ${invoiceData.posting_date}`);
+      const isPaid = Number(invoiceData.outstanding_amount ?? 0) === 0;
+      lines.push(`Status: ${isPaid ? "Paid" : "Unpaid"}`);
+      lines.push("");
+    }
+    const customerName = selectedCustomer?.name || selectedCustomer?.customerName;
+    if (customerName) lines.push(`Customer: ${customerName}`);
+    lines.push("");
+    lines.push("Items:");
+    for (const item of cartItems) {
+      const rate = getEffectiveDisplayRate(item as any);
+      const total = roundCurrency(rate * item.quantity);
+      const name = item.item_name || item.name;
+      lines.push(`  ${name}  ×${item.quantity}  @ ${formatCurrencyWithSymbol(rate, displayCurrencySymbol)}  =  ${formatCurrencyWithSymbol(total, displayCurrencySymbol)}`);
+    }
+    lines.push("");
+    lines.push(`Grand Total: ${formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}`);
+    return lines.join("\n");
+  };
+
+  const handleCopyOrder = () => {
+    const text = buildOrderText();
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Order copied to clipboard");
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard");
+    });
+  };
+
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
       customer_name: sharingData.name || "there",
@@ -2087,7 +2132,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       </div>
                     </label>
                   </div>
-                  <button onClick={handleCompletePayment} disabled={isActionButtonDisabled()} className={`w-full py-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 ${isB2B ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                  <button id="pos-payment-submit-btn" onClick={handleCompletePayment} disabled={isActionButtonDisabled()} className={`w-full py-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 ${isB2B ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"}`}>
                     {isProcessingPayment ? (
                       <>
                         <Loader2 size={20} className="animate-spin" />
@@ -2177,6 +2222,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             void finalizeCompletedOrderState(afterClear);
           }}
           posDetails={posDetails}
+          onCopyOrder={handleCopyOrder}
         />
 
         <div className="flex flex-1 min-h-0">

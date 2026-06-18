@@ -18,6 +18,7 @@ def get_items(
     category: str | None = None,
     customer: str | None = None,
     price_list: str | None = None,
+    warehouse: str | None = None,
 ):
     try:
         limit = int(limit) if limit else 1000
@@ -29,9 +30,13 @@ def get_items(
     limit = min(limit, 2000)
 
     requested_price_list = price_list
+    requested_warehouse = warehouse
     pos_doc, warehouse, pos_price_list, hide_unavailable = _get_pos_context()
     include_service_items = _include_service_items(pos_doc)
-    
+
+    if requested_warehouse:
+        warehouse = requested_warehouse
+
     price_list = requested_price_list or _get_priority_price_list(customer, pos_doc, pos_price_list)
 
     try:

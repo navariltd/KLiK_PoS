@@ -65,7 +65,7 @@ export const CustomerSearchSection = ({
   const shouldPreventSearchRef = useRef(false);
 
   const { customers, isLoading: isLoadingCustomers, refetch: refetchCustomers } = useCustomers(search);
-  const { posDetails } = usePOSProfileStore();
+  const { posDetails, warehouse: selectedWarehouse, setWarehouse } = usePOSProfileStore();
   const { checkCustomerPermission } = useCustomerPermission();
   const { fetchProducts, setSelectedCustomer: setProductCustomer } = useProductStore();
   const selectedPriceList = useCartStore((state) => state.selectedPriceList);
@@ -73,11 +73,15 @@ export const CustomerSearchSection = ({
   const refreshCartPricing = useCartStore((state) => state.refreshCartPricing);
   const [priceLists, setPriceLists] = useState<SellingPriceList[]>([]);
   const [isLoadingPriceLists, setIsLoadingPriceLists] = useState(false);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
   const canCreateCustomer = posDetails?.custom_allow_to_create_and_edit_customers === 1;
   const allowPriceListSwitching = !!posDetails?.allow_price_list_switching;
+  const allowWarehouseChange = !!posDetails?.allow_warehouse_change;
   const defaultPriceList = selectedCustomer?.sellingPriceList || posDetails?.selling_price_list || "";
   const activePriceList = selectedPriceList || defaultPriceList;
+  const activeWarehouse = selectedWarehouse || posDetails?.warehouse || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +107,36 @@ export const CustomerSearchSection = ({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!allowWarehouseChange) return;
+    let cancelled = false;
+    const fetchWarehouses = async () => {
+      setIsLoadingWarehouses(true);
+      try {
+        const response = await fetch("/api/method/klik_pos.klik_pos.api.pos_profile.get_warehouses", {
+          credentials: "include",
+        });
+        const data = await response.json();
+        if (!cancelled) {
+          setWarehouses(data?.message?.warehouses || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch warehouses:", error);
+      } finally {
+        if (!cancelled) setIsLoadingWarehouses(false);
+      }
+    };
+    fetchWarehouses();
+    return () => {
+      cancelled = true;
+    };
+  }, [allowWarehouseChange]);
+
+  const handleWarehouseChange = async (value: string) => {
+    setWarehouse(value || null);
+    await fetchProducts(true);
+  };
 
   const fetchCustomerInfo = async (customerName: string): Promise<Customer | null> => {
     try {
@@ -614,6 +648,7 @@ export const CustomerSearchSection = ({
       <div className="flex items-center gap-2">
         <div ref={containerRef} className="flex-1 relative">
           <div
+            id="pos-customer-btn"
             ref={buttonRef}
             onClick={handleOpenDropdown}
             className={`
@@ -696,21 +731,36 @@ export const CustomerSearchSection = ({
         )}
       </div>
 
-      {allowPriceListSwitching && (
-      <div className="mt-2">
-        <select
-          value={activePriceList}
-          onChange={(event) => { void handlePriceListChange(event.target.value); }}
-          disabled={isLoadingPriceLists}
-          className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
-        >
-          {!activePriceList && <option value="">Default Price List</option>}
-          {priceLists.map((priceList) => (
-            <option key={priceList.name} value={priceList.name}>
-              {priceList.name}
-            </option>
-          ))}
-        </select>
+      {(allowPriceListSwitching || allowWarehouseChange) && (
+      <div className="mt-2 flex gap-2">
+        {allowPriceListSwitching && (
+          <select
+            value={activePriceList}
+            onChange={(event) => { void handlePriceListChange(event.target.value); }}
+            disabled={isLoadingPriceLists}
+            className="flex-1 h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
+          >
+            {!activePriceList && <option value="">Default Price List</option>}
+            {priceLists.map((priceList) => (
+              <option key={priceList.name} value={priceList.name}>
+                {priceList.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {allowWarehouseChange && (
+          <select
+            value={activeWarehouse}
+            onChange={(event) => { void handleWarehouseChange(event.target.value); }}
+            disabled={isLoadingWarehouses}
+            className="flex-1 h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
+          >
+            {!activeWarehouse && <option value="">Default Warehouse</option>}
+            {warehouses.map((wh) => (
+              <option key={wh} value={wh}>{wh}</option>
+            ))}
+          </select>
+        )}
       </div>
       )}
 

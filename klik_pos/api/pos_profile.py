@@ -205,10 +205,34 @@ def get_pos_details():
         "currency_symbol": frappe.db.get_value("Currency", pos.currency, "symbol") or pos.currency,
         "is_zatca_enabled": is_zatca_enabled(),
         "default_customer": default_customer,
-        "current_opening_entry": current_opening_entry
+        "current_opening_entry": current_opening_entry,
+        "business_type": getattr(pos, "custom_business_type", "B2C") or "B2C",
+        "allow_warehouse_change": int(getattr(pos, "allow_warehouse_change", 0) or 0),
     })
 
     return details
+
+
+@frappe.whitelist()
+def get_warehouses():
+    """Return leaf (non-group) warehouses for the current POS profile's company."""
+    try:
+        pos = get_current_pos_profile()
+        company = getattr(pos, "company", None)
+    except Exception:
+        company = None
+
+    filters = {"is_group": 0, "disabled": 0}
+    if company:
+        filters["company"] = company
+
+    warehouses = frappe.get_all(
+        "Warehouse",
+        filters=filters,
+        fields=["name"],
+        order_by="name asc",
+    )
+    return {"warehouses": [w.name for w in warehouses]}
 
 
 def is_zatca_enabled():
