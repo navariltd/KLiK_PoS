@@ -215,7 +215,12 @@ def get_pos_details():
 
 @frappe.whitelist()
 def get_warehouses():
-    """Return leaf (non-group) warehouses for the current POS profile's company."""
+    """Return leaf (non-group) warehouses for the current POS profile's company.
+
+    Respects Warehouse User Permissions: if the current user is restricted to
+    specific warehouses, only those (and the leaves under any permitted group
+    warehouse) are returned. Unrestricted users get all company warehouses.
+    """
     try:
         pos = get_current_pos_profile()
         company = getattr(pos, "company", None)
@@ -226,6 +231,12 @@ def get_warehouses():
     if company:
         filters["company"] = company
 
+    permitted = _get_permitted_warehouses(frappe.session.user)
+    if permitted is not None:
+        if not permitted:
+            return {"warehouses": []}
+        filters["name"] = ["in", permitted]
+
     warehouses = frappe.get_all(
         "Warehouse",
         filters=filters,
@@ -233,6 +244,51 @@ def get_warehouses():
         order_by="name asc",
     )
     return {"warehouses": [w.name for w in warehouses]}
+
+
+def _get_permitted_warehouses(user):
+    """Leaf warehouse names the user is restricted to via User Permissions.
+
+    Returns ``None`` when the user has no Warehouse user permission (i.e. not
+    restricted), otherwise the expanded set of leaf warehouses — descendants of
+    any permitted group warehouse are included.
+    """
+    if user in ("Administrator",):
+        return None
+
+    from frappe.permissions import get_user_permissions
+
+    perms = get_user_permissions(user) or {}
+    wh_perms = perms.get("Warehouse")
+    if not wh_perms:
+        return None
+
+    permitted_names = {p.get("doc") for p in wh_perms if p.get("doc")}
+    if not permitted_names:
+        return None
+
+    leaves = set()
+    for name in permitted_names:
+        wh = frappe.db.get_value(
+            "Warehouse", name, ["is_group", "lft", "rgt"], as_dict=True
+        )
+        if not wh:
+            continue
+        if wh.is_group:
+            child_leaves = frappe.get_all(
+                "Warehouse",
+                filters={
+                    "lft": [">=", wh.lft],
+                    "rgt": ["<=", wh.rgt],
+                    "is_group": 0,
+                },
+                pluck="name",
+            )
+            leaves.update(child_leaves)
+        else:
+            leaves.add(name)
+
+    return list(leaves)
 
 
 def is_zatca_enabled():

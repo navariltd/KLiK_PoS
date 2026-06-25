@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --base=/assets/klik_pos/klik_spa/ && yarn copy-html-entry",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "typecheck:undef": "tsc --noEmit -p tsconfig.app.json 2>&1 | grep -E 'error TS(2304|2552):' && (echo 'Undefined references found (TS2304/TS2552)' && exit 1) || exit 0",
     "lint": "eslint .",
     "preview": "vite preview",
     "copy-html-entry": "cp ../klik_pos/public/klik_spa/index.html ../klik_pos/www/klik_spa.html"

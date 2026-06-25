@@ -369,7 +369,8 @@ export const CartItemRow = ({
   const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
   const taxAmountPerUnit = roundCurrency(Math.max(0, displayRateInclTax - discountedPrice));
   const originalTotal = roundCurrency(item.price * item.quantity);
-  const discountedTotal = roundCurrency(displayRateInclTax * item.quantity);
+  // ERPNext convention: line displays the price-list (net) rate; tax shows in totals.
+  const discountedTotal = roundCurrency(discountedPrice * item.quantity);
   const amount = discountedTotal;
   const editableRate = hasExclusiveTax ? discountedPrice : displayRateInclTax;
   const displayRate = editableRate > 0 ? editableRate : "";
@@ -448,7 +449,7 @@ export const CartItemRow = ({
           <div className="flex items-center gap-2 mt-1.5 pl-4">
             <div className="text-right">
               <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
-                {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
+                {formatCurrencyWithSymbol(discountedPrice, currency_symbol)}
               </p>
             </div>
 
@@ -468,7 +469,7 @@ export const CartItemRow = ({
                 onChange={(e) => setLocalQty(parseInt(e.target.value, 10) || 0)}
                 onBlur={() => {
                   const available = item.available;
-                  if (available > 0 && localQty > available) {
+                  if (available > 0 && localQty > available && !item.allow_negative_stock) {
                     setLocalQty(available);
                     onUpdateQuantity(item.id, available);
                     toast.warning(`Only ${available} units available. Quantity set to ${available}.`);
@@ -484,7 +485,7 @@ export const CartItemRow = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   const next = item.quantity + 1;
-                  if (item.available > 0 && next > item.available) {
+                  if (item.available > 0 && next > item.available && !item.allow_negative_stock) {
                     toast.warning(`Only ${item.available} units available.`);
                   } else {
                     onUpdateQuantity(item.id, next);
@@ -595,7 +596,7 @@ export const CartItemRow = ({
                 </div>
                 <div>
                   <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                    Amount (Incl. Tax)
+                    {hasExclusiveTax ? "Amount (Excl. Tax)" : "Amount (Incl. Tax)"}
                   </label>
                   <input
                     type="number"

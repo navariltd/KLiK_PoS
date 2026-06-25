@@ -230,7 +230,7 @@ def _reserve_stock_for_queued_invoice(doc):
 			for row in frappe.get_all(
 				"Item",
 				filters={"name": ["in", item_codes]},
-				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom"],
+				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom", "allow_negative_stock"],
 			)
 		}
 
@@ -240,6 +240,9 @@ def _reserve_stock_for_queued_invoice(doc):
 
 		item_meta = item_meta_map.get(row.item_code)
 		if not item_meta or not int(item_meta.is_stock_item or 0):
+			continue
+		# Items allowed to go negative are exempt from reservation — nothing to reserve.
+		if int(item_meta.allow_negative_stock or 0):
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -310,14 +313,14 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 		return
 
 	item_codes_in_doc = list({row.item_code for row in doc.items if row.item_code})
-	item_stock_flag_map = {}
+	item_meta_map = {}
 	if item_codes_in_doc:
-		item_stock_flag_map = {
-			row.name: int(row.is_stock_item or 0)
+		item_meta_map = {
+			row.name: row
 			for row in frappe.get_all(
 				"Item",
 				filters={"name": ["in", item_codes_in_doc]},
-				fields=["name", "is_stock_item"],
+				fields=["name", "is_stock_item", "allow_negative_stock"],
 			)
 		}
 
@@ -328,7 +331,11 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 	for row in doc.items:
 		if not row.item_code or not row.warehouse:
 			continue
-		if item_stock_flag_map.get(row.item_code, 1) == 0:
+		item_meta = item_meta_map.get(row.item_code)
+		# Skip non-stock items and items allowed to go negative (no reservation enforced).
+		if item_meta and not int(item_meta.is_stock_item or 0):
+			continue
+		if item_meta and int(item_meta.allow_negative_stock or 0):
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -893,10 +900,7 @@ def get_invoice_details(invoice_id):
 @frappe.whitelist()
 def mark_invoice_as_printed(invoice_name):
 	try:
-		frappe.db.sql(
-			"UPDATE `tabSales Invoice` SET custom_is_printed = 1 WHERE name = %s",
-			(invoice_name,)
-		)
+		frappe.db.set_value("Sales Invoice", invoice_name, "custom_is_printed", 1, update_modified=False)
 		return {"success": True}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error marking invoice {invoice_name} as printed")
@@ -3208,14 +3212,14 @@ class CustomSalesInvoice(SalesInvoice):
 			return
 
 		item_codes = list({row.item_code for row in self.items if row.item_code})
-		item_stock_flag_map = {}
+		item_meta_map = {}
 		if item_codes:
-			item_stock_flag_map = {
-				row.name: int(row.is_stock_item or 0)
+			item_meta_map = {
+				row.name: row
 				for row in frappe.get_all(
 					"Item",
 					filters={"name": ["in", item_codes]},
-					fields=["name", "is_stock_item"],
+					fields=["name", "is_stock_item", "allow_negative_stock"],
 				)
 			}
 
@@ -3224,7 +3228,11 @@ class CustomSalesInvoice(SalesInvoice):
 		for row in self.items:
 			if not row.item_code or not row.warehouse:
 				continue
-			if item_stock_flag_map.get(row.item_code, 1) == 0:
+			item_meta = item_meta_map.get(row.item_code)
+			# Skip non-stock items and items allowed to go negative (no reservation enforced).
+			if item_meta and not int(item_meta.is_stock_item or 0):
+				continue
+			if item_meta and int(item_meta.allow_negative_stock or 0):
 				continue
 
 			required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))

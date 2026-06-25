@@ -8,6 +8,7 @@ from frappe.utils import now_datetime, today
 # Import for clearing cache and clearing draft invoices on close
 from klik_pos.api.cache import clear_backend_cache
 from klik_pos.api.sales_invoice import delete_draft_invoices_for_opening_entry
+from klik_pos.api.sales_order import delete_held_orders_for_opening_entry
 from klik_pos.klik_pos.utils import clear_pos_profile_cache, get_current_pos_profile
 
 
@@ -405,8 +406,9 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 	doc.submit()
 	frappe.db.set_value("POS Opening Entry", opening_entry.name, "pos_closing_entry", doc.name)
 
-	# If POS Profile has "Clear draft invoices" enabled, delete all drafts for this session
+	# Clear held Sales Orders and draft SIs for this session on close
 	_clear_draft_invoices_on_close_if_enabled(opening_entry)
+	_clear_held_orders_on_close(opening_entry)
 
 	# Clear POS profile cache for the current user to ensure fresh data on next session
 	try:
@@ -431,3 +433,14 @@ def _clear_draft_invoices_on_close_if_enabled(opening_entry):
 			delete_draft_invoices_for_opening_entry(opening_entry_name)
 	except Exception as e:
 		frappe.logger().warning("Failed to clear draft invoices on close: %s", e, exc_info=True)
+
+
+def _clear_held_orders_on_close(opening_entry):
+	"""Always delete held Sales Orders for the session when shift is closed."""
+	try:
+		opening_entry_name = opening_entry.get("name") if isinstance(opening_entry, dict) else getattr(opening_entry, "name", None)
+		if not opening_entry_name:
+			return
+		delete_held_orders_for_opening_entry(opening_entry_name)
+	except Exception as e:
+		frappe.logger().warning("Failed to clear held orders on close: %s", e, exc_info=True)

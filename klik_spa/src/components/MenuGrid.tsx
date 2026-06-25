@@ -9,6 +9,7 @@ import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useCartStore } from "../stores/cartStore";
 import { Settings, LogOut, Moon, Sun, Grid3X3, List, Store, RefreshCw, Lock, Unlock, Keyboard } from "lucide-react";
 import { clearCacheAndReload } from "../utils/clearCache";
+import { isItemOutOfStock } from "../utils/stock";
 import CategoryTabs from "./CategoryTabs";
 import ProductGrid from "./ProductGrid";
 import SearchBar from "./SearchBar";
@@ -108,7 +109,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     if (filteredItems.length !== 1) return;
     const item = filteredItems[0];
     if (!item || item.is_variant_template || item.has_variants) return;
-    if (item.is_stock_item !== false && item.available <= 0) return;
+    if (isItemOutOfStock(item)) return;
     void addToCart({ ...item, item_code: item.id });
     clearSearch();
   };

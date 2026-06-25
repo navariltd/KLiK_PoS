@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CreditCard,
@@ -23,6 +23,8 @@ import { useCreatePOSClosingEntry } from "../services/closingEntry";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { deleteDraftInvoice } from "../services/salesInvoice";
+import { getHeldOrders, deleteHeldOrder } from "../services/salesOrder";
+import { addHeldOrderToCart } from "../utils/heldOrderToCart";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
@@ -49,9 +51,16 @@ export default function ClosingShiftPage() {
   const [selectedInvoiceForReturn, setSelectedInvoiceForReturn] = useState<SalesInvoice | null>(null);
   const { createClosingEntry, isCreating } = useCreatePOSClosingEntry();
 
-  // Delete confirmation states
+  // Delete confirmation states (Sales Invoice drafts)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
+
+  // Held Sales Orders state
+  const [heldOrders, setHeldOrders] = useState<any[]>([]);
+  const [isLoadingHeldOrders, setIsLoadingHeldOrders] = useState(false);
+  const [showDeleteHeldOrderConfirm, setShowDeleteHeldOrderConfirm] = useState(false);
+  const [heldOrderToDelete, setHeldOrderToDelete] = useState<any | null>(null);
+  const [isResumingOrder, setIsResumingOrder] = useState<string | null>(null);
 
   const { invoices, isLoading,  error,  } = useSalesInvoices();
   const { modes, isLoading: modesLoading, error: modesError } = useAllPaymentModes()
@@ -296,6 +305,59 @@ export default function ClosingShiftPage() {
   const handleDeleteCancel = () => {
     setShowDeleteConfirm(false);
     setInvoiceToDelete(null);
+  };
+
+  const fetchHeldOrders = useCallback(async () => {
+    setIsLoadingHeldOrders(true);
+    try {
+      const result = await getHeldOrders({ limit: 100 });
+      if (result?.success) {
+        setHeldOrders(result.data || []);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setIsLoadingHeldOrders(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchHeldOrders();
+  }, [fetchHeldOrders]);
+
+  const handleResumeHeldOrder = async (orderId: string) => {
+    setIsResumingOrder(orderId);
+    try {
+      await addHeldOrderToCart(orderId);
+      navigate("/pos");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load held order");
+    } finally {
+      setIsResumingOrder(null);
+    }
+  };
+
+  const handleDeleteHeldOrderClick = (order: any) => {
+    setHeldOrderToDelete(order);
+    setShowDeleteHeldOrderConfirm(true);
+  };
+
+  const handleDeleteHeldOrderConfirm = async () => {
+    if (!heldOrderToDelete) return;
+    try {
+      await deleteHeldOrder(heldOrderToDelete.name);
+      toast.success(`Held order ${heldOrderToDelete.name} deleted`);
+      setShowDeleteHeldOrderConfirm(false);
+      setHeldOrderToDelete(null);
+      void fetchHeldOrders();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete held order");
+    }
+  };
+
+  const handleDeleteHeldOrderCancel = () => {
+    setShowDeleteHeldOrderConfirm(false);
+    setHeldOrderToDelete(null);
   };
 
   const handleRefund = (invoiceId: string) => {
@@ -757,6 +819,68 @@ export default function ClosingShiftPage() {
           </div>
         )}
 
+        {/* Held Orders (mobile) */}
+        {(heldOrders.length > 0 || isLoadingHeldOrders) && (
+          <div className="px-4 mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                Held Orders ({heldOrders.length})
+              </h3>
+              <span className="text-xs text-orange-600 dark:text-orange-400 font-medium px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded">
+                Pending
+              </span>
+            </div>
+            {isLoadingHeldOrders ? (
+              <div className="py-6 text-center text-gray-500 dark:text-gray-400 text-sm">Loading held orders…</div>
+            ) : (
+              <div className="space-y-2">
+                {heldOrders.map((order) => (
+                  <div key={order.name} className="bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-orange-700 p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{order.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{order.customer_name || order.customer}</div>
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {formatCurrencyWithSymbol(order.grand_total, order.currency)}
+                      </div>
+                    </div>
+                    <div className="flex space-x-2 mt-3">
+                      <button
+                        onClick={() => handleResumeHeldOrder(order.name)}
+                        disabled={isResumingOrder === order.name}
+                        className="flex-1 py-2 text-sm rounded-lg bg-beveren-600 text-white font-medium disabled:opacity-50 flex items-center justify-center space-x-1"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>{isResumingOrder === order.name ? "Loading…" : "Resume"}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteHeldOrderClick(order)}
+                        className="py-2 px-4 text-sm rounded-lg border border-red-500 text-red-600 dark:text-red-400 font-medium flex items-center justify-center space-x-1"
+                      >
+                        <MonitorX className="w-4 h-4" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Delete Held Order Confirmation (mobile) */}
+        <ConfirmDialog
+          isOpen={showDeleteHeldOrderConfirm}
+          onClose={handleDeleteHeldOrderCancel}
+          onConfirm={handleDeleteHeldOrderConfirm}
+          title="Delete Held Order"
+          message={`Are you sure you want to delete held order ${heldOrderToDelete?.name}? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        />
+
         {/* Invoice View Modal */}
         <InvoiceViewModal
           invoice={selectedInvoice}
@@ -1122,6 +1246,79 @@ export default function ClosingShiftPage() {
           </div>
         )}
 
+        {/* Held Orders */}
+        {(heldOrders.length > 0 || isLoadingHeldOrders) && (
+          <div className="mx-4 mb-6 bg-white dark:bg-gray-800 rounded-xl border border-orange-200 dark:border-orange-700 overflow-hidden">
+            <div className="px-4 py-4 border-b border-orange-200 dark:border-orange-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Held Orders ({heldOrders.length})
+              </h3>
+              <span className="text-xs text-orange-600 dark:text-orange-400 font-medium px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded">
+                Pending
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              {isLoadingHeldOrders ? (
+                <div className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">Loading held orders…</div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Items</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                    {heldOrders.map((order) => (
+                      <tr key={order.name} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">{order.name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{order.transaction_date}</div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900 dark:text-white">{order.customer_name || order.customer}</div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {formatCurrencyWithSymbol(order.grand_total, order.currency)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            {(order.items || []).length} item(s)
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleResumeHeldOrder(order.name)}
+                              disabled={isResumingOrder === order.name}
+                              className="text-beveren-600 hover:text-beveren-900 flex items-center space-x-1 disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              <span>{isResumingOrder === order.name ? "Loading…" : "Resume"}</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteHeldOrderClick(order)}
+                              className="text-red-600 hover:text-red-900 flex items-center space-x-1"
+                            >
+                              <MonitorX className="w-4 h-4" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Invoice View Modal */}
         <InvoiceViewModal
           invoice={selectedInvoice}
@@ -1146,6 +1343,18 @@ export default function ClosingShiftPage() {
           onConfirm={handleDeleteConfirm}
           title="Delete Draft Invoice"
           message={`Are you sure you want to delete draft invoice ${invoiceToDelete?.id}? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        />
+
+        {/* Delete Held Order Confirmation */}
+        <ConfirmDialog
+          isOpen={showDeleteHeldOrderConfirm}
+          onClose={handleDeleteHeldOrderCancel}
+          onConfirm={handleDeleteHeldOrderConfirm}
+          title="Delete Held Order"
+          message={`Are you sure you want to delete held order ${heldOrderToDelete?.name}? This action cannot be undone.`}
           confirmText="Delete"
           cancelText="Cancel"
           confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"

@@ -39,8 +39,8 @@ const roundToCurrencyPrecision = (value: number): number => {
   return roundCurrency(value);
 };
 
-const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean }) => {
-  if (item.is_stock_item === false) {
+const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean; allow_negative_stock?: boolean }) => {
+  if (item.is_stock_item === false || item.allow_negative_stock) {
     return false;
   }
   return typeof item.available === 'number' && Number.isFinite(item.available);

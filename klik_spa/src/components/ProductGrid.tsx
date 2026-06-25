@@ -10,6 +10,7 @@ import VariantPickerModal from "./VariantPickerModal";
 import { useCartStore } from "../stores/cartStore";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
+import { isItemOutOfStock } from "../utils/stock";
 
 
 interface ProductGridProps {
@@ -55,7 +56,7 @@ export default function ProductGrid({
   const inStockItems = useMemo(
     () => (
       hideUnavailableItems
-        ? filteredItems.filter((item) => item.is_stock_item === false || item.available > 0)
+        ? filteredItems.filter((item) => !isItemOutOfStock(item))
         : filteredItems
     ),
     [filteredItems, hideUnavailableItems],
@@ -96,7 +97,7 @@ export default function ProductGrid({
   }, [addConcreteItemToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.is_stock_item !== false && item.available <= 0) return;
+    if (isItemOutOfStock(item)) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {
@@ -134,7 +135,7 @@ export default function ProductGrid({
       } else {
         document.querySelector<HTMLElement>(`[data-product-index="${index - 1}"]`)?.focus();
       }
-    } else if (e.key === '+' || e.key === '=') {
+    } else if (e.key === '+' || e.key === '=' || e.key === 'Enter') {
       e.preventDefault();
       void handleAddToCart(item);
     } else if (e.key === '-') {

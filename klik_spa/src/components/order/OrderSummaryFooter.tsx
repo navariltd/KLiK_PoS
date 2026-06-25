@@ -15,6 +15,7 @@ interface OrderSummaryFooterProps {
   isMobile?: boolean;
   currency_symbol?: string;
   allow_holding_invoices?: boolean;
+  taxExclusive?: boolean;
 }
 
 export const OrderSummaryFooter = ({
@@ -30,6 +31,7 @@ export const OrderSummaryFooter = ({
   isMobile,
   currency_symbol,
   allow_holding_invoices,
+  taxExclusive = false,
 }: OrderSummaryFooterProps) => {
   return (
     <div
@@ -74,7 +76,7 @@ export const OrderSummaryFooter = ({
       >
         {isValidating
           ? "Checking cart..."
-          : `Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}`}
+          : `Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}${taxExclusive ? " +" : ""}`}
       </button>
     </div>
   );

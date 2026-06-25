@@ -22,6 +22,7 @@ export interface CartItem {
   image: string
   quantity: number
   available?: number
+  allow_negative_stock?: boolean
   uom?: string
   item_code?: string
   base_uom?: string
@@ -104,6 +105,7 @@ export interface MenuItem {
   image: string
   available: number
   is_stock_item?: boolean
+  allow_negative_stock?: boolean
   sold: number
   discount?: number
   description?: string

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -39,6 +39,8 @@ import { createSalesReturn, retryQueuedInvoice } from "../services/salesInvoice"
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
+import { addHeldOrderToCart } from "../utils/heldOrderToCart";
+import { getHeldOrders } from "../services/salesOrder";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
@@ -129,6 +131,57 @@ export default function InvoiceHistoryPage() {
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
   const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
+
+  // Held draft Sales Orders (custom_is_klik_held=1) — surfaced under the Draft tab.
+  // Mapped to the SalesInvoice shape with `isHeldOrder` so the row + action handlers
+  // can route through the Sales Order flow instead of the (now empty) draft-SI flow.
+  const [heldOrders, setHeldOrders] = useState<(SalesInvoice & { isHeldOrder?: boolean })[]>([]);
+  const refetchHeldOrders = useCallback(async () => {
+    try {
+      const res = await getHeldOrders({ skipOpeningEntryFilter: true, search: searchTerm, limit: 200 });
+      if (!res?.success) {
+        setHeldOrders([]);
+        return;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mapped = (res.data || []).map((o: any) => ({
+        id: o.name,
+        name: o.name,
+        date: o.transaction_date || new Date().toISOString().split("T")[0],
+        time: "",
+        cashier: o.cashier || o.owner || "",
+        cashierId: o.owner || "",
+        customer: o.customer_name || o.customer || "",
+        customerId: o.customer || "",
+        items: o.items || [],
+        subtotal: Number(o.grand_total) || 0,
+        giftCardDiscount: 0,
+        giftCardCode: "",
+        taxAmount: 0,
+        totalAmount: Number(o.grand_total) || 0,
+        paymentMethod: "-",
+        payment_methods: [],
+        amountPaid: 0,
+        changeGiven: 0,
+        status: "Draft",
+        refundAmount: 0,
+        currency: o.currency || "USD",
+        notes: "",
+        posProfile: o.custom_pos_profile || "",
+        custom_pos_opening_entry: o.custom_pos_opening_entry || "",
+        canReturn: false,
+        isHeldOrder: true,
+      })) as unknown as (SalesInvoice & { isHeldOrder?: boolean })[];
+      setHeldOrders(mapped);
+    } catch {
+      setHeldOrders([]);
+    }
+  }, [searchTerm]);
+
+  useEffect(() => {
+    void refetchHeldOrders();
+  }, [refetchHeldOrders]);
+
   const { modes } = useAllPaymentModes();
   const { cartItems, selectedCustomer: cartCustomer } = useCartStore();
   const { customers } = useCustomers();
@@ -302,7 +355,10 @@ const getStatusBadge = (status: string) => {
     if (isLoading) return [];
     if (error) return [];
 
-    const filtered = invoices.filter((invoice) => {
+    // The Draft tab is sourced from held Sales Orders, not draft Sales Invoices.
+    const source = activeTab === "Draft" ? heldOrders : invoices;
+
+    const filtered = source.filter((invoice) => {
       // Server-side search is handled by the API, so we only apply client-side filters
       // Normalize status comparison to handle case and whitespace differences
       const invoiceStatus = (invoice.status || "").trim();
@@ -324,7 +380,7 @@ const getStatusBadge = (status: string) => {
     });
 
     return filtered;
-  }, [invoices, activeTab, dateFilter, customerFilter, paymentFilter, cashierFilter, isLoading, error, filterInvoiceByDate]);
+  }, [invoices, heldOrders, activeTab, dateFilter, customerFilter, paymentFilter, cashierFilter, isLoading, error, filterInvoiceByDate]);
 
   const uniqueCashiers = useMemo(() => {
     return [...new Set(invoices.map(invoice => invoice.cashier).filter(Boolean))];
@@ -354,8 +410,11 @@ const getStatusBadge = (status: string) => {
   // Get count for each status - filtered by cashier, date, and payment (but not status)
   // This ensures tab counts reflect the current filter selections
   const getStatusCount = (status: string) => {
+    // The Draft tab counts held Sales Orders, not draft Sales Invoices.
+    const countSource = status === "Draft" ? heldOrders : invoices;
+
     // First apply all filters except status
-    const invoicesFilteredByOtherFilters = invoices.filter((invoice) => {
+    const invoicesFilteredByOtherFilters = countSource.filter((invoice) => {
       const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
       const matchesCustomer = !customerFilter.trim()
         || invoice.customer?.toLowerCase().includes(customerFilter.toLowerCase());
@@ -813,7 +872,10 @@ const getStatusBadge = (status: string) => {
     }
 
     try {
-      const success = await addDraftInvoiceToCart(draftInvoiceId);
+      const isHeldOrder = !!(invoice as SalesInvoice & { isHeldOrder?: boolean }).isHeldOrder;
+      const success = isHeldOrder
+        ? await addHeldOrderToCart(draftInvoiceId)
+        : await addDraftInvoiceToCart(draftInvoiceId);
       if (success) {
         setTimeout(() => {
           navigate('/pos'); // Navigate directly to POS page
@@ -839,7 +901,10 @@ const getStatusBadge = (status: string) => {
     }
 
     try {
-      const success = await addDraftInvoiceToCart(draftInvoiceId);
+      const isHeldOrder = !!(invoice as SalesInvoice & { isHeldOrder?: boolean }).isHeldOrder;
+      const success = isHeldOrder
+        ? await addHeldOrderToCart(draftInvoiceId)
+        : await addDraftInvoiceToCart(draftInvoiceId);
       if (success) {
         await loadCachedItemsToCart();
         setShowDraftPaymentDialog(true);
@@ -1353,7 +1418,10 @@ const getStatusBadge = (status: string) => {
             isOpen={showDraftPaymentDialog}
             onClose={(paymentCompleted) => {
               setShowDraftPaymentDialog(false);
-              if (paymentCompleted) refetch();
+              if (paymentCompleted) {
+                refetch();
+                void refetchHeldOrders();
+              }
             }}
             cartItems={cartItems}
             appliedCoupons={[]}
@@ -1361,6 +1429,7 @@ const getStatusBadge = (status: string) => {
             onCompletePayment={() => {
               setShowDraftPaymentDialog(false);
               refetch();
+              void refetchHeldOrders();
             }}
             onHoldOrder={() => setShowDraftPaymentDialog(false)}
             isMobile={false}

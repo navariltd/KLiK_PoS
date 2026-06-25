@@ -15,7 +15,8 @@ import {
   submitDraftInvoice,
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
-import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
+import { checkoutHeldOrder, createHeldOrder } from "../../services/salesOrder";
+import { clearDraftInvoiceCache, getOriginalDraftInvoiceId, getOriginalHeldOrderId } from "../../utils/draftInvoiceCache";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
 import { calculateRemainingAmount, calculateTotalPayments, roundCurrency } from "../../utils/currencyMath";
 import { extractErrorFromException } from "../../utils/errorExtraction";
@@ -1281,6 +1282,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     setIsProcessingPayment(true);
     const paymentData = buildPaymentData(deliveryPersonnel);
+    const originalHeldOrderId = getOriginalHeldOrderId();
     const originalDraftInvoiceId = getOriginalDraftInvoiceId();
     try {
       let response;
@@ -1293,8 +1295,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             enable_background_invoice_submission: enableBackgroundSubmission,
           }
         );
+      } else if (originalHeldOrderId) {
+        // Checkout from a held Sales Order — convert it to a submitted Sales Invoice
+        response = await checkoutHeldOrder(originalHeldOrderId, {
+          ...paymentData,
+          enable_background_invoice_submission: enableBackgroundSubmission,
+        });
       } else if (originalDraftInvoiceId) {
-        // If editing a held invoice, submit the original draft instead of creating a new one
+        // Legacy path: editing a held draft Sales Invoice
         response = await submitDraftInvoice(
           originalDraftInvoiceId,
           {
@@ -1405,6 +1413,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       const orderData = {
         items: orderItems,
         customer: { id: selectedCustomer.id },
+        customerData: selectedCustomer,
         subtotal: calculations.subtotal,
         total: checkoutGrandTotal,
         SalesTaxCharges: selectedSalesTaxCharges,
@@ -1428,16 +1437,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               loyalty_points: appliedLoyalty.loyalty_points,
             }
           : null,
-        draft_invoice_id: getOriginalDraftInvoiceId(),
+        held_order_id: getOriginalHeldOrderId(),
       };
 
-      const result = await createDraftSalesInvoice(orderData);
+      const result = await createHeldOrder(orderData);
       if (!result?.success) {
         throw new Error("Failed to hold order");
       }
 
       clearCart();
-      toast.success(orderData.draft_invoice_id ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
+      toast.success(orderData.held_order_id ? "Order updated and held successfully!" : "Order held successfully!");
       await Promise.resolve(onHoldOrder(orderData));
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");

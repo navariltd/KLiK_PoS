@@ -6,6 +6,7 @@ import ProductTooltip from "./ProductTooltip"
 import ProductDetailsModal from "./ProductDetailsModal"
 
 import { formatCurrencyWithSymbol } from "../utils/currency"
+import { isItemOutOfStock } from "../utils/stock"
 
 interface ProductLineViewProps {
   items: MenuItem[]
@@ -80,7 +81,7 @@ export default function ProductLineView({
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
             {items.map((item, rowIndex) => {
               const isServiceItem = item.is_stock_item === false
-              const isOutOfStock = item.is_stock_item !== false && item.available <= 0
+              const isOutOfStock = isItemOutOfStock(item)
               const isDisabled = isOutOfStock || scannerOnly
               const expectedPrice = Number(item.price_with_vat ?? item.price)
               const basePrice = Number(item.price || 0)

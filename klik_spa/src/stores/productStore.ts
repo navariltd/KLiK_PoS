@@ -93,7 +93,7 @@ export const useProductStore = create<ProductStoreState>()(
         if (hideUnavailable) {
           return products.filter((p) => {
             const isStockItem = p.is_stock_item !== false;
-            if (!isStockItem) {
+            if (!isStockItem || p.allow_negative_stock) {
               return true;
             }
             return (p.available || 0) > 0;
