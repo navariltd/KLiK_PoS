@@ -66,9 +66,25 @@ export default function ClosingShiftPage() {
   const { modes, isLoading: modesLoading, error: modesError } = useAllPaymentModes()
   const { posDetails } = usePOSProfileStore();
   const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
-
-
   const hideExpectedAmount = posDetails?.custom_hide_expected_amount || false;
+
+  const fetchHeldOrders = useCallback(async () => {
+    setIsLoadingHeldOrders(true);
+    try {
+      const result = await getHeldOrders({ limit: 100 });
+      if (result?.success) {
+        setHeldOrders(result.data || []);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setIsLoadingHeldOrders(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchHeldOrders();
+  }, [fetchHeldOrders]);
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
     if (dateFilter === "all") return true;
@@ -306,24 +322,6 @@ export default function ClosingShiftPage() {
     setShowDeleteConfirm(false);
     setInvoiceToDelete(null);
   };
-
-  const fetchHeldOrders = useCallback(async () => {
-    setIsLoadingHeldOrders(true);
-    try {
-      const result = await getHeldOrders({ limit: 100 });
-      if (result?.success) {
-        setHeldOrders(result.data || []);
-      }
-    } catch {
-      // non-fatal
-    } finally {
-      setIsLoadingHeldOrders(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchHeldOrders();
-  }, [fetchHeldOrders]);
 
   const handleResumeHeldOrder = async (orderId: string) => {
     setIsResumingOrder(orderId);
