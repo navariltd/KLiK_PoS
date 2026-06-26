@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import flt, nowdate
 
 from klik_pos.api.sales_invoice import (
+    _apply_walkin_party_fields,
     _get_active_pos_profile,
     get_current_pos_opening_entry,
     parse_invoice_data,
@@ -81,6 +82,8 @@ def _build_cart_meta(data, parsed_items, business_type, salesperson, tax_id,
         "SalesTaxCharges": sales_and_tax_charges,
         "roundOffAmount": flt(roundoff_amount),
         "customer": customer_data,
+        "walkin_name": data.get("walkin_name") if isinstance(data, dict) else None,
+        "walkin_phone": data.get("walkin_phone") if isinstance(data, dict) else None,
     }
 
 
@@ -103,6 +106,14 @@ def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta):
     so.custom_pos_opening_entry = opening_entry
     so.custom_is_klik_held = 1
     so.custom_klik_cart_meta = json.dumps(cart_meta)
+
+    if cart_meta.get("tax_id") and so.meta.has_field("tax_id"):
+        so.tax_id = cart_meta.get("tax_id")
+    _apply_walkin_party_fields(
+        so,
+        walkin_name=cart_meta.get("walkin_name"),
+        walkin_phone=cart_meta.get("walkin_phone"),
+    )
 
     for item in items:
         so.append("items", {
@@ -128,6 +139,14 @@ def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta):
     so.delivery_date = nowdate()
     so.taxes_and_charges = sales_and_tax_charges or getattr(pos_profile, "taxes_and_charges", "") or ""
     so.set("items", [])
+
+    if cart_meta.get("tax_id") and so.meta.has_field("tax_id"):
+        so.tax_id = cart_meta.get("tax_id")
+    _apply_walkin_party_fields(
+        so,
+        walkin_name=cart_meta.get("walkin_name"),
+        walkin_phone=cart_meta.get("walkin_phone"),
+    )
 
     for item in items:
         so.append("items", {
@@ -235,6 +254,8 @@ def get_held_order_details(order_id):
             "name": so.name,
             "customer": so.customer,
             "customer_data": cart_meta.get("customer"),
+            "walkin_name": cart_meta.get("walkin_name"),
+            "walkin_phone": cart_meta.get("walkin_phone"),
             "items": items,
             "cart_meta": cart_meta,
             "grand_total": flt(so.grand_total),
