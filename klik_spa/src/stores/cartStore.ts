@@ -108,10 +108,14 @@ const fetchItemTaxDetails = async (
   }
 };
 
+export interface WalkinDetails { name: string; taxId: string; phone: string }
+const EMPTY_WALKIN: WalkinDetails = { name: '', taxId: '', phone: '' };
+
 interface CartState {
   cartItems: CartItem[]
   appliedCoupons: GiftCoupon[]
   selectedCustomer: Customer | null
+  walkinDetails: WalkinDetails
   selectedPriceList: string | null
   isPricingLoading: boolean
   pricingError: string | null
@@ -125,6 +129,8 @@ interface CartState {
   applyCoupon: (coupon: GiftCoupon) => void
   removeCoupon: (couponCode: string) => void
   setSelectedCustomer: (customer: Customer | null) => Promise<void>
+  setWalkinDetails: (details: Partial<WalkinDetails>) => void
+  clearWalkinDetails: () => void
   setSelectedPriceList: (priceList: string | null) => Promise<void>
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
@@ -141,6 +147,7 @@ export const useCartStore = create<CartState>()(
       cartItems: [],
       appliedCoupons: [],
       selectedCustomer: null,
+      walkinDetails: { name: '', taxId: '', phone: '' },
       selectedPriceList: null,
       isPricingLoading: false,
       pricingError: null,
@@ -409,6 +416,7 @@ export const useCartStore = create<CartState>()(
           cartItems: [],
           appliedCoupons: [],
           selectedCustomer: null,
+          walkinDetails: { ...EMPTY_WALKIN },
           selectedPriceList: null,
         }));
       },
@@ -428,11 +436,18 @@ export const useCartStore = create<CartState>()(
 
       setSelectedCustomer: async (customer) => {
         set({ selectedCustomer: customer });
+        if (!customer || customer.isWalkin !== 1) {
+          set({ walkinDetails: { ...EMPTY_WALKIN } });
+        }
         const state = get();
         if (state.cartItems.length > 0) {
           await state.refreshCartPricing();
         }
       },
+
+      setWalkinDetails: (details) =>
+        set((s) => ({ walkinDetails: { ...s.walkinDetails, ...details } })),
+      clearWalkinDetails: () => set({ walkinDetails: { ...EMPTY_WALKIN } }),
 
       setSelectedPriceList: async (priceList) => {
         set({ selectedPriceList: priceList });

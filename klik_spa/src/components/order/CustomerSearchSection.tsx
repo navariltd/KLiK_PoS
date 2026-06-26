@@ -13,6 +13,7 @@ import {
   UserPlus,
   Mail,
   Phone,
+  Contact,
 } from "lucide-react";
 import type { Customer } from "../../types/customer";
 import { transformCustomerInfo } from "../../utils/transformCustomerInfo";
@@ -21,6 +22,7 @@ import { useCustomerPermission } from "../../hooks/useCustomerPermission";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { useProductStore } from "../../stores/productStore";
 import { useCartStore } from "../../stores/cartStore";
+import WalkinInfoModal from "./WalkinInfoModal";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import AddCustomerModal from "../customer/AddCustomerModal";
@@ -72,6 +74,9 @@ export const CustomerSearchSection = ({
   const selectedPriceList = useCartStore((state) => state.selectedPriceList);
   const setSelectedPriceList = useCartStore((state) => state.setSelectedPriceList);
   const refreshCartPricing = useCartStore((state) => state.refreshCartPricing);
+  const walkinDetails = useCartStore((state) => state.walkinDetails);
+  const setWalkinDetails = useCartStore((state) => state.setWalkinDetails);
+  const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [priceLists, setPriceLists] = useState<SellingPriceList[]>([]);
   const [isLoadingPriceLists, setIsLoadingPriceLists] = useState(false);
   const [warehouses, setWarehouses] = useState<string[]>([]);
@@ -612,6 +617,23 @@ export const CustomerSearchSection = ({
                         <span className="font-mono">PIN: {selectedCustomer.taxId}</span>
                       </div>
                     )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.name && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <User className="w-3 h-3" />
+                        <span className="truncate max-w-[160px]">{walkinDetails.name}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.phone && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <Phone className="w-3 h-3" />
+                        <span>{walkinDetails.phone}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.taxId && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="font-mono">PIN: {walkinDetails.taxId}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -644,6 +666,16 @@ export const CustomerSearchSection = ({
             title="Add New Customer"
           >
             <UserPlus size={20} />
+          </button>
+        )}
+
+        {selectedCustomer?.isWalkin === 1 && (
+          <button
+            onClick={() => setShowWalkinModal(true)}
+            className="flex-shrink-0 w-[52px] h-[52px] bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
+            title="Walk-in customer info"
+          >
+            <Contact size={20} />
           </button>
         )}
       </div>
@@ -692,6 +724,14 @@ export const CustomerSearchSection = ({
           onSave={handleSaveCustomer}
           prefilledName={prefilledCustomerName}
           prefilledData={prefilledData}
+        />
+      )}
+
+      {showWalkinModal && (
+        <WalkinInfoModal
+          initial={walkinDetails}
+          onClose={() => setShowWalkinModal(false)}
+          onSave={(d) => { setWalkinDetails(d); setShowWalkinModal(false); }}
         />
       )}
     </div>
