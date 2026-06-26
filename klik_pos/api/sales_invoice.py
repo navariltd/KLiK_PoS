@@ -52,6 +52,15 @@ def _apply_klik_invoice_flags(doc, is_held=None, is_submitted=None):
 		_set_checkbox_field_value(doc, "custom_is_submitted", is_submitted)
 
 
+def _apply_walkin_party_fields(doc, walkin_name=None, walkin_phone=None):
+	"""Set walk-in buyer name/phone on a selling doc when the optional custom
+	fields exist. tax_id is handled separately by the standard field path."""
+	if walkin_name and doc.meta.has_field("custom_walkin_customer_name"):
+		doc.custom_walkin_customer_name = walkin_name
+	if walkin_phone and doc.meta.has_field("custom_walkin_phone"):
+		doc.custom_walkin_phone = walkin_phone
+
+
 def validate_required_salesperson(doc):
 	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
 	if not doc or not getattr(doc, "is_pos", 0):
@@ -954,6 +963,8 @@ def validate_checkout_invoice(data):
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			walkin_name=data.get("walkin_name"),
+			walkin_phone=data.get("walkin_phone"),
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1177,6 +1188,8 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			walkin_name=data.get("walkin_name"),
+			walkin_phone=data.get("walkin_phone"),
 		)
 
 		validate_required_salesperson(doc)
@@ -1383,6 +1396,9 @@ def create_draft_invoice(data):
 			loyalty_redemption,
 		) = parse_invoice_data(data)
 
+		walkin_name = data.get("walkin_name")
+		walkin_phone = data.get("walkin_phone")
+
 		if target_draft_invoice_id:
 			doc = frappe.get_doc("Sales Invoice", target_draft_invoice_id)
 			if doc.docstatus != 0 or doc.status != "Draft":
@@ -1410,6 +1426,8 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=walkin_name,
+				walkin_phone=walkin_phone,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1430,6 +1448,8 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=walkin_name,
+				walkin_phone=walkin_phone,
 			)
 
 			validate_required_salesperson(doc)
@@ -1717,6 +1737,8 @@ def build_sales_invoice_doc(
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	walkin_name=None,
+	walkin_phone=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1733,6 +1755,9 @@ def build_sales_invoice_doc(
 	# Set tax ID if provided
 	if tax_id:
 		doc.tax_id = tax_id
+
+	# Set walk-in buyer name/phone (guarded; fields are optional/button-installed)
+	_apply_walkin_party_fields(doc, walkin_name=walkin_name, walkin_phone=walkin_phone)
 
 	# Set salesperson in sales team
 	if salesperson:
@@ -1813,6 +1838,8 @@ def _update_existing_draft_invoice(
 	tax_id=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	walkin_name=None,
+	walkin_phone=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -1833,6 +1860,8 @@ def _update_existing_draft_invoice(
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
+		walkin_name=walkin_name,
+		walkin_phone=walkin_phone,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -1841,6 +1870,11 @@ def _update_existing_draft_invoice(
 	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 	invoice_doc.tax_id = rebuilt_doc.tax_id
+	_apply_walkin_party_fields(
+		invoice_doc,
+		walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
+		walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
+	)
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company
 	invoice_doc.currency = rebuilt_doc.currency
@@ -4054,6 +4088,8 @@ def submit_draft_invoice(invoice_id, data=None):
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=data.get("walkin_name"),
+				walkin_phone=data.get("walkin_phone"),
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -4062,6 +4098,11 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
+			_apply_walkin_party_fields(
+				invoice_doc,
+				walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
+				walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
+			)
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile
 			invoice_doc.company = rebuilt_doc.company
 			invoice_doc.currency = rebuilt_doc.currency
