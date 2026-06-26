@@ -161,7 +161,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
-  const [taxPin, setTaxPin] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
@@ -197,7 +196,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const { salesTaxCharges, defaultTax, isLoading: salesTaxLoading } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
-  const { clearCart } = useCartStore();
+  const { clearCart, walkinDetails, setWalkinDetails } = useCartStore();
   const posProfileName = typeof posDetails?.name === "string" ? posDetails.name : "";
   const posCompanyName =
     typeof posDetails?.company === "string"
@@ -640,7 +639,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       allowPartialPayment: allowPartialPayments,
       allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
-      tax_id: taxPin || null,
+      tax_id: walkinDetails.taxId || null,
+      walkin_name: walkinDetails.name || null,
+      walkin_phone: walkinDetails.phone || null,
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -1430,7 +1431,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         status: "held",
         businessType: posDetails?.business_type,
         salesperson: currentSalesperson?.name || null,
-        tax_id: taxPin || null,
+        tax_id: walkinDetails.taxId || null,
+        walkin_name: walkinDetails.name || null,
+        walkin_phone: walkinDetails.phone || null,
         loyalty: appliedLoyalty
           ? {
               loyalty_program: appliedLoyalty.loyalty_program,
@@ -1644,10 +1647,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     initializedCreditDefaultRef.current = true;
   }, [isOpen, allowPartialPayments, defaultSalesType]);
-
-  useEffect(() => {
-    if (isOpen) setTaxPin("");
-  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && defaultTax && !selectedSalesTaxCharges) {
@@ -2094,8 +2093,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
-                  taxPin={taxPin}
-                  onTaxPinChange={setTaxPin}
+                  taxPin={walkinDetails.taxId}
+                  onTaxPinChange={(v) => setWalkinDetails({ taxId: v })}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}
@@ -2323,8 +2322,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
-                  taxPin={taxPin}
-                  onTaxPinChange={setTaxPin}
+                  taxPin={walkinDetails.taxId}
+                  onTaxPinChange={(v) => setWalkinDetails({ taxId: v })}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}

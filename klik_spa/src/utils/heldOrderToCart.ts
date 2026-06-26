@@ -1,6 +1,7 @@
 import { getHeldOrderDetails } from '../services/salesOrder';
 import { cacheHeldOrder, loadCachedItemsToCart } from './draftInvoiceCache';
 import { transformCustomerInfo } from './transformCustomerInfo';
+import { useCartStore } from '../stores/cartStore';
 import type { CartItem, Customer } from '../../types';
 
 // transformCustomerInfo returns the `types/customer` Customer; the cache stores the
@@ -59,5 +60,16 @@ export async function addHeldOrderToCart(orderId: string): Promise<boolean> {
   }
 
   cacheHeldOrder(orderId, items, customer);
+
+  // Restore per-transaction walk-in details (name/tax_id/phone) into the cart store.
+  // Also recovers tax_id, which was previously dropped from the UI on resume.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const od = orderData as any;
+  useCartStore.getState().setWalkinDetails({
+    name: od.walkin_name || '',
+    taxId: od.cart_meta?.tax_id || od.tax_id || '',
+    phone: od.walkin_phone || '',
+  });
+
   return loadCachedItemsToCart();
 }
