@@ -14,6 +14,18 @@ EXTRA_FIELD_EXCLUDE = {
 }
 
 
+def get_configured_extra_fieldnames(pos_profile=None):
+    """Server-side WRITE allow-list: fieldnames the active POS Profile configured,
+    intersected with the eligible SO∩SI common fields (defense in depth). Prevents
+    a client from writing arbitrary fields via the extra_fields map."""
+    if pos_profile is None:
+        pos_profile = get_current_pos_profile()
+    rows = getattr(pos_profile, "custom_pos_extra_fields", None) or []
+    configured = {r.so_si_commonfield for r in rows if getattr(r, "so_si_commonfield", None)}
+    eligible = {f["fieldname"] for f in _eligible_common_fields()}
+    return configured & eligible
+
+
 def get_required_extra_fieldnames(pos_profile=None):
     """Fieldnames marked Required on the active POS Profile's extra-field table."""
     if pos_profile is None:

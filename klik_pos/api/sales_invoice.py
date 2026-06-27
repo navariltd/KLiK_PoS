@@ -74,13 +74,21 @@ def _parse_extra_fields(data):
 	return raw if isinstance(raw, dict) else {}
 
 
-def _apply_extra_fields(doc, extra_fields):
+def _apply_extra_fields(doc, extra_fields, allowed=None):
 	"""Set each configured POS extra field on the document, guarded.
 
-	Only sets fields that exist on the doctype (``has_field``) and have a
-	non-empty value, so a stray/removed fieldname is silently skipped.
+	Writes only fields in the server-resolved allow-list (the POS Profile's
+	configured + eligible fields), that exist on the doctype, and have a
+	non-empty value. The allow-list stops a client from setting arbitrary
+	fields (e.g. invoice discounts) via the extra_fields map. Tests pass
+	``allowed`` explicitly; production resolves it from the active POS Profile.
 	"""
+	if allowed is None:
+		from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+		allowed = get_configured_extra_fieldnames()
 	for fieldname, value in (extra_fields or {}).items():
+		if fieldname not in allowed:
+			continue
 		if value in (None, "") or not doc.meta.has_field(fieldname):
 			continue
 		doc.set(fieldname, value)
@@ -1912,7 +1920,8 @@ def _update_existing_draft_invoice(
 		walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
 		walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
 	)
-	for _fn in (extra_fields or {}):
+	from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+	for _fn in get_configured_extra_fieldnames():
 		if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
 			invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
@@ -4145,7 +4154,8 @@ def submit_draft_invoice(invoice_id, data=None):
 				walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
 				walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
 			)
-			for _fn in (_ef or {}):
+			from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+			for _fn in get_configured_extra_fieldnames():
 				if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
 					invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile

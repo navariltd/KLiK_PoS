@@ -85,23 +85,28 @@ class _FakeDoc:
 class TestApplyExtraFields(FrappeTestCase):
     def test_sets_existing_nonempty_fields(self):
         doc = _FakeDoc({"territory", "po_no"})
-        _apply_extra_fields(doc, {"territory": "Default", "po_no": "PO-1"})
+        _apply_extra_fields(doc, {"territory": "Default", "po_no": "PO-1"}, allowed={"territory", "po_no"})
         self.assertEqual(doc._set, {"territory": "Default", "po_no": "PO-1"})
 
     def test_skips_missing_field(self):
         doc = _FakeDoc({"territory"})
-        _apply_extra_fields(doc, {"nope": "x"})
+        _apply_extra_fields(doc, {"nope": "x"}, allowed={"nope"})
         self.assertEqual(doc._set, {})
 
     def test_skips_empty_values(self):
         doc = _FakeDoc({"territory", "po_no"})
-        _apply_extra_fields(doc, {"territory": "", "po_no": None})
+        _apply_extra_fields(doc, {"territory": "", "po_no": None}, allowed={"territory", "po_no"})
         self.assertEqual(doc._set, {})
 
     def test_tolerates_none(self):
         doc = _FakeDoc({"territory"})
-        _apply_extra_fields(doc, None)
+        _apply_extra_fields(doc, None, allowed={"territory"})
         self.assertEqual(doc._set, {})
+
+    def test_skips_fields_not_in_allowed(self):
+        doc = _FakeDoc({"territory", "additional_discount_percentage"})
+        _apply_extra_fields(doc, {"territory": "X", "additional_discount_percentage": "90"}, allowed={"territory"})
+        self.assertEqual(doc._set, {"territory": "X"})
 
 
 class TestParseExtraFields(FrappeTestCase):
@@ -137,3 +142,11 @@ class TestRequiredExtraFields(FrappeTestCase):
     def test_ignores_optional_missing(self):
         prof = self._profile([("territory", 0)])
         validate_required_extra_fields({}, pos_profile=prof)  # no raise
+
+    def test_configured_fieldnames_intersect_eligible(self):
+        from unittest.mock import patch as _patch
+        prof = NS(custom_pos_extra_fields=[NS(so_si_commonfield="territory"), NS(so_si_commonfield="evil_field")])
+        with _patch("klik_pos.api.pos_profile._eligible_common_fields", return_value=[{"fieldname": "territory"}]):
+            from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+            out = get_configured_extra_fieldnames(pos_profile=prof)
+        self.assertEqual(out, {"territory"})
