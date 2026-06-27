@@ -5,8 +5,10 @@ from frappe import _
 from frappe.utils import flt, nowdate
 
 from klik_pos.api.sales_invoice import (
+    _apply_extra_fields,
     _apply_walkin_party_fields,
     _get_active_pos_profile,
+    _parse_extra_fields,
     get_current_pos_opening_entry,
     parse_invoice_data,
 )
@@ -84,6 +86,7 @@ def _build_cart_meta(data, parsed_items, business_type, salesperson, tax_id,
         "customer": customer_data,
         "walkin_name": data.get("walkin_name") if isinstance(data, dict) else None,
         "walkin_phone": data.get("walkin_phone") if isinstance(data, dict) else None,
+        "extra_fields": _parse_extra_fields(data),
     }
 
 
@@ -114,6 +117,7 @@ def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta):
         walkin_name=cart_meta.get("walkin_name"),
         walkin_phone=cart_meta.get("walkin_phone"),
     )
+    _apply_extra_fields(so, cart_meta.get("extra_fields"))
 
     for item in items:
         so.append("items", {
@@ -147,6 +151,7 @@ def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta):
         walkin_name=cart_meta.get("walkin_name"),
         walkin_phone=cart_meta.get("walkin_phone"),
     )
+    _apply_extra_fields(so, cart_meta.get("extra_fields"))
 
     for item in items:
         so.append("items", {
@@ -172,6 +177,9 @@ def create_held_order(data):
     try:
         if isinstance(data, str):
             data = json.loads(data)
+
+        from klik_pos.api.pos_profile import validate_required_extra_fields
+        validate_required_extra_fields(_parse_extra_fields(data))
 
         target_order_id = data.get("held_order_id") if isinstance(data, dict) else None
 
@@ -256,6 +264,7 @@ def get_held_order_details(order_id):
             "customer_data": cart_meta.get("customer"),
             "walkin_name": cart_meta.get("walkin_name"),
             "walkin_phone": cart_meta.get("walkin_phone"),
+            "extra_fields": cart_meta.get("extra_fields") or {},
             "items": items,
             "cart_meta": cart_meta,
             "grand_total": flt(so.grand_total),
