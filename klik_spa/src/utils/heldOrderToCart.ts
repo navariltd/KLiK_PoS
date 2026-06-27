@@ -71,5 +71,7 @@ export async function addHeldOrderToCart(orderId: string): Promise<boolean> {
     phone: od.walkin_phone || '',
   });
 
+  useCartStore.getState().setExtraFields(od.extra_fields || od.cart_meta?.extra_fields || {});
+
   return loadCachedItemsToCart();
 }
