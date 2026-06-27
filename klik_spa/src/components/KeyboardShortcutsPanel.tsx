@@ -10,7 +10,7 @@ interface KeyboardShortcutsPanelProps {
 
 interface ShortcutGroup {
   label: string;
-  shortcuts: { keys: string[]; description: string }[];
+  shortcuts: { keys: string[]; description: string; separator?: string }[];
 }
 
 const GROUPS: ShortcutGroup[] = [
@@ -26,24 +26,16 @@ const GROUPS: ShortcutGroup[] = [
   {
     label: "Product List",
     shortcuts: [
-      { keys: ["↑"], description: "Previous item (or back to search)" },
-      { keys: ["↓"], description: "Next item" },
-      { keys: ["+"], description: "Add to cart / increase quantity" },
-      { keys: ["−"], description: "Decrease quantity (removes if qty is 1)" },
+      { keys: ["↑", "↓"], description: "Previous / next item", separator: "/" },
+      { keys: ["+", "−"], description: "Increase / decrease qty", separator: "/" },
     ],
   },
   {
     label: "Order",
     shortcuts: [
       { keys: ["F2"], description: "Open customer dropdown" },
-      { keys: ["F10"], description: "Checkout" },
+      { keys: ["F10"], description: "Checkout / submit payment" },
       { keys: ["Shift", "F10"], description: "Hold order" },
-    ],
-  },
-  {
-    label: "Payment Dialog",
-    shortcuts: [
-      { keys: ["F10"], description: "Submit payment" },
     ],
   },
   {
@@ -72,14 +64,14 @@ function Key({ label }: { label: string }) {
   );
 }
 
-function ShortcutRow({ keys, description }: { keys: string[]; description: string }) {
+function ShortcutRow({ keys, description, separator = "+" }: { keys: string[]; description: string; separator?: string }) {
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
       <span className="text-xs text-gray-500 dark:text-gray-400 leading-snug">{description}</span>
       <div className="flex items-center gap-1 flex-shrink-0">
         {keys.map((k, i) => (
           <span key={i} className="flex items-center gap-1">
-            {i > 0 && <span className="text-gray-400 dark:text-gray-500 text-[10px] font-medium">+</span>}
+            {i > 0 && <span className="text-gray-400 dark:text-gray-500 text-[10px] font-medium">{separator}</span>}
             <Key label={k} />
           </span>
         ))}

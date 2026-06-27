@@ -662,20 +662,20 @@ export const CustomerSearchSection = ({
         {canCreateCustomer && (
           <button
             onClick={handleAddCustomerClick}
-            className="flex-shrink-0 w-[52px] h-[52px] bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
+            className="flex-shrink-0 w-10 h-10 bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
             title="Add New Customer"
           >
-            <UserPlus size={20} />
+            <UserPlus size={18} />
           </button>
         )}
 
-        {selectedCustomer?.isWalkin === 1 && (
+        {selectedCustomer && (
           <button
             onClick={() => setShowWalkinModal(true)}
-            className="flex-shrink-0 w-[52px] h-[52px] bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
-            title="Walk-in customer info"
+            className="flex-shrink-0 w-10 h-10 bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
+            title="Additional Info"
           >
-            <Contact size={20} />
+            <Contact size={18} />
           </button>
         )}
       </div>
@@ -727,11 +727,22 @@ export const CustomerSearchSection = ({
         />
       )}
 
-      {showWalkinModal && (
+      {showWalkinModal && selectedCustomer && (
         <WalkinInfoModal
+          isWalkin={selectedCustomer.isWalkin === 1}
           initial={walkinDetails}
+          masterDisplay={{
+            name: selectedCustomer.customerName || selectedCustomer.name || "",
+            taxId: selectedCustomer.taxId || "",
+            phone: selectedCustomer.phone || "",
+          }}
           onClose={() => setShowWalkinModal(false)}
-          onSave={(d) => { setWalkinDetails(d); setShowWalkinModal(false); }}
+          onSave={(d) => {
+            if (selectedCustomer.isWalkin === 1) {
+              setWalkinDetails({ name: d.name, taxId: d.taxId, phone: d.phone });
+            }
+            setShowWalkinModal(false);
+          }}
         />
       )}
     </div>
