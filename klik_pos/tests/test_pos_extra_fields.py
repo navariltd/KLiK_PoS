@@ -52,6 +52,13 @@ class TestEligibleCommonFields(FrappeTestCase):
             out = _eligible_common_fields()
         self.assertEqual(out, [])
 
+    def test_excludes_when_hidden_or_readonly_on_si_side(self):
+        so = [_f("a", "Data"), _f("b", "Data")]
+        si = [_f("a", "Data", hidden=1), _f("b", "Data", read_only=1)]
+        with patch("frappe.get_meta", side_effect=self._meta(so, si)):
+            out = _eligible_common_fields()
+        self.assertEqual(out, [])
+
     def test_keeps_po_no_as_data_field(self):
         so = [_f("po_no", "Data", label="Customer's Purchase Order")]
         si = [_f("po_no", "Data", label="Customer's Purchase Order")]

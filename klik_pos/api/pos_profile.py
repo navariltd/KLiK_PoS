@@ -32,7 +32,8 @@ def _eligible_common_fields():
             continue
         if fieldname in EXTRA_FIELD_EXCLUDE:
             continue
-        if getattr(sf, "hidden", 0) or getattr(sf, "read_only", 0):
+        if getattr(sf, "hidden", 0) or getattr(sf, "read_only", 0) \
+                or getattr(tf, "hidden", 0) or getattr(tf, "read_only", 0):
             continue
         out.append({
             "fieldname": fieldname,
