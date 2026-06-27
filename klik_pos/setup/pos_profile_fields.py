@@ -82,7 +82,7 @@ def install_pos_extra_fields_child():
                 "label": "POS Extra Fields",
                 "fieldtype": "Table",
                 "options": "POS Extra Field",
-                "insert_after": "allow_warehouse_change",
+                "insert_after": "allow_price_list_switching",
                 "description": "Extra SO/SI common fields to capture in the POS Additional Info dialog.",
                 "module": "KLiK PoS",
             }]
