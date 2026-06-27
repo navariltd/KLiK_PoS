@@ -44,9 +44,63 @@ def install_pos_profile_feature_fields():
     return [f["fieldname"] for f in missing]
 
 
+def install_pos_extra_fields_child():
+    """Create the `POS Extra Field` child doctype and the `custom_pos_extra_fields`
+    Table custom field on POS Profile. Idempotent and safe on every migrate."""
+    if not frappe.db.exists("DocType", "POS Extra Field"):
+        child = frappe.new_doc("DocType")
+        child.update({
+            "name": "POS Extra Field",
+            "module": "KLiK PoS",
+            "custom": 1,
+            "istable": 1,
+            "fields": [
+                {
+                    "fieldname": "so_si_commonfield",
+                    "label": "SO/SI Common Field",
+                    "fieldtype": "Select",
+                    "description": "Common field in Sales Order / Sales Invoice",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                },
+                {
+                    "fieldname": "reqd",
+                    "label": "Required",
+                    "fieldtype": "Check",
+                    "in_list_view": 1,
+                    "default": "0",
+                },
+            ],
+            "permissions": [],
+        })
+        child.insert(ignore_permissions=True)
+
+    if not frappe.db.exists("Custom Field", {"dt": "POS Profile", "fieldname": "custom_pos_extra_fields"}):
+        create_custom_fields({
+            "POS Profile": [{
+                "fieldname": "custom_pos_extra_fields",
+                "label": "POS Extra Fields",
+                "fieldtype": "Table",
+                "options": "POS Extra Field",
+                "insert_after": "allow_warehouse_change",
+                "description": "Extra SO/SI common fields to capture in the POS Additional Info dialog.",
+                "module": "KLiK PoS",
+            }]
+        }, update=True)
+
+
+def ensure_pos_extra_fields_child():
+    """Hook-safe wrapper. Never abort migrate on failure."""
+    try:
+        install_pos_extra_fields_child()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "klik_pos: POS Extra Field child install failed")
+
+
 def ensure_pos_profile_feature_fields():
     """Hook entrypoint for after_migrate / after_install. Never abort on failure."""
     try:
         install_pos_profile_feature_fields()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "klik_pos: POS Profile feature-field install failed")
+    ensure_pos_extra_fields_child()

@@ -40,3 +40,22 @@ class TestPosProfileFeatureFields(FrappeTestCase):
         result = install_pos_profile_feature_fields()
         self.assertEqual(result, [])
         mock_create.assert_not_called()
+
+
+class TestPosExtraFieldsChild(FrappeTestCase):
+    def test_child_doctype_and_table_field_exist_after_install(self):
+        from klik_pos.setup.pos_profile_fields import install_pos_extra_fields_child
+        import frappe
+
+        install_pos_extra_fields_child()
+        self.assertTrue(frappe.db.exists("DocType", "POS Extra Field"))
+        # Table fields don't create a physical column; verify the Custom Field record exists
+        self.assertTrue(
+            frappe.db.exists("Custom Field", {"dt": "POS Profile", "fieldname": "custom_pos_extra_fields"})
+        )
+
+    def test_install_is_idempotent(self):
+        from klik_pos.setup.pos_profile_fields import install_pos_extra_fields_child
+        # second call must not raise
+        install_pos_extra_fields_child()
+        install_pos_extra_fields_child()
