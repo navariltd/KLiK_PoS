@@ -990,6 +990,7 @@ def validate_checkout_invoice(data):
 			loyalty_redemption=loyalty_redemption,
 			walkin_name=data.get("walkin_name"),
 			walkin_phone=data.get("walkin_phone"),
+			extra_fields=_parse_extra_fields(data),
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1190,6 +1191,9 @@ def queue_sales_invoice(data):
 			loyalty_redemption,
 		) = parse_invoice_data(data)
 
+		from klik_pos.api.pos_profile import validate_required_extra_fields
+		validate_required_extra_fields(_parse_extra_fields(data))
+
 		if not customer:
 			frappe.throw("Customer is required")
 		if not items or len(items) == 0:
@@ -1215,6 +1219,7 @@ def queue_sales_invoice(data):
 			loyalty_redemption=loyalty_redemption,
 			walkin_name=data.get("walkin_name"),
 			walkin_phone=data.get("walkin_phone"),
+			extra_fields=_parse_extra_fields(data),
 		)
 
 		validate_required_salesperson(doc)
@@ -1423,6 +1428,7 @@ def create_draft_invoice(data):
 
 		walkin_name = data.get("walkin_name")
 		walkin_phone = data.get("walkin_phone")
+		extra_fields = _parse_extra_fields(data)
 
 		if target_draft_invoice_id:
 			doc = frappe.get_doc("Sales Invoice", target_draft_invoice_id)
@@ -1453,6 +1459,7 @@ def create_draft_invoice(data):
 				loyalty_redemption=loyalty_redemption,
 				walkin_name=walkin_name,
 				walkin_phone=walkin_phone,
+				extra_fields=extra_fields,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1475,6 +1482,7 @@ def create_draft_invoice(data):
 				loyalty_redemption=loyalty_redemption,
 				walkin_name=walkin_name,
 				walkin_phone=walkin_phone,
+				extra_fields=extra_fields,
 			)
 
 			validate_required_salesperson(doc)
@@ -1764,6 +1772,7 @@ def build_sales_invoice_doc(
 	loyalty_redemption=None,
 	walkin_name=None,
 	walkin_phone=None,
+	extra_fields=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1783,6 +1792,7 @@ def build_sales_invoice_doc(
 
 	# Set walk-in buyer name/phone (guarded; fields are optional/button-installed)
 	_apply_walkin_party_fields(doc, walkin_name=walkin_name, walkin_phone=walkin_phone)
+	_apply_extra_fields(doc, extra_fields)
 
 	# Set salesperson in sales team
 	if salesperson:
@@ -1865,6 +1875,7 @@ def _update_existing_draft_invoice(
 	loyalty_redemption=None,
 	walkin_name=None,
 	walkin_phone=None,
+	extra_fields=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -1887,6 +1898,7 @@ def _update_existing_draft_invoice(
 		loyalty_redemption=loyalty_redemption,
 		walkin_name=walkin_name,
 		walkin_phone=walkin_phone,
+		extra_fields=extra_fields,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -1900,6 +1912,9 @@ def _update_existing_draft_invoice(
 		walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
 		walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
 	)
+	for _fn in (extra_fields or {}):
+		if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
+			invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company
 	invoice_doc.currency = rebuilt_doc.currency
@@ -4115,6 +4130,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				loyalty_redemption=loyalty_redemption,
 				walkin_name=data.get("walkin_name"),
 				walkin_phone=data.get("walkin_phone"),
+				extra_fields=_parse_extra_fields(data),
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -4123,11 +4139,15 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
+			_ef = _parse_extra_fields(data)
 			_apply_walkin_party_fields(
 				invoice_doc,
 				walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
 				walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
 			)
+			for _fn in (_ef or {}):
+				if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
+					invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile
 			invoice_doc.company = rebuilt_doc.company
 			invoice_doc.currency = rebuilt_doc.currency
