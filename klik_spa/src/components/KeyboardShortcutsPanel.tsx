@@ -34,6 +34,7 @@ const GROUPS: ShortcutGroup[] = [
     label: "Order",
     shortcuts: [
       { keys: ["F2"], description: "Open customer dropdown" },
+      { keys: ["F4"], description: "Open Additional Info" },
       { keys: ["F10"], description: "Checkout / submit payment" },
       { keys: ["Shift", "F10"], description: "Hold order" },
     ],
