@@ -196,7 +196,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const { salesTaxCharges, defaultTax, isLoading: salesTaxLoading } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
-  const { clearCart, walkinDetails, setWalkinDetails } = useCartStore();
+  const { clearCart, walkinDetails, setWalkinDetails, extraFields } = useCartStore();
   const posProfileName = typeof posDetails?.name === "string" ? posDetails.name : "";
   const posCompanyName =
     typeof posDetails?.company === "string"
@@ -642,6 +642,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       tax_id: walkinDetails.taxId || null,
       walkin_name: walkinDetails.name || null,
       walkin_phone: walkinDetails.phone || null,
+      extra_fields: extraFields,
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -1434,6 +1435,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         tax_id: walkinDetails.taxId || null,
         walkin_name: walkinDetails.name || null,
         walkin_phone: walkinDetails.phone || null,
+        extra_fields: extraFields,
         loyalty: appliedLoyalty
           ? {
               loyalty_program: appliedLoyalty.loyalty_program,
