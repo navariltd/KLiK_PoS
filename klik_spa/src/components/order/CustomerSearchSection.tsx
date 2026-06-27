@@ -23,6 +23,7 @@ import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { useProductStore } from "../../stores/productStore";
 import { useCartStore } from "../../stores/cartStore";
 import WalkinInfoModal from "./WalkinInfoModal";
+import { useExtraFields } from "../../hooks/useExtraFields";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import AddCustomerModal from "../customer/AddCustomerModal";
@@ -76,6 +77,9 @@ export const CustomerSearchSection = ({
   const refreshCartPricing = useCartStore((state) => state.refreshCartPricing);
   const walkinDetails = useCartStore((state) => state.walkinDetails);
   const setWalkinDetails = useCartStore((state) => state.setWalkinDetails);
+  const extraFields = useCartStore((state) => state.extraFields);
+  const setExtraFields = useCartStore((state) => state.setExtraFields);
+  const { fields: extraFieldDefs } = useExtraFields();
   const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [priceLists, setPriceLists] = useState<SellingPriceList[]>([]);
   const [isLoadingPriceLists, setIsLoadingPriceLists] = useState(false);
@@ -178,6 +182,20 @@ export const CustomerSearchSection = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F4") return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (!selectedCustomer) return;
+      e.preventDefault();
+      setShowWalkinModal(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCustomer]);
 
   useEffect(() => {
     if (isOpen && inputRef.current && !isSelectingRef.current) {
@@ -634,6 +652,13 @@ export const CustomerSearchSection = ({
                         <span className="font-mono">PIN: {walkinDetails.taxId}</span>
                       </div>
                     )}
+                    {extraFieldDefs
+                      .filter((f) => (extraFields[f.fieldname] || "").toString().trim())
+                      .map((f) => (
+                        <div key={f.fieldname} className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-mono">{f.label}: {extraFields[f.fieldname]}</span>
+                        </div>
+                      ))}
                   </div>
                 </div>
               </div>
@@ -736,11 +761,13 @@ export const CustomerSearchSection = ({
             taxId: selectedCustomer.taxId || "",
             phone: selectedCustomer.phone || "",
           }}
+          extraFields={extraFields}
           onClose={() => setShowWalkinModal(false)}
           onSave={(d) => {
             if (selectedCustomer.isWalkin === 1) {
               setWalkinDetails({ name: d.name, taxId: d.taxId, phone: d.phone });
             }
+            setExtraFields(d.extraFields);
             setShowWalkinModal(false);
           }}
         />
