@@ -14,6 +14,27 @@ EXTRA_FIELD_EXCLUDE = {
 }
 
 
+def get_required_extra_fieldnames(pos_profile=None):
+    """Fieldnames marked Required on the active POS Profile's extra-field table."""
+    if pos_profile is None:
+        pos_profile = get_current_pos_profile()
+    rows = getattr(pos_profile, "custom_pos_extra_fields", None) or []
+    return [r.so_si_commonfield for r in rows if getattr(r, "reqd", 0) and r.so_si_commonfield]
+
+
+def validate_required_extra_fields(extra_fields, pos_profile=None):
+    """Raise if any Required configured extra field has no value."""
+    extra_fields = extra_fields or {}
+    missing = [
+        fn for fn in get_required_extra_fieldnames(pos_profile)
+        if extra_fields.get(fn) in (None, "")
+    ]
+    if missing:
+        frappe.throw(
+            _("Please fill required field(s): {0}").format(", ".join(missing))
+        )
+
+
 def _eligible_common_fields():
     """SO∩SI fields eligible for POS Profile extra-field config.
 

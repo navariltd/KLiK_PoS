@@ -114,3 +114,26 @@ class TestParseExtraFields(FrappeTestCase):
     def test_missing_returns_empty(self):
         self.assertEqual(_parse_extra_fields({}), {})
         self.assertEqual(_parse_extra_fields("not-a-dict"), {})
+
+
+import frappe
+
+from klik_pos.api.pos_profile import validate_required_extra_fields
+
+
+class TestRequiredExtraFields(FrappeTestCase):
+    def _profile(self, rows):
+        return NS(custom_pos_extra_fields=[NS(so_si_commonfield=f, reqd=r) for f, r in rows])
+
+    def test_passes_when_required_present(self):
+        prof = self._profile([("delivery_method", 1)])
+        validate_required_extra_fields({"delivery_method": "Courier"}, pos_profile=prof)  # no raise
+
+    def test_raises_when_required_missing(self):
+        prof = self._profile([("delivery_method", 1)])
+        with self.assertRaises(frappe.ValidationError):
+            validate_required_extra_fields({}, pos_profile=prof)
+
+    def test_ignores_optional_missing(self):
+        prof = self._profile([("territory", 0)])
+        validate_required_extra_fields({}, pos_profile=prof)  # no raise
