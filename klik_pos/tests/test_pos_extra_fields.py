@@ -65,3 +65,52 @@ class TestEligibleCommonFields(FrappeTestCase):
         with patch("frappe.get_meta", side_effect=self._meta(so, si)):
             out = _eligible_common_fields()
         self.assertEqual([f["fieldname"] for f in out], ["po_no"])
+
+
+from types import SimpleNamespace as NS
+
+from klik_pos.api.sales_invoice import _apply_extra_fields, _parse_extra_fields
+
+
+class _FakeDoc:
+    def __init__(self, fields):
+        self._fields = set(fields)
+        self._set = {}
+        self.meta = NS(has_field=lambda fn: fn in self._fields)
+
+    def set(self, fieldname, value):
+        self._set[fieldname] = value
+
+
+class TestApplyExtraFields(FrappeTestCase):
+    def test_sets_existing_nonempty_fields(self):
+        doc = _FakeDoc({"territory", "po_no"})
+        _apply_extra_fields(doc, {"territory": "Default", "po_no": "PO-1"})
+        self.assertEqual(doc._set, {"territory": "Default", "po_no": "PO-1"})
+
+    def test_skips_missing_field(self):
+        doc = _FakeDoc({"territory"})
+        _apply_extra_fields(doc, {"nope": "x"})
+        self.assertEqual(doc._set, {})
+
+    def test_skips_empty_values(self):
+        doc = _FakeDoc({"territory", "po_no"})
+        _apply_extra_fields(doc, {"territory": "", "po_no": None})
+        self.assertEqual(doc._set, {})
+
+    def test_tolerates_none(self):
+        doc = _FakeDoc({"territory"})
+        _apply_extra_fields(doc, None)
+        self.assertEqual(doc._set, {})
+
+
+class TestParseExtraFields(FrappeTestCase):
+    def test_parses_dict(self):
+        self.assertEqual(_parse_extra_fields({"extra_fields": {"a": "1"}}), {"a": "1"})
+
+    def test_parses_json_string(self):
+        self.assertEqual(_parse_extra_fields({"extra_fields": '{"a": "1"}'}), {"a": "1"})
+
+    def test_missing_returns_empty(self):
+        self.assertEqual(_parse_extra_fields({}), {})
+        self.assertEqual(_parse_extra_fields("not-a-dict"), {})

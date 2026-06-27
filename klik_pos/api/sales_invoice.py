@@ -61,6 +61,31 @@ def _apply_walkin_party_fields(doc, walkin_name=None, walkin_phone=None):
 		doc.custom_walkin_phone = walkin_phone
 
 
+def _parse_extra_fields(data):
+	"""Extract the generic POS extra-fields map from a request payload."""
+	if not isinstance(data, dict):
+		return {}
+	raw = data.get("extra_fields")
+	if isinstance(raw, str):
+		try:
+			raw = json.loads(raw)
+		except Exception:
+			raw = {}
+	return raw if isinstance(raw, dict) else {}
+
+
+def _apply_extra_fields(doc, extra_fields):
+	"""Set each configured POS extra field on the document, guarded.
+
+	Only sets fields that exist on the doctype (``has_field``) and have a
+	non-empty value, so a stray/removed fieldname is silently skipped.
+	"""
+	for fieldname, value in (extra_fields or {}).items():
+		if value in (None, "") or not doc.meta.has_field(fieldname):
+			continue
+		doc.set(fieldname, value)
+
+
 def validate_required_salesperson(doc):
 	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
 	if not doc or not getattr(doc, "is_pos", 0):
