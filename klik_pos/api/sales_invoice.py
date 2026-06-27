@@ -4109,6 +4109,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				loyalty_redemption,
 			) = parse_invoice_data(data)
 
+			_ef = _parse_extra_fields(data)
 			rebuilt_doc = build_sales_invoice_doc(
 				customer,
 				items,
@@ -4130,7 +4131,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				loyalty_redemption=loyalty_redemption,
 				walkin_name=data.get("walkin_name"),
 				walkin_phone=data.get("walkin_phone"),
-				extra_fields=_parse_extra_fields(data),
+				extra_fields=_ef,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -4139,7 +4140,6 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
-			_ef = _parse_extra_fields(data)
 			_apply_walkin_party_fields(
 				invoice_doc,
 				walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
