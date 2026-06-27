@@ -116,6 +116,7 @@ interface CartState {
   appliedCoupons: GiftCoupon[]
   selectedCustomer: Customer | null
   walkinDetails: WalkinDetails
+  extraFields: Record<string, string>
   selectedPriceList: string | null
   isPricingLoading: boolean
   pricingError: string | null
@@ -131,6 +132,8 @@ interface CartState {
   setSelectedCustomer: (customer: Customer | null) => Promise<void>
   setWalkinDetails: (details: Partial<WalkinDetails>) => void
   clearWalkinDetails: () => void
+  setExtraFields: (v: Record<string, string>) => void
+  clearExtraFields: () => void
   setSelectedPriceList: (priceList: string | null) => Promise<void>
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
@@ -148,6 +151,7 @@ export const useCartStore = create<CartState>()(
       appliedCoupons: [],
       selectedCustomer: null,
       walkinDetails: { name: '', taxId: '', phone: '' },
+      extraFields: {},
       selectedPriceList: null,
       isPricingLoading: false,
       pricingError: null,
@@ -417,6 +421,7 @@ export const useCartStore = create<CartState>()(
           appliedCoupons: [],
           selectedCustomer: null,
           walkinDetails: { ...EMPTY_WALKIN },
+          extraFields: {},
           selectedPriceList: null,
         }));
       },
@@ -448,6 +453,8 @@ export const useCartStore = create<CartState>()(
       setWalkinDetails: (details) =>
         set((s) => ({ walkinDetails: { ...s.walkinDetails, ...details } })),
       clearWalkinDetails: () => set({ walkinDetails: { ...EMPTY_WALKIN } }),
+      setExtraFields: (v) => set({ extraFields: v }),
+      clearExtraFields: () => set({ extraFields: {} }),
 
       setSelectedPriceList: async (priceList) => {
         set({ selectedPriceList: priceList });
