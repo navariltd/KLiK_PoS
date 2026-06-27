@@ -4,6 +4,51 @@ from frappe import _
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
+EXTRA_FIELD_WHITELIST = {"Select", "Link", "Data", "Small Text", "Int", "Float", "Check", "Date"}
+
+# Standard Frappe/transaction fields that pass the type whitelist but must never be
+# offered for cashier entry.
+EXTRA_FIELD_EXCLUDE = {
+    "name", "owner", "docstatus", "idx", "naming_series", "amended_from",
+    "title", "status", "company", "customer", "po_date",
+}
+
+
+def _eligible_common_fields():
+    """SO∩SI fields eligible for POS Profile extra-field config.
+
+    Intersect Sales Order and Sales Invoice fields by fieldname AND fieldtype,
+    keep only safe whitelisted types, and drop hidden/read-only/system fields.
+    """
+    so = {f.fieldname: f for f in frappe.get_meta("Sales Order").fields}
+    si = {f.fieldname: f for f in frappe.get_meta("Sales Invoice").fields}
+
+    out = []
+    for fieldname, sf in so.items():
+        tf = si.get(fieldname)
+        if tf is None or tf.fieldtype != sf.fieldtype:
+            continue
+        if sf.fieldtype not in EXTRA_FIELD_WHITELIST:
+            continue
+        if fieldname in EXTRA_FIELD_EXCLUDE:
+            continue
+        if getattr(sf, "hidden", 0) or getattr(sf, "read_only", 0):
+            continue
+        out.append({
+            "fieldname": fieldname,
+            "label": sf.label or fieldname,
+            "fieldtype": sf.fieldtype,
+            "options": sf.options or "",
+        })
+    out.sort(key=lambda f: f["label"].lower())
+    return out
+
+
+@frappe.whitelist()
+def get_pos_extra_field_candidates():
+    """Whitelisted: eligible SO∩SI common fields for the POS Profile picker + SPA."""
+    return _eligible_common_fields()
+
 
 @frappe.whitelist()
 def get_pos_profiles_for_user():
