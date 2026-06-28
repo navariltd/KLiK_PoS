@@ -6,6 +6,7 @@ export interface ResolvedExtraField {
   label: string;
   fieldtype: string;
   options: string[];
+  linkDoctype: string;
   reqd: boolean;
 }
 
@@ -40,6 +41,7 @@ export function useExtraFields(): { fields: ResolvedExtraField[] } {
         label: c.label,
         fieldtype: c.fieldtype,
         options: c.fieldtype === "Select" ? (c.options || "").split("\n").filter(Boolean) : [],
+        linkDoctype: c.fieldtype === "Link" ? (c.options || "") : "",
         reqd: !!row.reqd,
       } as ResolvedExtraField;
     })

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { WalkinDetails } from "../../stores/cartStore";
 import { useExtraFields } from "../../hooks/useExtraFields";
+import { AutoComplete } from "../ui/AutoComplete";
 
 interface Props {
   isWalkin: boolean;
@@ -40,6 +41,25 @@ export default function WalkinInfoModal({ isWalkin, initial, masterDisplay, extr
     if (f.fieldtype === "Check") {
       return (
         <input type="checkbox" checked={val === "1"} onChange={(e) => setField(f.fieldname, e.target.checked ? "1" : "0")} />
+      );
+    }
+    if (f.fieldtype === "Link") {
+      return (
+        <AutoComplete
+          options={val ? [{ value: val, label: val }] : []}
+          value={val}
+          placeholder={`Search ${f.linkDoctype}...`}
+          onSearch={async (term) => {
+            const params = new URLSearchParams({ doctype: f.linkDoctype, txt: term });
+            const res = await fetch(
+              `/api/method/klik_pos.api.pos_profile.search_extra_field_link?${params.toString()}`,
+              { credentials: "include" },
+            );
+            const d = await res.json();
+            return (d?.message || []) as { value: string; label: string }[];
+          }}
+          onChange={(v) => setField(f.fieldname, v)}
+        />
       );
     }
     const inputType = f.fieldtype === "Int" || f.fieldtype === "Float" ? "number"

@@ -1523,11 +1523,20 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       if (e.key === 'F10' && !e.shiftKey) {
         e.preventDefault();
         if (!isActionButtonDisabled()) handleCompletePayment();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        // Completed screen: ESC does the default "Start New Order" action.
+        // Payment-entry screen: ESC closes the dialog.
+        if (invoiceSubmitted) {
+          void finalizeCompletedOrderState(() => onClose(true));
+        } else {
+          onClose(false);
+        }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, isActionButtonDisabled, handleCompletePayment]);
+  }, [isOpen, isActionButtonDisabled, handleCompletePayment, invoiceSubmitted, finalizeCompletedOrderState, onClose]);
 
   const buildOrderText = () => {
     const lines: string[] = [];
