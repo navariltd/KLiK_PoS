@@ -47,8 +47,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# superpowers planning artifacts (local only)
+# superpowers planning artifacts/docs (local only)
 artifacts/
+docs/superpowers/
 
 # AI tooling local state (do not commit)
 .superpowers/
