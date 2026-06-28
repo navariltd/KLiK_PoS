@@ -75,6 +75,19 @@ def install_pos_extra_fields_child():
         })
         child.insert(ignore_permissions=True)
 
+    # Column break so the extra-fields table sits in its own column (more width),
+    # within the same section as the price-list / warehouse toggles.
+    if not frappe.db.exists("Custom Field", {"dt": "POS Profile", "fieldname": "custom_pos_extra_fields_cb"}):
+        create_custom_fields({
+            "POS Profile": [{
+                "fieldname": "custom_pos_extra_fields_cb",
+                "label": "",
+                "fieldtype": "Column Break",
+                "insert_after": "allow_warehouse_change",
+                "module": "KLiK PoS",
+            }]
+        }, update=True)
+
     if not frappe.db.exists("Custom Field", {"dt": "POS Profile", "fieldname": "custom_pos_extra_fields"}):
         create_custom_fields({
             "POS Profile": [{
@@ -82,7 +95,7 @@ def install_pos_extra_fields_child():
                 "label": "POS Extra Fields",
                 "fieldtype": "Table",
                 "options": "POS Extra Field",
-                "insert_after": "allow_price_list_switching",
+                "insert_after": "custom_pos_extra_fields_cb",
                 "description": "Extra SO/SI common fields to capture in the POS Additional Info dialog.",
                 "module": "KLiK PoS",
             }]
