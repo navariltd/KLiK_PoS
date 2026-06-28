@@ -150,6 +150,7 @@ export const CartItemRow = ({
   const warehouse = posDetails?.warehouse || "";
   const restrictCostVisibility = posDetails?.restrict_cost_visibility_in_tooltip ?? true;
   const allowPriceListSwitching = !!posDetails?.allow_price_list_switching;
+  const quickSwitchPrice = !!posDetails?.custom_quick_switch_price;
 
   const fetchFullItemDetails = useCallback(async () => {
     if (!warehouse) return;
@@ -170,10 +171,10 @@ export const CartItemRow = ({
   }, [item.item_code, item.id, warehouse]);
 
   useEffect(() => {
-    if (isExpanded && warehouse) {
+    if ((isExpanded || quickSwitchPrice) && warehouse) {
       fetchFullItemDetails();
     }
-  }, [isExpanded, warehouse, fetchFullItemDetails]);
+  }, [isExpanded, quickSwitchPrice, warehouse, fetchFullItemDetails]);
 
   const saveToCart = useCallback((entries: BundleEntry[]) => {
     const validEntries = entries.map(({ selected, ...e }) => e);
@@ -524,6 +525,35 @@ export const CartItemRow = ({
               )}
             </div>
           </div>
+
+          {/* Quick Switch Price: per-line price-list pills */}
+          {quickSwitchPrice && fullItemData?.price_lists?.length ? (
+            <div className="flex items-center gap-1 mt-1.5 pl-4 overflow-x-auto no-scrollbar">
+              {fullItemData.price_lists
+                .filter((priceList) => !priceList.uom || priceList.uom === item.uom)
+                .map((priceList) => {
+                  const active = itemDiscount.selectedPriceList === priceList.price_list;
+                  const shortName =
+                    priceList.price_list.length > 8
+                      ? priceList.price_list.slice(0, 8)
+                      : priceList.price_list;
+                  return (
+                    <button
+                      key={`${priceList.price_list}-${priceList.uom || ""}-${priceList.rate}`}
+                      onClick={(e) => { e.stopPropagation(); handleLinePriceListChange(priceList.price_list); }}
+                      title={`${priceList.price_list}: ${formatCurrencyWithSymbol(Number(priceList.rate || 0), currency_symbol)}`}
+                      className={`flex-shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        active
+                          ? "border-beveren-500 bg-beveren-50 text-beveren-700 dark:bg-beveren-900/30 dark:text-beveren-300"
+                          : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-beveren-300"
+                      }`}
+                    >
+                      <span className="font-mono">{shortName} {formatCurrencyWithSymbol(Number(priceList.rate || 0), currency_symbol)}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          ) : null}
         </div>
 
         {isExpanded ? (

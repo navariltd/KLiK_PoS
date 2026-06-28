@@ -46,6 +46,7 @@ export interface POSProfile {
   is_tax_included_in_basic_rate?: boolean | number | string;
   warehouse?: string;
   allow_warehouse_change?: boolean | number;
+  custom_quick_switch_price?: boolean | number;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;
   [key: string]: unknown;
