@@ -85,6 +85,48 @@ def get_pos_extra_field_candidates():
 
 
 @frappe.whitelist()
+def search_extra_field_link(doctype, txt="", page_length=10):
+    """Typeahead search for a Link extra-field's target doctype.
+
+    Security: only doctypes that are the target of an eligible Link extra-field
+    are searchable, preventing arbitrary doctype enumeration through this
+    whitelisted endpoint.
+    """
+    allowed = {
+        f["options"]
+        for f in _eligible_common_fields()
+        if f["fieldtype"] == "Link" and f.get("options")
+    }
+    if doctype not in allowed:
+        frappe.throw(_("Doctype {0} is not searchable here.").format(doctype))
+
+    page_length = min(int(page_length or 10), 50)
+    meta = frappe.get_meta(doctype)
+    has_title = bool(meta.title_field) and meta.title_field != "name"
+
+    or_filters = None
+    if txt:
+        or_filters = [["name", "like", f"%{txt}%"]]
+        if has_title:
+            or_filters.append([meta.title_field, "like", f"%{txt}%"])
+
+    fields = ["name"] + ([meta.title_field] if has_title else [])
+    rows = frappe.get_list(
+        doctype,
+        or_filters=or_filters,
+        fields=fields,
+        limit=page_length,
+        order_by="modified desc",
+    )
+
+    out = []
+    for r in rows:
+        title = r.get(meta.title_field) if has_title else None
+        out.append({"value": r["name"], "label": title or r["name"]})
+    return out
+
+
+@frappe.whitelist()
 def get_pos_profiles_for_user():
     """
     Return a list of POS Profiles assigned to the current user.

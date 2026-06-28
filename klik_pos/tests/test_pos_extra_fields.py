@@ -150,3 +150,38 @@ class TestRequiredExtraFields(FrappeTestCase):
             from klik_pos.api.pos_profile import get_configured_extra_fieldnames
             out = get_configured_extra_fieldnames(pos_profile=prof)
         self.assertEqual(out, {"territory"})
+
+
+class TestSearchExtraFieldLink(FrappeTestCase):
+    _LINK_CANDIDATES = [
+        {"fieldname": "contact_person", "fieldtype": "Link", "options": "Contact", "label": "Contact Person"},
+        {"fieldname": "territory", "fieldtype": "Link", "options": "Territory", "label": "Territory"},
+        {"fieldname": "delivery_method", "fieldtype": "Select", "options": "A\nB", "label": "Delivery"},
+    ]
+
+    def test_rejects_non_eligible_doctype(self):
+        from unittest.mock import patch as _patch
+        from klik_pos.api.pos_profile import search_extra_field_link
+        with _patch("klik_pos.api.pos_profile._eligible_common_fields", return_value=self._LINK_CANDIDATES):
+            with self.assertRaises(frappe.ValidationError):
+                search_extra_field_link("User", txt="x")  # User is not an eligible Link target
+
+    def test_rejects_select_option_value_as_doctype(self):
+        from unittest.mock import patch as _patch
+        from klik_pos.api.pos_profile import search_extra_field_link
+        with _patch("klik_pos.api.pos_profile._eligible_common_fields", return_value=self._LINK_CANDIDATES):
+            with self.assertRaises(frappe.ValidationError):
+                search_extra_field_link("A", txt="x")  # a Select option, not a Link target
+
+    def test_accepts_eligible_link_target_and_maps_rows(self):
+        from unittest.mock import patch as _patch
+        from klik_pos.api.pos_profile import search_extra_field_link
+        fake_meta = NS(title_field="")
+        with _patch("klik_pos.api.pos_profile._eligible_common_fields", return_value=self._LINK_CANDIDATES), \
+             _patch("frappe.get_meta", return_value=fake_meta), \
+             _patch("frappe.get_list", return_value=[{"name": "CONT-001"}, {"name": "CONT-002"}]):
+            out = search_extra_field_link("Contact", txt="co")
+        self.assertEqual(out, [
+            {"value": "CONT-001", "label": "CONT-001"},
+            {"value": "CONT-002", "label": "CONT-002"},
+        ])
