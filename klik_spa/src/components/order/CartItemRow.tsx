@@ -110,11 +110,15 @@ export const CartItemRow = ({
   const [glowing, setGlowing] = useState(false);
 
   useEffect(() => {
-    if (highlightItemId && highlightItemId === item.id) {
-      setGlowing(true);
-      const t = setTimeout(() => setGlowing(false), 1200);
-      return () => clearTimeout(t);
+    if (highlightItemId !== item.id) {
+      // Highlight moved to another item (or cleared) — make sure this row
+      // never stays stuck glowing, even on rapid successive clicks.
+      setGlowing(false);
+      return;
     }
+    setGlowing(true);
+    const t = setTimeout(() => setGlowing(false), 1200);
+    return () => clearTimeout(t);
   }, [highlightItemId, highlightNonce, item.id]);
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [isBundleDetailsOpen, setIsBundleDetailsOpen] = useState(false);
