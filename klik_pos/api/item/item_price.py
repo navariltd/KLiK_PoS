@@ -512,3 +512,48 @@ def get_price_list_with_customer_priority(customer=None):
             "Error getting price list with customer priority",
         )
         return None
+
+
+@frappe.whitelist()
+def get_item_prices_across_price_lists(item_code, uom=None):
+    """Return the item's actual Item Price rate in each enabled selling price list.
+
+    Used by the Quick Switch Price cart pills. Only price lists that have a real
+    Item Price for this item are returned (no valuation/default fallback), so the
+    cashier only sees genuine price-list options to switch between.
+    """
+    from klik_pos.api.item.pricing import get_selling_price_lists
+
+    price_lists = get_selling_price_lists().get("price_lists", [])
+    out = []
+    for pl in price_lists:
+        name = pl["name"]
+        sql = """
+            SELECT price_list_rate, currency
+            FROM `tabItem Price`
+            WHERE item_code = %s AND selling = 1 AND price_list = %s
+        """
+        params = [item_code, name]
+        if uom:
+            sql += " AND uom = %s"
+            params.append(uom)
+        sql += " ORDER BY modified DESC LIMIT 1"
+        rows = frappe.db.sql(apply_sql_permissions(sql), tuple(params), as_dict=True)
+
+        if not rows and uom:
+            # Item may be priced only in its stock UOM — retry without the UOM filter.
+            sql2 = """
+                SELECT price_list_rate, currency
+                FROM `tabItem Price`
+                WHERE item_code = %s AND selling = 1 AND price_list = %s
+                ORDER BY modified DESC LIMIT 1
+            """
+            rows = frappe.db.sql(apply_sql_permissions(sql2), (item_code, name), as_dict=True)
+
+        if rows:
+            out.append({
+                "price_list": name,
+                "rate": flt(rows[0]["price_list_rate"]),
+                "currency": rows[0].get("currency") or pl.get("currency"),
+            })
+    return out
