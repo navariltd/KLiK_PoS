@@ -548,7 +548,7 @@ export const CartItemRow = ({
                           : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-beveren-300"
                       }`}
                     >
-                      <span className="font-mono">{shortName} {formatCurrencyWithSymbol(Number(priceList.rate || 0), currency_symbol)}</span>
+                      <span className="font-mono">{shortName} {Number(priceList.rate || 0).toFixed(2)}</span>
                     </button>
                   );
                 })}
