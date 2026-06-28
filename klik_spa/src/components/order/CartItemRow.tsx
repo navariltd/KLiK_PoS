@@ -105,6 +105,17 @@ export const CartItemRow = ({
   autoFetchBatch = false,
 }: CartItemRowProps) => {
   const { updateItemBundleEntries } = useCartStore();
+  const highlightItemId = useCartStore((s) => s.highlightItemId);
+  const highlightNonce = useCartStore((s) => s.highlightNonce);
+  const [glowing, setGlowing] = useState(false);
+
+  useEffect(() => {
+    if (highlightItemId && highlightItemId === item.id) {
+      setGlowing(true);
+      const t = setTimeout(() => setGlowing(false), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [highlightItemId, highlightNonce, item.id]);
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [isBundleDetailsOpen, setIsBundleDetailsOpen] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -395,7 +406,7 @@ export const CartItemRow = ({
     <>
       <div
         data-cart-item-id={itemId}
-        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : "rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"}
+        className={`${isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : "rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"}${glowing ? " cart-item-glow" : ""}`}
       >
         <div
           className={isMobile ? "p-3" : "px-2 py-2 cursor-pointer"}
@@ -530,7 +541,7 @@ export const CartItemRow = ({
           {quickSwitchPrice && fullItemData?.price_lists?.length ? (
             <div className="flex items-center gap-1 mt-1.5 pl-4 overflow-x-auto no-scrollbar">
               {fullItemData.price_lists
-                .filter((priceList) => !priceList.uom || priceList.uom === item.uom)
+                .filter((priceList) => (!priceList.uom || priceList.uom === item.uom) && Number(priceList.rate || 0) > 0)
                 .map((priceList) => {
                   const active = itemDiscount.selectedPriceList === priceList.price_list;
                   const shortName =

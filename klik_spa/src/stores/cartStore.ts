@@ -117,6 +117,8 @@ interface CartState {
   selectedCustomer: Customer | null
   walkinDetails: WalkinDetails
   extraFields: Record<string, string>
+  highlightItemId: string | null
+  highlightNonce: number
   selectedPriceList: string | null
   isPricingLoading: boolean
   pricingError: string | null
@@ -144,6 +146,16 @@ const shouldInsertNewItemsAtTop = (): boolean => {
   return position === 'Top';
 };
 
+// Move the just-modified item to the configured insertion position (Top/Bottom)
+// so a quantity bump from the product list lands where new items appear.
+const reorderToInsertionPosition = (items: CartItem[], id: string): CartItem[] => {
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx === -1) return items;
+  const moved = items[idx];
+  const rest = [...items.slice(0, idx), ...items.slice(idx + 1)];
+  return shouldInsertNewItemsAtTop() ? [moved, ...rest] : [...rest, moved];
+};
+
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
@@ -152,6 +164,8 @@ export const useCartStore = create<CartState>()(
       selectedCustomer: null,
       walkinDetails: { name: '', taxId: '', phone: '' },
       extraFields: {},
+      highlightItemId: null,
+      highlightNonce: 0,
       selectedPriceList: null,
       isPricingLoading: false,
       pricingError: null,
@@ -259,8 +273,8 @@ export const useCartStore = create<CartState>()(
             existingItem.uom || item.uom,
           );
 
-          set((state) => ({
-            cartItems: state.cartItems.map((cartItem) =>
+          set((state) => {
+            const updated = state.cartItems.map((cartItem) =>
               cartItem.id === targetId
                 ? {
                     ...cartItem,
@@ -271,8 +285,13 @@ export const useCartStore = create<CartState>()(
                     total_tax_rate: taxDetails.total_tax_rate,
                   }
                 : cartItem
-            )
-          }));
+            );
+            return {
+              cartItems: reorderToInsertionPosition(updated, targetId),
+              highlightItemId: targetId,
+              highlightNonce: state.highlightNonce + 1,
+            };
+          });
         } else {
           const taxDetails = await fetchItemTaxDetails(
             incomingCode,
@@ -293,7 +312,11 @@ export const useCartStore = create<CartState>()(
           const newCartItems = shouldInsertNewItemsAtTop()
             ? [newItem, ...state.cartItems]
             : [...state.cartItems, newItem];
-          set({ cartItems: newCartItems });
+          set((s) => ({
+            cartItems: newCartItems,
+            highlightItemId: newItem.id,
+            highlightNonce: s.highlightNonce + 1,
+          }));
         }
 
         await get().refreshCartPricing();
@@ -330,8 +353,8 @@ export const useCartStore = create<CartState>()(
             existingItem.uom || item.uom,
           );
 
-          set((state) => ({
-            cartItems: state.cartItems.map((cartItem) =>
+          set((state) => {
+            const updated = state.cartItems.map((cartItem) =>
               cartItem.id === targetId
                 ? {
                     ...cartItem,
@@ -342,8 +365,13 @@ export const useCartStore = create<CartState>()(
                     total_tax_rate: taxDetails.total_tax_rate,
                   }
                 : cartItem
-            )
-          }));
+            );
+            return {
+              cartItems: reorderToInsertionPosition(updated, targetId),
+              highlightItemId: targetId,
+              highlightNonce: state.highlightNonce + 1,
+            };
+          });
         } else {
           const taxDetails = await fetchItemTaxDetails(
             incomingCode,
@@ -364,7 +392,11 @@ export const useCartStore = create<CartState>()(
           const newCartItems = shouldInsertNewItemsAtTop()
             ? [newItem, ...state.cartItems]
             : [...state.cartItems, newItem];
-          set({ cartItems: newCartItems });
+          set((s) => ({
+            cartItems: newCartItems,
+            highlightItemId: newItem.id,
+            highlightNonce: s.highlightNonce + 1,
+          }));
         }
 
         await get().refreshCartPricing();
