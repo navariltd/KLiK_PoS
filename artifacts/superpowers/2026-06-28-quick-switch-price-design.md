@@ -15,46 +15,38 @@ Cashiers want to see, per cart line, the item's rate across the available sellin
 
 ## Architecture
 
+> **Implementation note (reconciled):** Most of the needed infrastructure already
+> existed for the `allow_price_list_switching` per-line dropdown. The build reuses
+> it — **no new endpoint and no cart-store changes were required**, beyond the new
+> config checkbox and the pills UI.
+
 ### 1. Config
-Add `custom_quick_switch_price` (Check) to `klik_pos/klik_pos/custom/pos_profile.json` in the Item & Search Behaviors section. It flows to the SPA via `get_pos_details()` → `posDetails.custom_quick_switch_price`.
+Add `custom_quick_switch_price` (Check) to `klik_pos/klik_pos/custom/pos_profile.json` in the Item & Search Behaviors section. It flows to the SPA via `get_pos_details()` → `posDetails.custom_quick_switch_price` (also added to the `POSProfile` TS type).
 
-### 2. Endpoint — rates across price lists for an item
-New whitelisted function in `klik_pos/api/item/item_price.py`:
-```
-get_item_prices_across_price_lists(item_code, uom=None, customer=None) -> list[dict]
-```
-- Resolve the allowed selling price lists (same source as `get_selling_price_lists`).
-- For each, query the item's `price_list_rate` (reuse existing `fetch_item_price`/Item Price query logic, honoring UOM conversion as the current pricing does).
-- Return `[{price_list, rate, currency}]`, omitting price lists with no rate for the item.
-- Keep it per-item (cart is small); the SPA calls it per cart line lazily.
+### 2. Per-item rates — reuse existing data (no new endpoint)
+`CartItemRow` already fetches `get_full_pricing_and_batch_details`, whose response includes `price_lists: [{price_list, rate, uom}]` (the item's rate per price list). The pills consume `fullItemData.price_lists` directly. The fetch effect, previously gated on `isExpanded`, now also fires when `custom_quick_switch_price` is enabled so the data is present for the always-visible pills.
 
-### 3. Cart store
-The line already carries `price` and `original_price`. Add tracking of the active price list per line so the correct pill highlights:
-- Add `selectedPriceList?: string` to the cart item shape (per-line), set when a pill is clicked.
-- Add a store action `setItemRate(id: string, rate: number, priceList: string)` that updates the line's `price` (via the existing price-update path used by `updateUOM`) and records `selectedPriceList`, then triggers the existing pricing/tax recalculation.
+### 3. Reprice — reuse existing handler (no cart-store changes)
+Clicking a pill calls the existing `handleLinePriceListChange(price_list)`, which records `selectedPriceList` (via `onDiscountChange`) and applies the rate through the existing `onCustomRateChange(item, rate, false)` path. Highlight = `itemDiscount.selectedPriceList === price_list`.
 
 ### 4. Cart line UI (`CartItemRow`)
-When `posDetails.custom_quick_switch_price` is enabled:
-- On mount / item change, fetch `get_item_prices_across_price_lists(item_code, uom, customer)`.
-- Render a single horizontal row of compact pills beneath the line, one per returned price list:
-  - Label: `<name truncated to 8 chars> <rate>`.
-  - The pill whose `price_list` matches the line's active price list (or, before any click, the line's current effective list) is highlighted.
-  - Compact styling so ~5 pills fit one row; overflow scrolls horizontally (no wrap).
-- Click a pill → `setItemRate(item.id, rate, price_list)`.
+When `custom_quick_switch_price` is enabled and `fullItemData.price_lists` is non-empty, render a single horizontal row of compact pills beneath Row 2 (rate/qty/total):
+- Label: `<name truncated to 8 chars> <rate>` (rate via `formatCurrencyWithSymbol`); full name+rate in the `title` tooltip.
+- Pills filtered to the line's UOM (matching the existing dropdown).
+- The active price list's pill is highlighted (beveren styling).
+- Compact styling, `overflow-x-auto`, no wrap, so ~5 pills fit; click uses `stopPropagation` so it doesn't toggle row expansion.
 
 ### 5. Coexistence
-Independent of `allow_price_list_switching` (whole-cart switch). A pill click is a per-line override; existing discount/tax logic recalculates on the new base rate.
+Independent of `allow_price_list_switching` (whole-cart switch / expanded-row dropdown). A pill click is a per-line override; existing discount/tax logic recalculates on the new base rate.
 
 ## Testing
-- **Backend:** unit test `get_item_prices_across_price_lists` returns one entry per price list that has a rate, omits missing ones, respects UOM. (Mock Item Price lookups or seed test data.)
-- **Frontend:** `npm run build` gate (tsc unusable in this repo); manual — enable the setting, add an item, see pills, click one, confirm the line rate and totals update and the pill highlights.
+- **Frontend:** `npm run build` gate (tsc unusable in this repo); manual — enable the setting, add an item, see pills, click one, confirm the line rate and totals update and the pill highlights. Reprice path is the already-exercised `handleLinePriceListChange`/`onCustomRateChange`.
+- **Backend:** none added — reuses the existing `get_full_pricing_and_batch_details` data, already covered by the price-list-switching feature.
 
-## Files Touched (anticipated)
+## Files Touched (actual)
 - `klik_pos/klik_pos/custom/pos_profile.json` — `custom_quick_switch_price` checkbox.
-- `klik_pos/api/item/item_price.py` — `get_item_prices_across_price_lists`.
-- `klik_spa/src/stores/cartStore.ts` — per-line `selectedPriceList` + `setItemRate`.
-- `klik_spa/src/components/order/CartItemRow.tsx` — pill row + fetch + click.
-- `klik_pos/tests/` — endpoint test.
+- `klik_spa/src/stores/posProfileStore.ts` — `custom_quick_switch_price` on the `POSProfile` type.
+- `klik_spa/src/components/order/CartItemRow.tsx` — pill row + fetch-when-enabled + reuse of `handleLinePriceListChange`.
 
 ## Out of scope (YAGNI)
 - Pills on product tiles / product browser (cart-line only for now).
