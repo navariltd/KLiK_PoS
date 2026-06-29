@@ -239,7 +239,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   const tabs = [
     { key: "pricing" as const, label: "Pricing & Warehouse" },
     ...(item.is_product_bundle ? [{ key: "bundle" as const, label: "Bundle" }] : []),
-    { key: "stock" as const, label: hasBoth ? "Batches & Serials" : hasBatchOnly ? "Batches" : hasSerialOnly ? "Serials" : "Stock" },
+    ...((hasBatchOnly || hasSerialOnly || hasBoth) ? [{ key: "stock" as const, label: "Batch/Serial" }] : []),
     { key: "details" as const, label: "Details" },
   ]
 
@@ -497,7 +497,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                         ))}
                       </div>
                     </>
-                  ) : hasSerialOnly ? (
+                  ) : (
                     <>
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Serial Numbers ({data?.serials?.length ?? 0})</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -506,34 +506,6 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                         ))}
                       </div>
                     </>
-                  ) : (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Warehouse Stock</h3>
-                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-                            <tr>
-                              <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Warehouse</th>
-                              <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Quantity</th>
-                              {!restrictCostVisibility && (
-                                <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Rate</th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
-                            {(data?.warehouse_stock ?? []).map((wh, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
-                                <td className="p-3 font-medium text-gray-900 dark:text-white">{wh.warehouse}</td>
-                                <td className="p-3 text-right font-semibold text-gray-900 dark:text-white">{wh.bal_qty.toLocaleString()}</td>
-                                {!restrictCostVisibility && (
-                                  <td className="p-3 text-right text-gray-600 dark:text-gray-400">{fmt(wh.val_rate, sym)}</td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
                   )}
                 </div>
               )}
