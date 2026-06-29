@@ -543,3 +543,87 @@ def get_full_pricing_and_batch_details(
             if v["bal_qty"] != 0
         ],
     }
+
+
+@frappe.whitelist()
+def get_customer_sales_history(customer=None, walkin_phone=None, limit=20):
+    """Recent Sales Invoices for a customer (regular) or walk-in phone, plus summary.
+
+    Lazy endpoint: only called on explicit user action in the POS item modal.
+    `customer` takes precedence over `walkin_phone`. Walk-in match uses the
+    `custom_walkin_phone` field so individual walk-ins are not lumped together.
+    """
+    customer = (customer or "").strip()
+    walkin_phone = (walkin_phone or "").strip()
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 50))
+
+    empty = {
+        "rows": [],
+        "summary": {
+            "order_count": 0,
+            "total_spent": 0,
+            "last_purchase_date": None,
+            "avg_order_value": 0,
+            "currency": None,
+        },
+        "matched_by": None,
+    }
+
+    if customer:
+        condition = "si.customer = %(value)s"
+        value = customer
+        matched_by = "customer"
+    elif walkin_phone:
+        if not frappe.db.has_column("Sales Invoice", "custom_walkin_phone"):
+            empty["matched_by"] = "walkin_phone"
+            return empty
+        condition = "si.custom_walkin_phone = %(value)s"
+        value = walkin_phone
+        matched_by = "walkin_phone"
+    else:
+        return empty
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT si.name, si.posting_date, si.grand_total, si.status, si.currency
+        FROM `tabSales Invoice` si
+        WHERE {condition} AND si.docstatus = 1
+        ORDER BY si.posting_date DESC, si.creation DESC
+        LIMIT %(limit)s
+        """,
+        {"value": value, "limit": limit},
+        as_dict=True,
+    )
+
+    agg = frappe.db.sql(
+        f"""
+        SELECT COUNT(*) AS order_count,
+               COALESCE(SUM(si.grand_total), 0) AS total_spent,
+               MAX(si.posting_date) AS last_purchase_date
+        FROM `tabSales Invoice` si
+        WHERE {condition} AND si.docstatus = 1
+        """,
+        {"value": value},
+        as_dict=True,
+    )[0]
+
+    order_count = agg.order_count or 0
+    total_spent = agg.total_spent or 0
+    currency = rows[0].currency if rows else None
+
+    return {
+        "rows": rows,
+        "summary": {
+            "order_count": order_count,
+            "total_spent": total_spent,
+            "last_purchase_date": agg.last_purchase_date,
+            "avg_order_value": (total_spent / order_count) if order_count else 0,
+            "currency": currency,
+        },
+        "matched_by": matched_by,
+    }
