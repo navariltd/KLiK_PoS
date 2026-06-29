@@ -961,11 +961,11 @@ def check_customer_permission(customer_name):
 @frappe.whitelist()
 def get_required_customer_fields():
     """
-    Retrieves the Customer Doctype meta and returns a list of fields 
+    Retrieves the Customer Doctype meta and returns a list of fields
     where 'reqd' (mandatory) is set to True.
     """
     meta = frappe.get_meta("Customer")
-    
+
     required_fields = [
         {
             "fieldname": f.fieldname,
@@ -973,8 +973,52 @@ def get_required_customer_fields():
             "fieldtype": f.fieldtype,
             "options": f.options
         }
-        for f in meta.fields 
+        for f in meta.fields
         if f.reqd and f.fieldtype not in ["Section Break", "Column Break", "Tab Break"]
     ]
-    
+
     return required_fields
+
+
+@frappe.whitelist()
+def get_customer_overdue_invoices(customer, company=""):
+    """Return overdue Sales Invoices (past due date, still outstanding) for a customer.
+
+    Called from the POS on customer selection when custom_show_overdue_warning is on.
+    Walk-in customers are excluded on the frontend; this function has no awareness of that.
+    """
+    customer = (customer or "").strip()
+    if not customer:
+        return {"has_overdue": False, "invoices": [], "customer_name": ""}
+
+    company = (company or "").strip()
+
+    if company:
+        invoices = frappe.db.sql("""
+            SELECT name, due_date, grand_total, outstanding_amount, currency, customer_name
+            FROM `tabSales Invoice`
+            WHERE customer = %(customer)s
+              AND company = %(company)s
+              AND docstatus = 1
+              AND outstanding_amount > 0.001
+              AND due_date < CURDATE()
+            ORDER BY due_date ASC
+        """, {"customer": customer, "company": company}, as_dict=True)
+    else:
+        invoices = frappe.db.sql("""
+            SELECT name, due_date, grand_total, outstanding_amount, currency, customer_name
+            FROM `tabSales Invoice`
+            WHERE customer = %(customer)s
+              AND docstatus = 1
+              AND outstanding_amount > 0.001
+              AND due_date < CURDATE()
+            ORDER BY due_date ASC
+        """, {"customer": customer}, as_dict=True)
+
+    customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+
+    return {
+        "has_overdue": len(invoices) > 0,
+        "invoices": invoices,
+        "customer_name": customer_name,
+    }
