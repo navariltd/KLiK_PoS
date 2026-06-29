@@ -1522,6 +1522,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'F10' && !e.shiftKey) {
         e.preventDefault();
+        e.stopPropagation();
         if (!isActionButtonDisabled()) handleCompletePayment();
       } else if (e.key === 'Escape') {
         e.preventDefault();

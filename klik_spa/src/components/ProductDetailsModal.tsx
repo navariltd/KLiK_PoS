@@ -227,6 +227,12 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   }, [posDetails, loading])
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  useEffect(() => {
     const fetchFullData = async () => {
       setIsLoading(true)
       try {
