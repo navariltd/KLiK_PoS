@@ -47,6 +47,7 @@ export interface POSProfile {
   warehouse?: string;
   allow_warehouse_change?: boolean | number;
   custom_enable_sales_lens?: boolean | number;
+  custom_show_overdue_warning?: boolean | number;
   custom_quick_switch_price?: boolean | number;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;

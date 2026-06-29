@@ -27,6 +27,7 @@ import { useExtraFields } from "../../hooks/useExtraFields";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import AddCustomerModal from "../customer/AddCustomerModal";
+import OverdueWarningModal from "../customer/OverdueWarningModal";
 
 interface CustomerSearchSectionProps {
   selectedCustomer: Customer | null;
@@ -81,6 +82,13 @@ export const CustomerSearchSection = ({
   const setExtraFields = useCartStore((state) => state.setExtraFields);
   const { fields: extraFieldDefs } = useExtraFields();
   const [showWalkinModal, setShowWalkinModal] = useState(false);
+  const [overdueData, setOverdueData] = useState<{
+    invoices: Array<{
+      name: string; due_date: string; grand_total: number;
+      outstanding_amount: number; currency: string; customer_name: string;
+    }>;
+    customerName: string;
+  } | null>(null);
   const [priceLists, setPriceLists] = useState<SellingPriceList[]>([]);
   const [isLoadingPriceLists, setIsLoadingPriceLists] = useState(false);
   const [warehouses, setWarehouses] = useState<string[]>([]);
@@ -268,6 +276,26 @@ export const CustomerSearchSection = ({
           await setSelectedPriceList(customer.sellingPriceList);
         }
         await fetchProducts(true);
+      }
+      // Check for overdue invoices if setting is on and customer is not walk-in
+      const resolvedCustomer = fullCustomer ?? customer;
+      if (posDetails?.custom_show_overdue_warning && resolvedCustomer.isWalkin !== 1) {
+        const company = typeof posDetails.company === "string" ? posDetails.company : (posDetails.company as any)?.name ?? ""
+        try {
+          const params = new URLSearchParams({ customer: resolvedCustomer.id, company })
+          const res = await fetch(
+            `/api/method/klik_pos.api.customer.get_customer_overdue_invoices?${params.toString()}`
+          )
+          const json = await res.json()
+          if (json?.message?.has_overdue) {
+            setOverdueData({
+              invoices: json.message.invoices,
+              customerName: json.message.customer_name || resolvedCustomer.name,
+            })
+          }
+        } catch (e) {
+          console.error("Overdue check failed:", e)
+        }
       }
     } catch (error) {
       console.error("Error fetching customer info:", error);
@@ -770,6 +798,13 @@ export const CustomerSearchSection = ({
             setExtraFields(d.extraFields);
             setShowWalkinModal(false);
           }}
+        />
+      )}
+      {overdueData && (
+        <OverdueWarningModal
+          invoices={overdueData.invoices}
+          customerName={overdueData.customerName}
+          onClose={() => setOverdueData(null)}
         />
       )}
     </div>
