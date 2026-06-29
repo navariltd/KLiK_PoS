@@ -26,6 +26,15 @@ POS_PROFILE_FEATURE_FIELDS = [
         "default": "0",
         "module": "KLiK PoS",
     },
+    {
+        "fieldname": "custom_enable_sales_lens",
+        "label": "Show Customer Sales Lens",
+        "fieldtype": "Check",
+        "insert_after": "allow_warehouse_change",
+        "description": "Show a customer purchase-history snapshot tab in the POS item details modal.",
+        "default": "0",
+        "module": "KLiK PoS",
+    },
 ]
 
 
