@@ -35,6 +35,15 @@ POS_PROFILE_FEATURE_FIELDS = [
         "default": "0",
         "module": "KLiK PoS",
     },
+    {
+        "fieldname": "custom_show_overdue_warning",
+        "label": "Show Overdue Invoice Warning",
+        "fieldtype": "Check",
+        "insert_after": "custom_enable_sales_lens",
+        "description": "Show a warning popup when selecting a customer with overdue invoices in the POS.",
+        "default": "0",
+        "module": "KLiK PoS",
+    },
 ]
 
 
