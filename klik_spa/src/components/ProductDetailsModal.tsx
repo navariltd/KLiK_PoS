@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import type { MenuItem } from "../../types"
 import { usePOSProfileStore } from "../stores/posProfileStore"
+import { useCartStore } from "../stores/cartStore"
 
 interface Batch {
   batch_id: string
@@ -58,6 +59,26 @@ interface ItemFullData {
     total_value: number
     avg_valuation_rate: number
   }
+}
+
+interface SalesLensRow {
+  name: string
+  posting_date: string
+  grand_total: number
+  status: string
+  currency: string
+}
+
+interface SalesLensData {
+  rows: SalesLensRow[]
+  summary: {
+    order_count: number
+    total_spent: number
+    last_purchase_date: string | null
+    avg_order_value: number
+    currency: string | null
+  }
+  matched_by: "customer" | "walkin_phone" | null
 }
 
 interface ProductDetailsModalProps {
@@ -192,7 +213,7 @@ function SerialCard({ serial, currencySymbol, showCost }: { serial: SerialEntry;
 export default function ProductDetailsModal({ item, onClose }: ProductDetailsModalProps) {
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"pricing" | "stock" | "details" | "bundle">("pricing")
+  const [activeTab, setActiveTab] = useState<"pricing" | "stock" | "details" | "bundle" | "lens">("pricing")
   const { posDetails, loading } = usePOSProfileStore()
 
   const warehouse = useMemo(() => {
@@ -235,12 +256,52 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   const hasSerialOnly = data?.has_serial_no && !data?.has_batch_no
   const hasBoth = data?.has_batch_no && data?.has_serial_no
 
+  const selectedCustomer = useCartStore((s) => s.selectedCustomer)
+  const walkinDetails = useCartStore((s) => s.walkinDetails)
+
+  const lensEnabled = !!(posDetails?.custom_enable_sales_lens)
+  const isWalkin = selectedCustomer?.isWalkin === 1
+  const lensCustomerId = !isWalkin ? selectedCustomer?.id : undefined
+  const lensWalkinPhone = isWalkin ? (walkinDetails?.phone || "").trim() : ""
+  const lensCanLoad = !!lensCustomerId || !!lensWalkinPhone
+  const lensLabel = lensCustomerId
+    ? `Load history for ${selectedCustomer?.name ?? "customer"}`
+    : lensWalkinPhone
+    ? `Load history for ${lensWalkinPhone}`
+    : "Load purchase history"
+
+  const [lensData, setLensData] = useState<SalesLensData | null>(null)
+  const [lensLoading, setLensLoading] = useState(false)
+  const [lensError, setLensError] = useState<string | null>(null)
+
+  const loadLens = async () => {
+    if (!lensCanLoad || lensLoading) return
+    setLensLoading(true)
+    setLensError(null)
+    try {
+      const params = new URLSearchParams()
+      if (lensCustomerId) params.append("customer", lensCustomerId)
+      else if (lensWalkinPhone) params.append("walkin_phone", lensWalkinPhone)
+      const res = await fetch(
+        `/api/method/klik_pos.api.item.item_details.get_customer_sales_history?${params.toString()}`
+      )
+      const json = await res.json()
+      setLensData(json?.message ?? null)
+    } catch (e) {
+      console.error("Failed to load sales lens:", e)
+      setLensError("Failed to load purchase history.")
+    } finally {
+      setLensLoading(false)
+    }
+  }
+
   const bundleComponents = item.bundle_items ?? []
   const tabs = [
     { key: "pricing" as const, label: "Pricing & Warehouse" },
     ...(item.is_product_bundle ? [{ key: "bundle" as const, label: "Bundle" }] : []),
     ...((hasBatchOnly || hasSerialOnly || hasBoth) ? [{ key: "stock" as const, label: "Batch/Serial" }] : []),
     { key: "details" as const, label: "Details" },
+    ...(lensEnabled ? [{ key: "lens" as const, label: "Sales Lens" }] : []),
   ]
 
   return (
@@ -599,6 +660,78 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                       <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Description</p>
                       <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{item.description}</p>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "lens" && (
+                <div className="space-y-5">
+                  {!lensData ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-sm">
+                        {lensCanLoad
+                          ? "View this customer's recent purchase history. Loaded on demand to keep the POS fast."
+                          : "Select a customer or enter a walk-in phone first to view purchase history."}
+                      </p>
+                      <button
+                        onClick={loadLens}
+                        disabled={!lensCanLoad || lensLoading}
+                        className="px-5 py-2.5 bg-beveren-600 hover:bg-beveren-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all active:scale-[0.98]"
+                      >
+                        {lensLoading ? "Loading…" : lensLabel}
+                      </button>
+                      {lensError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{lensError}</p>}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Orders</p>
+                          <p className="text-xl font-bold text-gray-900 dark:text-white">{lensData.summary.order_count}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Total Spent</p>
+                          <p className="text-xl font-bold text-gray-900 dark:text-white">{fmt(lensData.summary.total_spent, `${lensData.summary.currency ?? sym} `)}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Avg Order</p>
+                          <p className="text-xl font-bold text-gray-900 dark:text-white">{fmt(lensData.summary.avg_order_value, `${lensData.summary.currency ?? sym} `)}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                          <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Last Purchase</p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{fmtDate(lensData.summary.last_purchase_date ?? undefined)}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
+                        <table className="w-full text-sm min-w-[520px]">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                              <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Invoice</th>
+                              <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Date</th>
+                              <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Total</th>
+                              <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                            {lensData.rows.length === 0 ? (
+                              <tr><td colSpan={4} className="p-6 text-center text-gray-400 text-sm">No purchase history found.</td></tr>
+                            ) : (
+                              lensData.rows.map((row) => (
+                                <tr key={row.name} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
+                                  <td className="p-3">
+                                    <a href={`/app/sales-invoice/${encodeURIComponent(row.name)}`} target="_blank" rel="noreferrer" className="text-beveren-600 dark:text-beveren-400 font-mono text-xs hover:underline">{row.name}</a>
+                                  </td>
+                                  <td className="p-3 text-gray-700 dark:text-gray-300">{fmtDate(row.posting_date)}</td>
+                                  <td className="p-3 text-right font-semibold text-gray-900 dark:text-white">{fmt(row.grand_total, `${row.currency} `)}</td>
+                                  <td className="p-3"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{row.status}</span></td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
