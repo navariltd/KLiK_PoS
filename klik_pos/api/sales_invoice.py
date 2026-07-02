@@ -2615,7 +2615,7 @@ def _resolve_item_tax_details_for_line(doc, item, pos_profile):
 		)
 
 	try:
-		resolved = get_item_details(ctx=ctx)
+		resolved = get_item_details(ctx=frappe._dict(ctx))
 		item_tax_template = resolved.get("item_tax_template") or item_tax_template
 		item_tax_rate = resolved.get("item_tax_rate") or item_tax_rate
 		if isinstance(item_tax_rate, str):

@@ -104,7 +104,7 @@ def get_item_tax_details(item_code, customer=None, qty=1, uom=None):
         }
         
         # Call get_item_details - returns dict with item details including item_tax_template and item_tax_rate
-        details = get_item_details(ctx=args)
+        details = get_item_details(ctx=frappe._dict(args))
         
         item_tax_template = details.get("item_tax_template", "")
         item_tax_rate = details.get("item_tax_rate", {})

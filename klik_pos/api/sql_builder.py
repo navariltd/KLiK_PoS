@@ -76,18 +76,24 @@ def apply_sql_permissions(sql: str):
 
         for doctype, alias in doctype_aliases.items():
             try:
+                # build_match_conditions() already escapes literal "%" to "%%"
+                # for the subsequent frappe.db.sql() % formatting pass; escaping
+                # again here would double-escape and corrupt the condition.
                 rule = build_match_conditions(doctype)
 
                 if rule:
                     if alias != f"`tab{doctype}`":
                         rule = rule.replace(f"`tab{doctype}`", alias)
 
-                    rule = rule.replace("%", "%%")
-
                     permission_conditions.append(f"({rule})")
 
             except frappe.PermissionError:
-                return "SELECT 1 WHERE 1=0"
+                # No read/select access to this doctype at all: the caller's query
+                # keeps its original %s placeholders (and arg count), so inject a
+                # condition that always evaluates false instead of replacing the
+                # whole query text, which would desync placeholders from args and
+                # crash frappe.db.sql() with "not all arguments converted".
+                permission_conditions.append("0=1")
 
         if not permission_conditions:
             return sql

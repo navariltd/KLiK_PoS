@@ -153,17 +153,6 @@ def get_items(
         count_sql = "\n".join(count_query)
         count_sql = apply_sql_permissions(count_sql)
 
-        # Permission denied — user can't see any items, return empty
-        if count_sql.strip().upper().startswith("SELECT 1 WHERE 1=0"):
-            return {
-                "items": [],
-                "item_groups": [],
-                "total_count": 0,
-                "has_more": False,
-                "limit": limit,
-                "offset": offset,
-            }
-
         # Validate placeholder count matches params AFTER sql rewrite
         placeholder_count = count_sql.count("%s")
         if placeholder_count != len(count_params):
