@@ -14,5 +14,37 @@
   "property_type": "Text",
   "row_name": null,
   "value": "\nSales Order\nWork Order\nSubcontracting Inward Order\nProduction Plan\nSubcontracting Order\nSales Invoice"
+ },
+ {
+  "default_value": null,
+  "doc_type": "POS Profile",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "allow_warehouse_change",
+  "is_system_generated": 0,
+  "modified": "2026-07-02 08:35:42.911628",
+  "module": "KLiK PoS",
+  "name": "POS Profile-allow_warehouse_change-label",
+  "property": "label",
+  "property_type": "Data",
+  "row_name": null,
+  "value": "Allow Warehouse Switching"
+ },
+ {
+  "default_value": null,
+  "doc_type": "POS Profile",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocType",
+  "field_name": null,
+  "is_system_generated": 0,
+  "modified": "2026-07-02 08:35:42.203434",
+  "module": "KLiK PoS",
+  "name": "POS Profile-main-field_order",
+  "property": "field_order",
+  "property_type": "Data",
+  "row_name": null,
+  "value": "[\"company\", \"customer\", \"country\", \"disabled\", \"column_break_9\", \"warehouse\", \"company_address\", \"accounting_tab\", \"section_break_11\", \"payments\", \"set_grand_total_to_default_mop\", \"price_list_and_currency_section\", \"currency\", \"column_break_bptt\", \"selling_price_list\", \"write_off_section\", \"write_off_account\", \"column_break_ukpz\", \"write_off_cost_center\", \"column_break_pkca\", \"write_off_limit\", \"income_and_expense_account\", \"income_account\", \"column_break_byzk\", \"expense_account\", \"taxes_section\", \"taxes_and_charges\", \"column_break_cjpp\", \"tax_category\", \"section_break_19\", \"account_for_change_amount\", \"disable_rounded_total\", \"column_break_23\", \"apply_discount_on\", \"allow_partial_payment\", \"accounting_dimensions_section\", \"cost_center\", \"dimension_col_break\", \"project\", \"pos_configurations_tab\", \"custom_klik_pos\", \"custom_klik_pos_settings\", \"custom_autofetch_batchserial_\", \"custom_allow_to_create_and_edit_customers\", \"custom_clear_draft_invoices\", \"enable_background_invoice_submission\", \"custom_column_break_k1wtw\", \"custom_show_item_code_in_product_list\", \"custom_hide_expected_amount\", \"custom_prevent_invoice_reprinting\", \"custom_column_break_bbseu\", \"custom_business_type\", \"custom_default_view\", \"custom_cart_item_insertion_position\", \"default_sales_type\", \"custom_sales__checkout_permissions\", \"allow_holding_invoices\", \"custom_allow_credit_sales\", \"allow_zero_rate_sales\", \"custom_column_break_mewr7\", \"is_tax_included_in_basic_rate\", \"custom_auto_allocate_remaining_payment\", \"custom_column_break_3ccui\", \"custom_allow_return\", \"custom_allow_write_off\", \"custom_ignore_write_off_on_partial_returns\", \"custom_item__search_behaviors\", \"restrict_cost_visibility_in_tooltip\", \"custom_enhanced_search\", \"custom_enable_service_items\", \"custom_column_break_w4n9q\", \"custom_use_scanner_fully\", \"custom_scale_barcodes_start_with\", \"custom_pos_extra_fields_cb\", \"allow_warehouse_change\", \"allow_price_list_switching\", \"custom_quick_switch_price\", \"custom_delivery_alerts_security\", \"custom_delivery_required\", \"custom_enable_delivery_charge\", \"custom_delivery_charge_item\", \"custom_column_break_hkrmx\", \"custom_enable_sms\", \"custom_enable_whatsapp\", \"custom_whatsapp_template\", \"custom_email_template\", \"section_break_14\", \"action_on_new_invoice\", \"validate_stock_on_save\", \"column_break_16\", \"update_stock\", \"ignore_pricing_rule\", \"print_receipt_on_order_complete\", \"pos_item_selector_section\", \"hide_images\", \"column_break_rpny\", \"hide_unavailable_items\", \"column_break_stcl\", \"auto_add_item_to_cart\", \"pos_item_details_section\", \"allow_rate_change\", \"allow_discount_change\", \"column_break_hwfg\", \"custom_enable_sales_lens\", \"custom_show_overdue_warning\", \"column_break_egpi\", \"custom_pos_extra_fields\", \"section_break_15\", \"applicable_for_users\", \"section_break_23\", \"item_groups\", \"column_break_25\", \"customer_groups\", \"more_info_tab\", \"section_break_16\", \"print_format\", \"letter_head\", \"column_break0\", \"tc_name\", \"select_print_heading\", \"utm_analytics_section\", \"utm_source\", \"column_break_tvls\", \"utm_campaign\", \"column_break_xygw\", \"utm_medium\", \"custom_hold_naming\", \"custom_sales_person\", \"custom_sales_person_pin_required\"]"
  }
 ]

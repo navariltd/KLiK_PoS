@@ -47,9 +47,6 @@ doc_events = {
             "klik_pos.api.pos_entry.validate_opening_entry",
         ],
     },
-    "Sales Person": {
-        "before_save": "klik_pos.overrides.sales_person.validate_unique_pos_pin"
-    },
     "POS Profile": {
         "validate": "klik_pos.overrides.pos_profile.remove_duplicate_sales_persons"
     },
