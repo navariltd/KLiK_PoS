@@ -77,6 +77,11 @@ export default function RetailPOSLayout() {
     searchProducts(query);
   }, [searchProducts]);
 
+  const handleBarcodeDetected = useCallback((barcode: string) => {
+    searchProducts(barcode, true);
+    setShowScanner(false);
+  }, [searchProducts]);
+
   const handleCategoryChange = useCallback((category: string) => {
     setCategory(category);
   }, [setCategory]);
@@ -139,7 +144,7 @@ export default function RetailPOSLayout() {
         <BarcodeScannerModal
           isOpen={showScanner}
           onClose={() => setShowScanner(false)}
-          onBarcodeDetected={() => setShowScanner(false)}
+          onBarcodeDetected={handleBarcodeDetected}
         />
       </>
     );
@@ -171,7 +176,7 @@ export default function RetailPOSLayout() {
       <BarcodeScannerModal
         isOpen={showScanner}
         onClose={() => setShowScanner(false)}
-        onBarcodeDetected={() => setShowScanner(false)}
+        onBarcodeDetected={handleBarcodeDetected}
       />
     </>
   );
