@@ -200,13 +200,22 @@ def _resolve_item_code_from_identifier(code: str):
 
 @frappe.whitelist(allow_guest=True)
 def get_item_by_identifier(code: str):
-    if not code:
-        frappe.throw(_("Identifier required"))
+    try:
+        if not code:
+            frappe.throw(_("Identifier required"))
 
-    pos_doc = get_current_pos_profile()
-    warehouse = pos_doc.warehouse
-    price_list = pos_doc.selling_price_list
-    include_service_items = _include_service_items(pos_doc)
+        pos_doc = get_current_pos_profile()
+        warehouse = pos_doc.warehouse
+        price_list = pos_doc.selling_price_list
+        include_service_items = _include_service_items(pos_doc)
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Error fetching item by identifier: {code}",
+        )
+        frappe.throw(
+            _("Error fetching item by identifier: {0}").format(str(e))
+        )
 
     try:
         item_code, matched_type, matched_value = _resolve_item_code_from_identifier(code)

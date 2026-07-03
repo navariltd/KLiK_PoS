@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -36,3 +38,19 @@ class TestGetItemByIdentifier(FrappeTestCase):
 
         after = frappe.db.count("Error Log", {"method": title})
         self.assertEqual(before, after, "A routine 'not found' lookup must not create an Error Log entry")
+
+
+class TestGetItemByIdentifierPOSProfileErrors(FrappeTestCase):
+    def test_pos_profile_resolution_failure_is_logged(self):
+        title = "Error fetching item by identifier: ANY-CODE"
+        before = frappe.db.count("Error Log", {"method": title})
+
+        with patch(
+            "klik_pos.api.item.item_search.get_current_pos_profile",
+            side_effect=Exception("No POS Profile found for user test@example.com"),
+        ):
+            with self.assertRaises(frappe.ValidationError):
+                get_item_by_identifier(code="ANY-CODE")
+
+        after = frappe.db.count("Error Log", {"method": title})
+        self.assertEqual(after, before + 1, "A genuine POS-profile resolution failure must still be logged")
