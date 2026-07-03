@@ -105,6 +105,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
       document.querySelector<HTMLElement>('[data-product-index="0"]')?.focus();
       return;
     }
+    if (!posDetails?.auto_add_item_to_cart) return;
     if (e.key !== 'Enter' || !searchQuery.trim() || isSearching) return;
     if (filteredItems.length !== 1) return;
     const item = filteredItems[0];
