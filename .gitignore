@@ -59,3 +59,10 @@ docs/superpowers/
 .codeium/
 .continue/
 .gstack/
+
+# klik_spa build output (Frappe Cloud rebuilds this fresh on every deploy
+# via the root package.json's "build" script; run `yarn build` locally
+# to regenerate for local/self-hosted development and testing)
+klik_pos/public/klik_spa/assets/
+klik_pos/public/klik_spa/index.html
+klik_pos/www/klik_spa.html
