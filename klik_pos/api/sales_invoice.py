@@ -1857,8 +1857,12 @@ def build_sales_invoice_doc(
 		_add_payment_entries(doc, mode_of_payment)
 		doc.calculate_taxes_and_totals()
 
-	if is_credit_sale and due_date:
-		doc.due_date = due_date
+	if is_credit_sale:
+		# Credit sales are unpaid-at-creation invoices; is_pos must stay 0 so the
+		# outstanding balance is not misclassified as a POS cash/card sale.
+		doc.is_pos = 0
+		if due_date:
+			doc.due_date = due_date
 
 	return doc
 
