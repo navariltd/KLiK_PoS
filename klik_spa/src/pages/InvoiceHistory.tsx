@@ -42,6 +42,7 @@ import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { addHeldOrderToCart } from "../utils/heldOrderToCart";
 import { getHeldOrders } from "../services/salesOrder";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { handlePrintInvoice } from "../utils/printHandler";
 import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
@@ -831,6 +832,14 @@ const getStatusBadge = (status: string) => {
   );
 
   const handleViewInvoice = (invoice: SalesInvoice) => {
+    const isHeldOrder = !!(invoice as SalesInvoice & { isHeldOrder?: boolean }).isHeldOrder;
+    if (isHeldOrder) {
+      // Held drafts are Sales Order docs; there is no in-app detail view for
+      // them, so fall back to ERPNext's normal print route with the
+      // doctype's default print format.
+      handlePrintInvoice(invoice, { doctype: "Sales Order", posDetails });
+      return;
+    }
     navigate(`/invoice/${invoice.id}`);
   };
 
