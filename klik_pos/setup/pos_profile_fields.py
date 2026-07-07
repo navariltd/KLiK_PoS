@@ -141,6 +141,82 @@ def ensure_pos_extra_fields_child():
         frappe.log_error(frappe.get_traceback(), "klik_pos: POS Extra Field child install failed")
 
 
+def install_mpesa_reconciled_payment_child():
+    """Create the `POS Mpesa Reconciled Payment` child doctype and the
+    `custom_mpesa_reconciled_payments` Table custom field on Sales Invoice.
+    Idempotent and safe on every migrate.
+
+    Traceability-only record of which `Mpesa C2B Payment Register` row(s)
+    were reconciled onto a given Sales Invoice via the POS "Add Selected
+    Payments" flow (`klik_pos.api.mpesa.process_mpesa`).
+    `mpesa_c2b_payment_register` is stored as plain Data (not a Link) so this
+    child table has zero schema dependency on the `frappe_mpsa_payments` app
+    being installed/reachable at display time.
+    """
+    if not frappe.db.exists("DocType", "POS Mpesa Reconciled Payment"):
+        child = frappe.new_doc("DocType")
+        child.update({
+            "name": "POS Mpesa Reconciled Payment",
+            "module": "KLiK PoS",
+            "custom": 1,
+            "istable": 1,
+            "fields": [
+                {
+                    "fieldname": "mpesa_c2b_payment_register",
+                    "label": "Mpesa C2B Payment Register",
+                    "fieldtype": "Data",
+                    "description": "Name of the reconciled Mpesa C2B Payment Register row (plain text, not a Link).",
+                    "in_list_view": 1,
+                    "reqd": 1,
+                },
+                {
+                    "fieldname": "transid",
+                    "label": "Transaction ID",
+                    "fieldtype": "Data",
+                    "in_list_view": 1,
+                },
+                {
+                    "fieldname": "amount",
+                    "label": "Amount",
+                    "fieldtype": "Currency",
+                    "in_list_view": 1,
+                },
+                {
+                    "fieldname": "msisdn",
+                    "label": "Phone Number",
+                    "fieldtype": "Data",
+                    "in_list_view": 1,
+                },
+            ],
+            "permissions": [],
+        })
+        child.insert(ignore_permissions=True)
+
+    if not frappe.db.exists(
+        "Custom Field", {"dt": "Sales Invoice", "fieldname": "custom_mpesa_reconciled_payments"}
+    ):
+        create_custom_fields({
+            "Sales Invoice": [{
+                "fieldname": "custom_mpesa_reconciled_payments",
+                "label": "Mpesa Reconciled Payments",
+                "fieldtype": "Table",
+                "options": "POS Mpesa Reconciled Payment",
+                "insert_after": "payments",
+                "description": "Mpesa C2B Payment Register rows reconciled onto this invoice via the POS M-Pesa Payment Options flow.",
+                "module": "KLiK PoS",
+                "read_only": 1,
+            }]
+        }, update=True)
+
+
+def ensure_mpesa_reconciled_payment_child():
+    """Hook-safe wrapper. Never abort migrate on failure."""
+    try:
+        install_mpesa_reconciled_payment_child()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "klik_pos: POS Mpesa Reconciled Payment child install failed")
+
+
 def ensure_pos_profile_feature_fields():
     """Hook entrypoint for after_migrate / after_install. Never abort on failure."""
     try:
@@ -148,3 +224,4 @@ def ensure_pos_profile_feature_fields():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "klik_pos: POS Profile feature-field install failed")
     ensure_pos_extra_fields_child()
+    ensure_mpesa_reconciled_payment_child()

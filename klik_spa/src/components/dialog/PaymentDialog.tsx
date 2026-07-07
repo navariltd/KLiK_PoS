@@ -791,6 +791,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         invoice_name: draftInvoiceName,
         customer: selectedCustomer.id || selectedCustomer.name,
         mpesa_payments: selectedMpesaPayments.map((payment) => payment.name).join(","),
+        mode_of_payment: activeMpesaPayment.method,
         auto_save: 1,
         auto_submit: 0,
         merge_payments: mergeMpesaPayments ? 1 : 0,
