@@ -290,3 +290,28 @@ class TestProcessMpesa(FrappeTestCase):
 		self.assertEqual(len(invoice.payments), 0)
 		row.reload()
 		self.assertEqual(row.docstatus, 0)
+
+	def test_auto_save_zero_is_rejected(self):
+		# auto_save=0 is not implemented (process_mpesa always saves the
+		# invoice); a caller passing 0 expecting some no-op/preview mode must
+		# get a clear error instead of a silent real save.
+		invoice = self._draft_invoice()
+		invoice.insert(ignore_permissions=True)
+		row = self._make_c2b_payment(amount=100)
+
+		with self.assertRaises(frappe.ValidationError):
+			process_mpesa(
+				doctype="Sales Invoice",
+				invoice_name=invoice.name,
+				customer=self.customer,
+				mpesa_payments=row.name,
+				mode_of_payment="Cash",
+				auto_save=0,
+				auto_submit=0,
+				merge_payments=0,
+			)
+
+		invoice.reload()
+		self.assertEqual(len(invoice.payments), 0)
+		row.reload()
+		self.assertEqual(row.docstatus, 0)

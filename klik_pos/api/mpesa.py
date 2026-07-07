@@ -106,18 +106,32 @@ def process_mpesa(
 	     Nothing is mutated during validation.
 	  2. Apply the invoice-side effect (append payment rows + traceability
 	     rows, save, optionally submit) FIRST.
-	  3. Only after that succeeds, consume (submit) each register row. If a
-	     register row fails to submit at this point (e.g. concurrently
-	     consumed by another request — Frappe's optimistic-concurrency check
-	     raises TimestampMismatchError on a stale `modified` timestamp), the
-	     error surfaces but the already-successful invoice update is not
-	     rolled back. This matches the "consume immediately" design decision.
+	  3. Only after that succeeds, consume (submit) each register row. This
+	     ordering just means validation failures (all of which happen before
+	     step 2) never touch a partially-mutated invoice. It does NOT mean a
+	     register-row failure here is isolated from the invoice mutation: if a
+	     register row fails to submit at this point (e.g. a genuine
+	     `before_submit` validation error, or a losing race against a
+	     concurrent reconcile raising `TimestampMismatchError`), the exception
+	     propagates out of this function uncaught, and Frappe's normal
+	     per-request transaction boundary rolls back the *entire* request —
+	     including the invoice save/submit already performed above. There is
+	     no partial/orphaned state possible, which is why no explicit
+	     `frappe.db.commit()` or savepoint is used here.
 
 	`doctype` is currently only ever "Sales Invoice" — this app never
 	targets Sales Order for this flow.
 	"""
 	if doctype != "Sales Invoice":
 		frappe.throw(_("Mpesa reconciliation only supports Sales Invoice, got {0}").format(doctype))
+
+	if not int(auto_save or 0):
+		frappe.throw(
+			_(
+				"auto_save=0 is not supported: process_mpesa always saves the invoice. "
+				"Only auto_save=1 is implemented."
+			)
+		)
 
 	auto_submit = int(auto_submit or 0)
 	merge_payments = int(merge_payments or 0)
@@ -216,9 +230,10 @@ def process_mpesa(
 	if auto_submit:
 		invoice.submit()
 
-	# Only now consume the register rows -- the invoice side effect above
-	# already succeeded, so a failure here (e.g. concurrent consumption)
-	# doesn't roll back the invoice.
+	# Only now consume the register rows. Note this is ordering, not isolation:
+	# if a row below fails to submit, the exception propagates out of this
+	# function and Frappe's request-transaction boundary rolls back the whole
+	# request, including the invoice save/submit above -- see the docstring.
 	for row in register_rows:
 		row.customer = customer
 		row.mode_of_payment = mode_of_payment
