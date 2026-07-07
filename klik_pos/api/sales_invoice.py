@@ -1858,9 +1858,10 @@ def build_sales_invoice_doc(
 		doc.calculate_taxes_and_totals()
 
 	if is_credit_sale:
-		# Credit sales are unpaid-at-creation invoices; is_pos must stay 0 so the
-		# outstanding balance is not misclassified as a POS cash/card sale.
-		doc.is_pos = 0
+		# Credit sales are unpaid-at-creation invoices; is_pos stays 0 so the
+		# outstanding balance isn't misclassified as a paid POS sale, unless
+		# the POS Profile opts in to treating credit sales as POS sales.
+		doc.is_pos = _is_pos_for_credit_sale(pos_profile)
 		if due_date:
 			doc.due_date = due_date
 
@@ -2388,6 +2389,11 @@ def _determine_is_pos(customer, business_type):
 		return _check_customer_type_for_pos(customer)
 	else:
 		return 0
+
+
+def _is_pos_for_credit_sale(pos_profile):
+	"""Whether a Credit Sale invoice should still be marked is_pos=1, per POS Profile opt-in."""
+	return 1 if cint(getattr(pos_profile, "custom_allow_credit_sales_as_pos", 0)) else 0
 
 
 def _check_customer_type_for_pos(customer):

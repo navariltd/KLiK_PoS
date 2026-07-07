@@ -44,6 +44,19 @@ POS_PROFILE_FEATURE_FIELDS = [
         "default": "0",
         "module": "KLiK PoS",
     },
+    {
+        "fieldname": "custom_allow_credit_sales_as_pos",
+        "label": "Allow Credit Sales as POS Sales",
+        "fieldtype": "Check",
+        "insert_after": "custom_show_overdue_warning",
+        "description": (
+            "When enabled, Credit Sale invoices are marked as POS sales "
+            "(is_pos=1) even though they're unpaid at creation. When "
+            "disabled (default), Credit Sales are always is_pos=0."
+        ),
+        "default": "0",
+        "module": "KLiK PoS",
+    },
 ]
 
 
