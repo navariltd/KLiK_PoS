@@ -108,7 +108,7 @@ export async function fetchMpesaRegisterPayments(params: {
   if (params.search) query.set("search", params.search);
 
   const response = await fetch(
-    `/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.mpesa_quick_pay.get_mpesa_payments?${query.toString()}`,
+    `/api/method/klik_pos.api.mpesa.get_mpesa_payments?${query.toString()}`,
     {
       method: "GET",
       headers: { "Content-Type": "application/json" },
