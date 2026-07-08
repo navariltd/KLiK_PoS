@@ -3781,6 +3781,8 @@ def submit_draft_invoice(invoice_id, data=None):
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
 
+		enable_background_submission = bool(invoice_doc.enable_background_invoice_submission)
+
 		if data:
 			(
 				customer,
