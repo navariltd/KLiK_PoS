@@ -25,7 +25,8 @@ import {
   Clock,
   CreditCard,
   Percent,
-  Banknote
+  Banknote,
+  ClipboardCopy,
 } from "lucide-react";
 
 
@@ -352,6 +353,31 @@ export default function InvoiceViewPage() {
   };
   const isDraftInvoice = isDraftInvoiceStatus(invoice.status);
 
+  const handleCopyOrder = () => {
+    if (!invoice) return;
+    const lines: string[] = [];
+    lines.push(`Invoice: ${invoice.name || invoice.id}`);
+    if (invoice.posting_date) lines.push(`Date: ${invoice.posting_date}`);
+    const isPaid = Number(invoice.outstanding_amount ?? 0) === 0;
+    lines.push(`Status: ${isPaid ? "Paid" : "Unpaid"}`);
+    lines.push("");
+    if (invoice.customer) lines.push(`Customer: ${invoice.customer}`);
+    lines.push("");
+    lines.push("Items:");
+    for (const item of invoice.items || []) {
+      const rate = item.rate ?? 0;
+      const total = item.amount ?? 0;
+      lines.push(`  ${item.item_name}  ×${item.qty}  @ ${formatCurrencyWithSymbol(rate, invoice.currency)}  =  ${formatCurrencyWithSymbol(total, invoice.currency)}`);
+    }
+    lines.push("");
+    lines.push(`Grand Total: ${formatCurrencyWithSymbol(invoice.grand_total, invoice.currency)}`);
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      toast.success("Order copied to clipboard");
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard");
+    });
+  };
+
   const handleGoToCart = async () => {
     if (!invoice) return
     const draftInvoiceId = invoice.name || invoice.id
@@ -402,7 +428,7 @@ export default function InvoiceViewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-2">
       <div className="flex-1 flex flex-col overflow-hidden ml-20">
         {/* Header */}
         <div className="fixed top-0 left-20 right-0 z-50 bg-beveren-50 dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
@@ -436,6 +462,16 @@ export default function InvoiceViewPage() {
 
                   <DisplayPrintPreview invoice={invoice} />
                 </div>
+
+                <button
+                  className="group relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
+                  onClick={handleCopyOrder}
+                >
+                  <ClipboardCopy size={20} />
+                  <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
+                    Copy Order
+                  </span>
+                </button>
 
                 <button
                   className="group relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"

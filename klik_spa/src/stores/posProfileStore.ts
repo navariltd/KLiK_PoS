@@ -24,6 +24,7 @@ export interface POSProfile {
   allow_price_list_switching?: boolean | number;
   hide_unavailable_items?: boolean;
   custom_use_scanner_fully?: boolean;
+  auto_add_item_to_cart?: boolean | number;
   custom_hide_expected_amount?: boolean;
   write_off_limit?: number;
   write_off_account?: string;
@@ -38,11 +39,16 @@ export interface POSProfile {
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_cart_item_insertion_position?: "Top" | "Bottom";
+  hide_images?: boolean | number;
   custom_show_item_code_in_product_list?: boolean | number;
   custom_enhanced_search?: boolean | number;
   custom_scale_barcodes_start_with?: string;
   is_tax_included_in_basic_rate?: boolean | number | string;
   warehouse?: string;
+  allow_warehouse_change?: boolean | number;
+  custom_enable_sales_lens?: boolean | number;
+  custom_show_overdue_warning?: boolean | number;
+  custom_quick_switch_price?: boolean | number;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;
   [key: string]: unknown;
@@ -100,6 +106,7 @@ interface POSDetailsState {
   resetOpeningStatus: () => void;
   refreshAll: () => Promise<void>;
   setAuthenticated: (status: boolean) => void;
+  setWarehouse: (warehouse: string | null) => void;
 }
 
 const CACHE_DURATION = 10 * 60 * 1000;
@@ -140,6 +147,10 @@ export const usePOSProfileStore = create<POSDetailsState>()(
 
       setAuthenticated: (status: boolean) => {
         set({ isAuthenticated: status });
+      },
+
+      setWarehouse: (warehouse: string | null) => {
+        set({ warehouse });
       },
 
       fetchPOSProfiles: async (force = false) => {

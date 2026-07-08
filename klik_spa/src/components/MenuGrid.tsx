@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../hooks/useTheme";
 import { useProduct } from "../providers/ProductProvider";
 import { usePOSProfileStore } from "../stores/posProfileStore";
-import { Settings, LogOut, Moon, Sun, Grid3X3, List, Store, RefreshCw, Lock, Unlock } from "lucide-react";
+import { useCartStore } from "../stores/cartStore";
+import { Settings, LogOut, Moon, Sun, Grid3X3, List, Store, RefreshCw, Lock, Unlock, Keyboard } from "lucide-react";
 import { clearCacheAndReload } from "../utils/clearCache";
+import { isItemOutOfStock } from "../utils/stock";
 import CategoryTabs from "./CategoryTabs";
 import ProductGrid from "./ProductGrid";
 import SearchBar from "./SearchBar";
 import SalespersonAuthModal from "./dialog/SalespersonAuthModal";
 import { useSalespersonStore } from "../stores/salespersonStore";
+import KeyboardShortcutsPanel from "./KeyboardShortcutsPanel";
 
 interface MenuGridProps {
   onRefreshStock?: () => void;
@@ -33,14 +36,18 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     selectedCategory,
     setCategory,
     searchProducts,
+    clearSearch,
+    filteredItems,
     defaultView,
   } = useProduct();
+  const { addToCart } = useCartStore();
   
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, rememberLocked, ensureInitialized } = useSalespersonStore();
   
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(defaultView);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -92,6 +99,66 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     searchProducts(query);
   };
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      document.querySelector<HTMLElement>('[data-product-index="0"]')?.focus();
+      return;
+    }
+    if (!posDetails?.auto_add_item_to_cart) return;
+    if (e.key !== 'Enter' || !searchQuery.trim() || isSearching) return;
+    if (filteredItems.length !== 1) return;
+    const item = filteredItems[0];
+    if (!item || item.is_variant_template || item.has_variants) return;
+    if (isItemOutOfStock(item)) return;
+    void addToCart({ ...item, item_code: item.id });
+    clearSearch();
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        document.getElementById('pos-customer-btn')?.click();
+        return;
+      }
+      if (e.key === 'F3') {
+        e.preventDefault();
+        const el = document.getElementById('pos-search-input') as HTMLInputElement | null;
+        el?.focus();
+        el?.select();
+        return;
+      }
+      if (e.key === 'F10' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('pos-checkout-btn')?.click();
+        return;
+      }
+      if (e.key === 'F10' && e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('pos-hold-btn')?.click();
+        return;
+      }
+      if (e.key === 'Backspace' && !inInput) {
+        e.preventDefault();
+        const el = document.getElementById('pos-search-input') as HTMLInputElement | null;
+        el?.focus();
+        el?.select();
+        return;
+      }
+      if (e.key === '?' && !inInput) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
   const handleCategoryChange = (category: string) => {
     setCategory(category);
   };
@@ -99,17 +166,25 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
   return (
     <div className="flex flex-col h-full">
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3 flex-1 max-w-md">
             <SearchBar
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
               onScanBarcode={onScanBarcode}
+              onSearchKeyDown={handleSearchKeyDown}
             />
-            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="p-1.5 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Keyboard shortcuts (?)"
+            >
+              <Keyboard className="w-4 h-4" />
+            </button>
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors ${
                   viewMode === 'grid'
                     ? 'bg-white dark:bg-gray-600 text-beveren-600 dark:text-beveren-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -120,7 +195,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors ${
                   viewMode === 'list'
                     ? 'bg-white dark:bg-gray-600 text-beveren-600 dark:text-beveren-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -263,6 +338,8 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
           isSearching={isSearching}
         />
       </div>
+
+      <KeyboardShortcutsPanel isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
 
       <SalespersonAuthModal
         isOpen={showSalespersonModal}

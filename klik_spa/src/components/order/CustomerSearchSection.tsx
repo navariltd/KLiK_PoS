@@ -13,16 +13,21 @@ import {
   UserPlus,
   Mail,
   Phone,
+  Contact,
 } from "lucide-react";
 import type { Customer } from "../../types/customer";
+import { transformCustomerInfo } from "../../utils/transformCustomerInfo";
 import { useCustomers } from "../../hooks/useCustomers";
 import { useCustomerPermission } from "../../hooks/useCustomerPermission";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { useProductStore } from "../../stores/productStore";
 import { useCartStore } from "../../stores/cartStore";
+import WalkinInfoModal from "./WalkinInfoModal";
+import { useExtraFields } from "../../hooks/useExtraFields";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import AddCustomerModal from "../customer/AddCustomerModal";
+import OverdueWarningModal from "../customer/OverdueWarningModal";
 
 interface CustomerSearchSectionProps {
   selectedCustomer: Customer | null;
@@ -65,19 +70,36 @@ export const CustomerSearchSection = ({
   const shouldPreventSearchRef = useRef(false);
 
   const { customers, isLoading: isLoadingCustomers, refetch: refetchCustomers } = useCustomers(search);
-  const { posDetails } = usePOSProfileStore();
+  const { posDetails, warehouse: selectedWarehouse, setWarehouse } = usePOSProfileStore();
   const { checkCustomerPermission } = useCustomerPermission();
   const { fetchProducts, setSelectedCustomer: setProductCustomer } = useProductStore();
   const selectedPriceList = useCartStore((state) => state.selectedPriceList);
   const setSelectedPriceList = useCartStore((state) => state.setSelectedPriceList);
   const refreshCartPricing = useCartStore((state) => state.refreshCartPricing);
+  const walkinDetails = useCartStore((state) => state.walkinDetails);
+  const setWalkinDetails = useCartStore((state) => state.setWalkinDetails);
+  const extraFields = useCartStore((state) => state.extraFields);
+  const setExtraFields = useCartStore((state) => state.setExtraFields);
+  const { fields: extraFieldDefs } = useExtraFields();
+  const [showWalkinModal, setShowWalkinModal] = useState(false);
+  const [overdueData, setOverdueData] = useState<{
+    invoices: Array<{
+      name: string; due_date: string; grand_total: number;
+      outstanding_amount: number; currency: string; customer_name: string;
+    }>;
+    customerName: string;
+  } | null>(null);
   const [priceLists, setPriceLists] = useState<SellingPriceList[]>([]);
   const [isLoadingPriceLists, setIsLoadingPriceLists] = useState(false);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
   const canCreateCustomer = posDetails?.custom_allow_to_create_and_edit_customers === 1;
   const allowPriceListSwitching = !!posDetails?.allow_price_list_switching;
+  const allowWarehouseChange = !!posDetails?.allow_warehouse_change;
   const defaultPriceList = selectedCustomer?.sellingPriceList || posDetails?.selling_price_list || "";
   const activePriceList = selectedPriceList || defaultPriceList;
+  const activeWarehouse = selectedWarehouse || posDetails?.warehouse || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +126,36 @@ export const CustomerSearchSection = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!allowWarehouseChange) return;
+    let cancelled = false;
+    const fetchWarehouses = async () => {
+      setIsLoadingWarehouses(true);
+      try {
+        const response = await fetch("/api/method/klik_pos.api.pos_profile.get_warehouses", {
+          credentials: "include",
+        });
+        const data = await response.json();
+        if (!cancelled) {
+          setWarehouses(data?.message?.warehouses || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch warehouses:", error);
+      } finally {
+        if (!cancelled) setIsLoadingWarehouses(false);
+      }
+    };
+    fetchWarehouses();
+    return () => {
+      cancelled = true;
+    };
+  }, [allowWarehouseChange]);
+
+  const handleWarehouseChange = async (value: string) => {
+    setWarehouse(value || null);
+    await fetchProducts(true);
+  };
+
   const fetchCustomerInfo = async (customerName: string): Promise<Customer | null> => {
     try {
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(customerName)}`);
@@ -115,91 +167,7 @@ export const CustomerSearchSection = ({
 
       const customer = resData.message;
       
-      const transformedCustomer: Customer = {
-        id: customer.name,
-        type: customer.customer_type === "Company" ? "company" : (customer.is_walkin ? "walk-in" : "individual"),
-        name: customer.customer_name || customer.name,
-        customerName: customer.customer_name || customer.name,
-        email: customer.contact_data?.email_id || customer.email_id || "",
-        phone: customer.contact_data?.mobile_no || customer.contact_data?.phone || customer.mobile_no || "",
-        address: {
-          addressType: "Billing",
-          street: customer.address_data?.address_line1 || "",
-          buildingNumber: customer.address_data?.address_line2 || "",
-          city: customer.address_data?.city || "",
-          state: customer.address_data?.state || "",
-          zipCode: customer.address_data?.pincode || "",
-          country: customer.address_data?.country || posDetails?.company?.country || ""
-        },
-        companyName: customer.company_name || (customer.customer_type === "Company" ? customer.customer_name : undefined),
-        contactPerson: customer.contact_data ?
-          `${customer.contact_data.first_name || ''} ${customer.contact_data.last_name || ''}`.trim() || customer.customer_name :
-          customer.contact_person || customer.customer_name || "",
-        taxId: customer.vat_number || customer.tax_id || "",
-        isWalkin: customer.is_walkin || 0,
-        industry: customer.industry || "",
-        employeeCount: customer.employee_count || "",
-        registrationScheme: customer.registration_scheme || "",
-        registrationNumber: customer.registration_number || "",
-        loyaltyPoints: customer.loyalty?.loyalty_points || customer.custom_loyalty_points || 0,
-        totalSpent: customer.custom_total_spent || 0,
-        totalOrders: customer.custom_total_orders || 0,
-        preferredPaymentMethod: (customer.payment_method as "Cash" | "Bank Card" | "Bank Payment" | "Credit") || "Cash",
-        tags: customer.custom_tags?.split(",").filter(Boolean) || [],
-        status: (customer.custom_status as "active" | "inactive" | "vip") || "active",
-        createdAt: customer.creation || new Date().toISOString(),
-        lastVisit: customer.custom_last_visit || undefined,
-        defaultCurrency: customer.currency || customer.price_list_currency || undefined,
-        companyCurrency: customer.price_list_currency || undefined,
-        customerGroup: customer.customer_group || "All Customer Groups",
-        territory: customer.territory || "All Territories",
-        emailId: customer.email_id || null,
-        mobileNo: customer.mobile_no || null,
-        customerType: customer.customer_type,
-        customerPrimaryContact: customer.customer_primary_contact,
-        customerPrimaryAddress: customer.customer_primary_address,
-        contactData: customer.contact_data ? {
-          firstName: customer.contact_data.first_name,
-          lastName: customer.contact_data.last_name,
-          emailId: customer.contact_data.email_id,
-          phone: customer.contact_data.phone,
-          mobileNo: customer.contact_data.mobile_no
-        } : null,
-        addressData: customer.address_data ? {
-          addressLine1: customer.address_data.address_line1,
-          addressLine2: customer.address_data.address_line2,
-          city: customer.address_data.city,
-          state: customer.address_data.state,
-          pincode: customer.address_data.pincode,
-          country: customer.address_data.country
-        } : null,
-        customerAddress: customer.customer_address,
-        addressDisplay: customer.address_display || null,
-        shippingAddressName: customer.shipping_address_name || null,
-        shippingAddress: customer.shipping_address || null,
-        taxCategory: customer.tax_category || null,
-        contactPersonName: customer.contact_person || null,
-        contactDisplay: customer.contact_display || null,
-        contactEmail: customer.contact_email || null,
-        contactMobile: customer.contact_mobile || null,
-        contactPhone: customer.contact_phone || null,
-        contactDesignation: customer.contact_designation || null,
-        contactDepartment: customer.contact_department || null,
-        taxWithholdingCategory: customer.tax_withholding_category || null,
-        taxWithholdingGroup: customer.tax_withholding_group || null,
-        language: customer.language || "en",
-        priceListCurrency: customer.price_list_currency,
-        sellingPriceList: customer.selling_price_list,
-        paymentTermsTemplate: customer.payment_terms_template || null,
-        currencyCode: customer.currency || null,
-        salesTeam: customer.sales_team || [],
-        vatNumber: customer.vat_number || "",
-        paymentMethod: customer.payment_method || "Cash",
-        loyalty: customer.loyalty || undefined,
-        loyaltyProgram: customer.loyalty?.loyalty_program || null,
-        loyaltyTier: customer.loyalty?.loyalty_program_tier || customer.loyalty?.customer_loyalty_program_tier || null,
-        redeemableValue: customer.loyalty?.redeemable_value || 0,
-      };
+      const transformedCustomer: Customer = transformCustomerInfo(customer, (typeof posDetails?.company === "object" ? posDetails?.company?.country : undefined) || "");
       
       return transformedCustomer;
     } catch (error) {
@@ -222,6 +190,20 @@ export const CustomerSearchSection = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F4") return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (!selectedCustomer) return;
+      e.preventDefault();
+      setShowWalkinModal(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCustomer]);
 
   useEffect(() => {
     if (isOpen && inputRef.current && !isSelectingRef.current) {
@@ -294,6 +276,26 @@ export const CustomerSearchSection = ({
           await setSelectedPriceList(customer.sellingPriceList);
         }
         await fetchProducts(true);
+      }
+      // Check for overdue invoices if setting is on and customer is not walk-in
+      const resolvedCustomer = fullCustomer ?? customer;
+      if (posDetails?.custom_show_overdue_warning && resolvedCustomer.isWalkin !== 1) {
+        const company = typeof posDetails.company === "string" ? posDetails.company : (posDetails.company as any)?.name ?? ""
+        try {
+          const params = new URLSearchParams({ customer: resolvedCustomer.id, company })
+          const res = await fetch(
+            `/api/method/klik_pos.api.customer.get_customer_overdue_invoices?${params.toString()}`
+          )
+          const json = await res.json()
+          if (json?.message?.has_overdue) {
+            setOverdueData({
+              invoices: json.message.invoices,
+              customerName: json.message.customer_name || resolvedCustomer.name,
+            })
+          }
+        } catch (e) {
+          console.error("Overdue check failed:", e)
+        }
       }
     } catch (error) {
       console.error("Error fetching customer info:", error);
@@ -614,6 +616,7 @@ export const CustomerSearchSection = ({
       <div className="flex items-center gap-2">
         <div ref={containerRef} className="flex-1 relative">
           <div
+            id="pos-customer-btn"
             ref={buttonRef}
             onClick={handleOpenDropdown}
             className={`
@@ -660,6 +663,30 @@ export const CustomerSearchSection = ({
                         <span className="font-mono">PIN: {selectedCustomer.taxId}</span>
                       </div>
                     )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.name && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <User className="w-3 h-3" />
+                        <span className="truncate max-w-[160px]">{walkinDetails.name}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.phone && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <Phone className="w-3 h-3" />
+                        <span>{walkinDetails.phone}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.isWalkin === 1 && walkinDetails.taxId && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="font-mono">PIN: {walkinDetails.taxId}</span>
+                      </div>
+                    )}
+                    {extraFieldDefs
+                      .filter((f) => (extraFields[f.fieldname] || "").toString().trim())
+                      .map((f) => (
+                        <div key={f.fieldname} className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-mono">{f.label}: {extraFields[f.fieldname]}</span>
+                        </div>
+                      ))}
                   </div>
                 </div>
               </div>
@@ -688,29 +715,54 @@ export const CustomerSearchSection = ({
         {canCreateCustomer && (
           <button
             onClick={handleAddCustomerClick}
-            className="flex-shrink-0 w-[52px] h-[52px] bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
+            className="flex-shrink-0 w-10 h-10 bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
             title="Add New Customer"
           >
-            <UserPlus size={20} />
+            <UserPlus size={18} />
+          </button>
+        )}
+
+        {selectedCustomer && (
+          <button
+            onClick={() => setShowWalkinModal(true)}
+            className="flex-shrink-0 w-10 h-10 bg-beveren-600 text-white rounded-xl hover:bg-beveren-700 transition-all flex items-center justify-center shadow-sm hover:shadow-md"
+            title="Additional Info"
+          >
+            <Contact size={18} />
           </button>
         )}
       </div>
 
-      {allowPriceListSwitching && (
-      <div className="mt-2">
-        <select
-          value={activePriceList}
-          onChange={(event) => { void handlePriceListChange(event.target.value); }}
-          disabled={isLoadingPriceLists}
-          className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
-        >
-          {!activePriceList && <option value="">Default Price List</option>}
-          {priceLists.map((priceList) => (
-            <option key={priceList.name} value={priceList.name}>
-              {priceList.name}
-            </option>
-          ))}
-        </select>
+      {(allowPriceListSwitching || allowWarehouseChange) && (
+      <div className="mt-2 flex gap-2">
+        {allowPriceListSwitching && (
+          <select
+            value={activePriceList}
+            onChange={(event) => { void handlePriceListChange(event.target.value); }}
+            disabled={isLoadingPriceLists}
+            className="flex-1 h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
+          >
+            {!activePriceList && <option value="">Default Price List</option>}
+            {priceLists.map((priceList) => (
+              <option key={priceList.name} value={priceList.name}>
+                {priceList.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {allowWarehouseChange && (
+          <select
+            value={activeWarehouse}
+            onChange={(event) => { void handleWarehouseChange(event.target.value); }}
+            disabled={isLoadingWarehouses}
+            className="flex-1 h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-transparent disabled:opacity-60"
+          >
+            {!activeWarehouse && <option value="">Default Warehouse</option>}
+            {warehouses.map((wh) => (
+              <option key={wh} value={wh}>{wh}</option>
+            ))}
+          </select>
+        )}
       </div>
       )}
 
@@ -725,6 +777,34 @@ export const CustomerSearchSection = ({
           onSave={handleSaveCustomer}
           prefilledName={prefilledCustomerName}
           prefilledData={prefilledData}
+        />
+      )}
+
+      {showWalkinModal && selectedCustomer && (
+        <WalkinInfoModal
+          isWalkin={selectedCustomer.isWalkin === 1}
+          initial={walkinDetails}
+          masterDisplay={{
+            name: selectedCustomer.customerName || selectedCustomer.name || "",
+            taxId: selectedCustomer.taxId || "",
+            phone: selectedCustomer.phone || "",
+          }}
+          extraFields={extraFields}
+          onClose={() => setShowWalkinModal(false)}
+          onSave={(d) => {
+            if (selectedCustomer.isWalkin === 1) {
+              setWalkinDetails({ name: d.name, taxId: d.taxId, phone: d.phone });
+            }
+            setExtraFields(d.extraFields);
+            setShowWalkinModal(false);
+          }}
+        />
+      )}
+      {overdueData && (
+        <OverdueWarningModal
+          invoices={overdueData.invoices}
+          customerName={overdueData.customerName}
+          onClose={() => setOverdueData(null)}
         />
       )}
     </div>

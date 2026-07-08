@@ -10,6 +10,7 @@ import VariantPickerModal from "./VariantPickerModal";
 import { useCartStore } from "../stores/cartStore";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
+import { isItemOutOfStock } from "../utils/stock";
 
 
 interface ProductGridProps {
@@ -34,7 +35,7 @@ export default function ProductGrid({
   isSearching = false,
 }: ProductGridProps) {
   const { filteredItems, hideUnavailableItems, selectedCustomer } = useProduct();
-  const { addToCart } = useCartStore();
+  const { addToCart, cartItems, updateQuantity, removeItem } = useCartStore();
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, ensureInitialized, isRestoring } = useSalespersonStore();
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
@@ -44,19 +45,24 @@ export default function ProductGrid({
   const defaultView = posDetails?.custom_default_view || "Grid View";
   const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
   const showItemCode = !!posDetails?.custom_show_item_code_in_product_list;
+  const hideImages = !!posDetails?.hide_images;
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const isSalespersonLockActive = requiresSalespersonPin && !activeSalesperson && !isRestoring;
+
+  const [focusedIndex, setFocusedIndex] = useState(-1);
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const inStockItems = useMemo(
     () => (
       hideUnavailableItems
-        ? filteredItems.filter((item) => item.is_stock_item === false || item.available > 0)
+        ? filteredItems.filter((item) => !isItemOutOfStock(item))
         : filteredItems
     ),
     [filteredItems, hideUnavailableItems],
   );
+
+  useEffect(() => { setFocusedIndex(-1); }, [inStockItems]);
 
   useEffect(() => {
     if (requiresSalespersonPin) {
@@ -91,7 +97,7 @@ export default function ProductGrid({
   }, [addConcreteItemToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.is_stock_item !== false && item.available <= 0) return;
+    if (isItemOutOfStock(item)) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {
@@ -115,6 +121,35 @@ export default function ProductGrid({
 
     await addItemToCart(item);
   }, [addItemToCart, ensureInitialized, requiresSalespersonPin, scannerOnly]);
+
+  const handleItemKeyDown = useCallback((index: number, item: MenuItem, e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      document.querySelector<HTMLElement>(`[data-product-index="${index + 1}"]`)?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (index === 0) {
+        const el = document.getElementById('pos-search-input') as HTMLInputElement | null;
+        el?.focus();
+        el?.select();
+      } else {
+        document.querySelector<HTMLElement>(`[data-product-index="${index - 1}"]`)?.focus();
+      }
+    } else if (e.key === '+' || e.key === '=' || e.key === 'Enter') {
+      e.preventDefault();
+      void handleAddToCart(item);
+    } else if (e.key === '-') {
+      e.preventDefault();
+      const cartItem = cartItems.find(ci => (ci.item_code || ci.id) === (item.item_code || item.id));
+      if (cartItem) {
+        if (cartItem.quantity <= 1) {
+          removeItem(cartItem.id);
+        } else {
+          void updateQuantity(cartItem.id, cartItem.quantity - 1);
+        }
+      }
+    }
+  }, [cartItems, handleAddToCart, removeItem, updateQuantity]);
 
   const handleSalespersonAuthenticated = useCallback(() => {
     const itemToAdd = pendingCartItem;
@@ -179,6 +214,10 @@ export default function ProductGrid({
           isMobile={isMobile}
           showItemCode={showItemCode}
           scannerOnly={scannerOnly}
+          hideImages={hideImages}
+          focusedIndex={focusedIndex}
+          onItemFocus={setFocusedIndex}
+          onItemKeyDown={handleItemKeyDown}
         />
 
         {onLoadMore && (
@@ -281,7 +320,7 @@ export default function ProductGrid({
         </div>
       )}
       <div className={`grid ${isMobile ? "gap-3 grid-cols-2 sm:grid-cols-2" : "gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4"}`}>
-        {inStockItems.map((item) => (
+        {inStockItems.map((item, i) => (
           <ProductCard
             key={item.id}
             item={item}
@@ -289,6 +328,10 @@ export default function ProductGrid({
             isMobile={isMobile}
             showItemCode={showItemCode}
             scannerOnly={scannerOnly}
+            productIndex={i}
+            isFocused={focusedIndex === i}
+            onFocused={() => setFocusedIndex(i)}
+            onKeyboardAction={(e) => handleItemKeyDown(i, item, e)}
           />
         ))}
       </div>

@@ -18,6 +18,7 @@ def get_items(
     category: str | None = None,
     customer: str | None = None,
     price_list: str | None = None,
+    warehouse: str | None = None,
 ):
     try:
         limit = int(limit) if limit else 1000
@@ -29,9 +30,13 @@ def get_items(
     limit = min(limit, 2000)
 
     requested_price_list = price_list
+    requested_warehouse = warehouse
     pos_doc, warehouse, pos_price_list, hide_unavailable = _get_pos_context()
     include_service_items = _include_service_items(pos_doc)
-    
+
+    if requested_warehouse:
+        warehouse = requested_warehouse
+
     price_list = requested_price_list or _get_priority_price_list(customer, pos_doc, pos_price_list)
 
     try:
@@ -39,6 +44,7 @@ def get_items(
             "i.name, i.item_name, i.description, i.item_group, i.image, "
             "i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no, "
             "i.is_stock_item, i.has_variants, i.variant_of, i.variant_based_on, "
+            "i.allow_negative_stock, "
             "CASE WHEN pb.name IS NULL THEN 0 ELSE 1 END AS is_product_bundle"
         )
         params_list = []
@@ -61,7 +67,7 @@ def get_items(
                 join_clause,
                 "WHERE i.disabled = 0",
                 "AND IFNULL(i.is_sales_item, 1) = 1",
-                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0)",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0 OR i.allow_negative_stock = 1)",
             ]
             count_query = [
                 "SELECT COUNT(DISTINCT i.name) as total",
@@ -70,7 +76,7 @@ def get_items(
                 join_clause,
                 "WHERE i.disabled = 0",
                 "AND IFNULL(i.is_sales_item, 1) = 1",
-                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0)",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0 OR i.allow_negative_stock = 1)",
             ]
             if warehouse:
                 params_list.append(warehouse)
@@ -83,7 +89,7 @@ def get_items(
                 "LEFT JOIN `tabBin` b ON i.name = b.item_code",
                 "WHERE i.disabled = 0",
                 "AND IFNULL(i.is_sales_item, 1) = 1",
-                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0))",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0) OR i.allow_negative_stock = 1)",
             ]
             count_query = [
                 "SELECT COUNT(DISTINCT i.name) as total",
@@ -92,7 +98,7 @@ def get_items(
                 "LEFT JOIN `tabBin` b ON i.name = b.item_code",
                 "WHERE i.disabled = 0",
                 "AND IFNULL(i.is_sales_item, 1) = 1",
-                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0))",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0) OR i.allow_negative_stock = 1)",
             ]
 
             if warehouse:
@@ -146,17 +152,6 @@ def get_items(
 
         count_sql = "\n".join(count_query)
         count_sql = apply_sql_permissions(count_sql)
-
-        # Permission denied — user can't see any items, return empty
-        if count_sql.strip().upper().startswith("SELECT 1 WHERE 1=0"):
-            return {
-                "items": [],
-                "item_groups": [],
-                "total_count": 0,
-                "has_more": False,
-                "limit": limit,
-                "offset": offset,
-            }
 
         # Validate placeholder count matches params AFTER sql rewrite
         placeholder_count = count_sql.count("%s")
@@ -244,6 +239,7 @@ def get_items(
             is_stock_item = int(item.get("is_stock_item") or 0) == 1
             is_product_bundle = int(item.get("is_product_bundle") or 0) == 1
             is_variant_template = int(item.get("has_variants") or 0) == 1
+            allow_negative_stock = int(item.get("allow_negative_stock") or 0) == 1
             bundle_items = product_bundle_map.get(item_code, [])
             variant_count = variant_count_map.get(item_code, 0)
 
@@ -255,7 +251,13 @@ def get_items(
                 ]
                 balance = min(stock_component_limits) if stock_component_limits else 0
 
-            if hide_unavailable and not is_variant_template and (is_stock_item or is_product_bundle) and balance <= 0:
+            if (
+                hide_unavailable
+                and not is_variant_template
+                and (is_stock_item or is_product_bundle)
+                and balance <= 0
+                and not allow_negative_stock
+            ):
                 continue
 
             item_prices = _fetch_item_prices_sql(item_code, price_list, current_date)
@@ -303,6 +305,7 @@ def get_items(
                     "currency_symbol": currency_symbol,
                     "available": variant_count if is_variant_template else balance if (is_stock_item or is_product_bundle) else 0,
                     "is_stock_item": False if is_variant_template else True if is_product_bundle else is_stock_item,
+                    "allow_negative_stock": allow_negative_stock,
                     "is_product_bundle": is_product_bundle,
                     "bundle_items": bundle_items,
                     "is_variant_template": is_variant_template,
@@ -474,11 +477,11 @@ def _build_tax_info(tax_lines, item_tax_template="", source="none"):
 
 
 def _get_expected_display_price(price, tax_info):
-    exclusive_tax_rate = flt((tax_info or {}).get("exclusive_tax_rate") or 0)
-    if exclusive_tax_rate <= 0:
-        return flt(price)
-
-    return flt(price) * (1 + exclusive_tax_rate / 100)
+    # ERPNext convention: the displayed unit price is always the price-list rate.
+    # Tax (exclusive add-on or inclusive carve-out) only affects the document totals,
+    # never the shown rate. Keeping this as-is avoids the grid grossing-up the price
+    # in exclusive mode while the cart/checkout show the net price-list rate.
+    return flt(price)
 
 
 def _fetch_pos_sales_tax_rows(pos_doc):
@@ -747,16 +750,9 @@ def _get_pos_context():
     warehouse = getattr(pos_doc, "warehouse", None)
 
     if not warehouse:
-        default_company = (
-            frappe.defaults.get_user_default("Company")
-            or frappe.db.get_single_value("Global Defaults", "default_company")
-        )
-
-        warehouse = frappe.db.get_value(
-            "Company",
-            default_company,
-            "default_warehouse",
-        )
+        # Company has no "default_warehouse" field in ERPNext; the site-wide
+        # default warehouse lives on the (singleton) Stock Settings doctype.
+        warehouse = frappe.db.get_single_value("Stock Settings", "default_warehouse")
 
     if not warehouse:
         any_wh = frappe.get_list(

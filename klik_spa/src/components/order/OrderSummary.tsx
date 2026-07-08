@@ -12,10 +12,10 @@ import type { Customer } from "../../types/customer";
 import PaymentDialog from "../dialog/PaymentDialog";
 import SalespersonAuthModal from "../dialog/SalespersonAuthModal";
 import {
-  createDraftSalesInvoice,
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
-import { getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
+import { createHeldOrder } from "../../services/salesOrder";
+import { getOriginalDraftInvoiceId, getOriginalHeldOrderId } from "../../utils/draftInvoiceCache";
 import { CustomerSearchSection } from "./CustomerSearchSection";
 import CustomerLoyaltySummary from "./CustomerLoyaltySummary";
 import { CartItemRow } from "./CartItemRow";
@@ -143,8 +143,8 @@ export default function OrderSummary({
 
   useEffect(() => {
     if (selectedCustomer && cartItems.length > 0) {
-      // Keep saved draft pricing stable while editing a held invoice.
-      if (getOriginalDraftInvoiceId()) {
+      // Keep saved draft pricing stable while editing a held order or invoice.
+      if (getOriginalDraftInvoiceId() || getOriginalHeldOrderId()) {
         return;
       }
       refreshCartPricing();
@@ -241,14 +241,18 @@ export default function OrderSummary({
     return roundCurrency(getDisplayPriceInclusive(item) * item.quantity);
   };
 
-  const subtotal = cartItems.reduce((sum, item) => roundCurrency(sum + getLineTotalInclusive(item)), 0);
+  // ERPNext convention: subtotal is the net (price-list) total; tax is added on top
+  // (exclusive) or already carved in (inclusive) to form the grand total shown on the
+  // checkout button. This mirrors the PaymentDialog breakdown.
+  const subtotal = cartItems.reduce((sum, item) => roundCurrency(sum + roundCurrency(getDiscountedPrice(item) * item.quantity)), 0);
+  const grandTotal = cartItems.reduce((sum, item) => roundCurrency(sum + getLineTotalInclusive(item)), 0);
   const totalItemDiscount = cartItems.reduce((sum, item) => {
     const original = roundCurrency(getOriginalDisplayPriceInclusive(item) * item.quantity);
     const discounted = getLineTotalInclusive(item);
     return roundCurrency(sum + roundCurrency(original - discounted));
   }, 0);
   const couponDiscount = 0;
-  const total = roundCurrency(Math.max(0, subtotal - couponDiscount));
+  const total = roundCurrency(Math.max(0, grandTotal - couponDiscount));
 
   const handleUpdateQuantity = (id: string, quantity: number) => {
     if (quantity <= 0) {
@@ -351,13 +355,14 @@ export default function OrderSummary({
 
     setIsHoldingOrder(true);
     try {
-      const originalDraftInvoiceId = getOriginalDraftInvoiceId();
-      const result = await createDraftSalesInvoice({
+      const originalHeldOrderId = getOriginalHeldOrderId();
+      const result = await createHeldOrder({
         items: cartItems.map((item) => ({
           ...item,
           price: getDiscountedPrice(item),
         })),
         customer: { id: selectedCustomer.id },
+        customerData: selectedCustomer,
         subtotal,
         total,
         appliedCoupons: [],
@@ -366,14 +371,14 @@ export default function OrderSummary({
         totalSavings: totalItemDiscount + couponDiscount,
         status: "held",
         salesperson: activeSalesperson?.name || null,
-        draft_invoice_id: originalDraftInvoiceId,
+        held_order_id: originalHeldOrderId,
       });
       if (result?.success) {
         handleClearCart();
-        toast.success(originalDraftInvoiceId ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
+        toast.success(originalHeldOrderId ? "Order updated and held successfully!" : "Order held successfully!");
       }
     } catch (error) {
-      toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+      toast.error(extractErrorFromException(error, "Failed to hold order"));
     } finally {
       setIsHoldingOrder(false);
     }
@@ -546,6 +551,7 @@ export default function OrderSummary({
           isMobile={isMobile}
           currency_symbol={currency_symbol}
           allow_holding_invoices={posDetails?.allow_holding_invoices === 1}
+          taxExclusive={!isTaxIncludedInBasicRate}
         />
       )}
 

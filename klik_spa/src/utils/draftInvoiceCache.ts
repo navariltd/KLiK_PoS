@@ -6,7 +6,8 @@ interface DraftInvoiceCache {
   timestamp: number;
   invoiceId: string;
   customer: Customer | null;
-  originalDraftInvoiceId: string; // Track the original draft invoice to delete later
+  originalDraftInvoiceId: string; // draft SI (M-Pesa / legacy held)
+  originalHeldOrderId?: string;   // SO-based held order
 }
 
 const CACHE_KEY = 'draft-invoice-cache';
@@ -18,9 +19,21 @@ export function cacheDraftInvoiceItems(invoiceId: string, items: CartItem[], cus
     timestamp: Date.now(),
     invoiceId,
     customer,
-    originalDraftInvoiceId: invoiceId // Store the original draft invoice ID
+    originalDraftInvoiceId: invoiceId,
   };
 
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+export function cacheHeldOrder(orderId: string, items: CartItem[], customer: Customer | null): void {
+  const cache: DraftInvoiceCache = {
+    items,
+    timestamp: Date.now(),
+    invoiceId: orderId,
+    customer,
+    originalDraftInvoiceId: '',
+    originalHeldOrderId: orderId,
+  };
   localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 }
 
@@ -33,9 +46,7 @@ export function getCachedDraftInvoiceItems(): DraftInvoiceCache | null {
     }
 
     const cache: DraftInvoiceCache = JSON.parse(cached);
-    // console.log("getCachedDraftInvoiceItems - parsed cache:", cache);
 
-    // Check if cache is expired
     const now = Date.now();
     const age = now - cache.timestamp;
 
@@ -69,7 +80,6 @@ export async function loadCachedItemsToCart(): Promise<boolean> {
     bundle_entries: item.bundle_entries || [],
   }));
 
-  // Replace cart atomically to preserve original draft rates and line breakdown.
   useCartStore.setState((state) => ({
     ...state,
     cartItems: mappedItems,
@@ -99,6 +109,10 @@ export function hasCachedDraftInvoiceItems(): boolean {
 
 export function getOriginalDraftInvoiceId(): string | null {
   const cachedData = getCachedDraftInvoiceItems();
-
   return cachedData?.originalDraftInvoiceId || null;
+}
+
+export function getOriginalHeldOrderId(): string | null {
+  const cachedData = getCachedDraftInvoiceItems();
+  return cachedData?.originalHeldOrderId || null;
 }

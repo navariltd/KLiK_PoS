@@ -17,6 +17,8 @@ interface PrintOptions {
     letter_head?: string | null;
     [key: string]: unknown;
   } | null;
+  /** Doctype to print via /printview. Defaults to "Sales Invoice". */
+  doctype?: string;
 }
 
 export function handlePrintInvoice(invoiceData: Invoice | null, options: PrintOptions = {}) {
@@ -25,8 +27,11 @@ export function handlePrintInvoice(invoiceData: Invoice | null, options: PrintOp
     return;
   }
 
+  const doctype = options.doctype || "Sales Invoice";
+  const isSalesInvoice = doctype === "Sales Invoice";
+
   const isAlreadyPrinted = Boolean(invoiceData.custom_is_printed);
-  if (isAlreadyPrinted && options.preventReprint) {
+  if (isSalesInvoice && isAlreadyPrinted && options.preventReprint) {
     toast.error("Reprinting is not allowed for this invoice");
     return;
   }
@@ -37,13 +42,16 @@ export function handlePrintInvoice(invoiceData: Invoice | null, options: PrintOp
     return;
   }
 
-  const printFormat = options.posDetails?.print_format || "";
+  // Only Sales Invoice has a POS-profile-configured print format; other
+  // doctypes (e.g. Sales Order) fall back to Frappe's default print format
+  // for that doctype by leaving `format` blank.
+  const printFormat = isSalesInvoice ? options.posDetails?.print_format || "" : "";
   const letterHead = options.posDetails?.letter_head || 0;
 
   const baseUrl = window.location.origin;
   const url =
     baseUrl +
-    "/printview?doctype=Sales%20Invoice" +
+    "/printview?doctype=" + encodeURIComponent(doctype) +
     "&name=" + encodeURIComponent(invoiceName) +
     "&format=" + encodeURIComponent(printFormat) +
     "&no_letterhead=" + (letterHead ? 0 : 1);
@@ -69,6 +77,12 @@ export function handlePrintInvoice(invoiceData: Invoice | null, options: PrintOp
       setTimeout(() => iframe.remove(), 60000);
     }
   });
+
+  if (!isSalesInvoice) {
+    // Sales Order (and other non-invoice) docs have no "printed" tracking.
+    options.onAfterMark?.();
+    return;
+  }
 
   // Mark invoice as printed
   markInvoiceAsPrinted(invoiceName)

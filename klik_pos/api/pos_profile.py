@@ -4,6 +4,127 @@ from frappe import _
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
+EXTRA_FIELD_WHITELIST = {"Select", "Link", "Data", "Small Text", "Int", "Float", "Check", "Date"}
+
+# Standard Frappe/transaction fields that pass the type whitelist but must never be
+# offered for cashier entry.
+EXTRA_FIELD_EXCLUDE = {
+    "name", "owner", "docstatus", "idx", "naming_series", "amended_from",
+    "title", "status", "company", "customer", "po_date",
+}
+
+
+def get_configured_extra_fieldnames(pos_profile=None):
+    """Server-side WRITE allow-list: fieldnames the active POS Profile configured,
+    intersected with the eligible SO∩SI common fields (defense in depth). Prevents
+    a client from writing arbitrary fields via the extra_fields map."""
+    if pos_profile is None:
+        pos_profile = get_current_pos_profile()
+    rows = getattr(pos_profile, "custom_pos_extra_fields", None) or []
+    configured = {r.so_si_commonfield for r in rows if getattr(r, "so_si_commonfield", None)}
+    eligible = {f["fieldname"] for f in _eligible_common_fields()}
+    return configured & eligible
+
+
+def get_required_extra_fieldnames(pos_profile=None):
+    """Fieldnames marked Required on the active POS Profile's extra-field table."""
+    if pos_profile is None:
+        pos_profile = get_current_pos_profile()
+    rows = getattr(pos_profile, "custom_pos_extra_fields", None) or []
+    return [r.so_si_commonfield for r in rows if getattr(r, "reqd", 0) and r.so_si_commonfield]
+
+
+def validate_required_extra_fields(extra_fields, pos_profile=None):
+    """Raise if any Required configured extra field has no value."""
+    extra_fields = extra_fields or {}
+    missing = [
+        fn for fn in get_required_extra_fieldnames(pos_profile)
+        if extra_fields.get(fn) in (None, "")
+    ]
+    if missing:
+        frappe.throw(
+            _("Please fill required field(s): {0}").format(", ".join(missing))
+        )
+
+
+def _eligible_common_fields():
+    """SO∩SI fields eligible for POS Profile extra-field config.
+
+    Intersect Sales Order and Sales Invoice fields by fieldname AND fieldtype,
+    keep only safe whitelisted types, and drop hidden/read-only/system fields.
+    """
+    so = {f.fieldname: f for f in frappe.get_meta("Sales Order").fields}
+    si = {f.fieldname: f for f in frappe.get_meta("Sales Invoice").fields}
+
+    out = []
+    for fieldname, sf in so.items():
+        tf = si.get(fieldname)
+        if tf is None or tf.fieldtype != sf.fieldtype:
+            continue
+        if sf.fieldtype not in EXTRA_FIELD_WHITELIST:
+            continue
+        if fieldname in EXTRA_FIELD_EXCLUDE:
+            continue
+        if getattr(sf, "hidden", 0) or getattr(sf, "read_only", 0) \
+                or getattr(tf, "hidden", 0) or getattr(tf, "read_only", 0):
+            continue
+        out.append({
+            "fieldname": fieldname,
+            "label": sf.label or fieldname,
+            "fieldtype": sf.fieldtype,
+            "options": sf.options or "",
+        })
+    out.sort(key=lambda f: f["label"].lower())
+    return out
+
+
+@frappe.whitelist()
+def get_pos_extra_field_candidates():
+    """Whitelisted: eligible SO∩SI common fields for the POS Profile picker + SPA."""
+    return _eligible_common_fields()
+
+
+@frappe.whitelist()
+def search_extra_field_link(doctype, txt="", page_length=10):
+    """Typeahead search for a Link extra-field's target doctype.
+
+    Security: only doctypes that are the target of an eligible Link extra-field
+    are searchable, preventing arbitrary doctype enumeration through this
+    whitelisted endpoint.
+    """
+    allowed = {
+        f["options"]
+        for f in _eligible_common_fields()
+        if f["fieldtype"] == "Link" and f.get("options")
+    }
+    if doctype not in allowed:
+        frappe.throw(_("Doctype {0} is not searchable here.").format(doctype))
+
+    page_length = min(int(page_length or 10), 50)
+    meta = frappe.get_meta(doctype)
+    has_title = bool(meta.title_field) and meta.title_field != "name"
+
+    or_filters = None
+    if txt:
+        or_filters = [["name", "like", f"%{txt}%"]]
+        if has_title:
+            or_filters.append([meta.title_field, "like", f"%{txt}%"])
+
+    fields = ["name"] + ([meta.title_field] if has_title else [])
+    rows = frappe.get_list(
+        doctype,
+        or_filters=or_filters,
+        fields=fields,
+        limit=page_length,
+        order_by="modified desc",
+    )
+
+    out = []
+    for r in rows:
+        title = r.get(meta.title_field) if has_title else None
+        out.append({"value": r["name"], "label": title or r["name"]})
+    return out
+
 
 @frappe.whitelist()
 def get_pos_profiles_for_user():
@@ -205,10 +326,90 @@ def get_pos_details():
         "currency_symbol": frappe.db.get_value("Currency", pos.currency, "symbol") or pos.currency,
         "is_zatca_enabled": is_zatca_enabled(),
         "default_customer": default_customer,
-        "current_opening_entry": current_opening_entry
+        "current_opening_entry": current_opening_entry,
+        "business_type": getattr(pos, "custom_business_type", "B2C") or "B2C",
+        "allow_warehouse_change": int(getattr(pos, "allow_warehouse_change", 0) or 0),
     })
 
     return details
+
+
+@frappe.whitelist()
+def get_warehouses():
+    """Return leaf (non-group) warehouses for the current POS profile's company.
+
+    Respects Warehouse User Permissions: if the current user is restricted to
+    specific warehouses, only those (and the leaves under any permitted group
+    warehouse) are returned. Unrestricted users get all company warehouses.
+    """
+    try:
+        pos = get_current_pos_profile()
+        company = getattr(pos, "company", None)
+    except Exception:
+        company = None
+
+    filters = {"is_group": 0, "disabled": 0}
+    if company:
+        filters["company"] = company
+
+    permitted = _get_permitted_warehouses(frappe.session.user)
+    if permitted is not None:
+        if not permitted:
+            return {"warehouses": []}
+        filters["name"] = ["in", permitted]
+
+    warehouses = frappe.get_all(
+        "Warehouse",
+        filters=filters,
+        fields=["name"],
+        order_by="name asc",
+    )
+    return {"warehouses": [w.name for w in warehouses]}
+
+
+def _get_permitted_warehouses(user):
+    """Leaf warehouse names the user is restricted to via User Permissions.
+
+    Returns ``None`` when the user has no Warehouse user permission (i.e. not
+    restricted), otherwise the expanded set of leaf warehouses — descendants of
+    any permitted group warehouse are included.
+    """
+    if user in ("Administrator",):
+        return None
+
+    from frappe.permissions import get_user_permissions
+
+    perms = get_user_permissions(user) or {}
+    wh_perms = perms.get("Warehouse")
+    if not wh_perms:
+        return None
+
+    permitted_names = {p.get("doc") for p in wh_perms if p.get("doc")}
+    if not permitted_names:
+        return None
+
+    leaves = set()
+    for name in permitted_names:
+        wh = frappe.db.get_value(
+            "Warehouse", name, ["is_group", "lft", "rgt"], as_dict=True
+        )
+        if not wh:
+            continue
+        if wh.is_group:
+            child_leaves = frappe.get_all(
+                "Warehouse",
+                filters={
+                    "lft": [">=", wh.lft],
+                    "rgt": ["<=", wh.rgt],
+                    "is_group": 0,
+                },
+                pluck="name",
+            )
+            leaves.update(child_leaves)
+        else:
+            leaves.add(name)
+
+    return list(leaves)
 
 
 def is_zatca_enabled():

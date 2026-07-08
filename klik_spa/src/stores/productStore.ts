@@ -39,6 +39,8 @@ interface ProductStoreState {
   stopBackgroundRefresh: () => void;
   startBackgroundRefresh: () => void;
   executeSearch: (query: string) => Promise<void>;
+  attemptIdentifierLookup: (query: string) => Promise<void>;
+  fetchItemByIdentifier: (code: string) => Promise<MenuItem | null>;
   fetchProductsFromAPI: (limit: number, offset: number, search: string, category: string, customerId: string, priceList?: string) => Promise<{
     items: MenuItem[];
     item_groups: ItemGroup[];
@@ -63,6 +65,8 @@ const CACHE_DURATION = 5 * 60 * 1000;
 let currentPosName = '';
 let refreshTimers: Array<ReturnType<typeof setInterval>> = [];
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+let identifierTimer: ReturnType<typeof setTimeout> | null = null;
+const IDENTIFIER_LIKE_PATTERN = /^\S{6,}$/;
 
 export const useProductStore = create<ProductStoreState>()(
   persist(
@@ -93,7 +97,7 @@ export const useProductStore = create<ProductStoreState>()(
         if (hideUnavailable) {
           return products.filter((p) => {
             const isStockItem = p.is_stock_item !== false;
-            if (!isStockItem) {
+            if (!isStockItem || p.allow_negative_stock) {
               return true;
             }
             return (p.available || 0) > 0;
@@ -168,7 +172,12 @@ export const useProductStore = create<ProductStoreState>()(
           if (priceList) {
             params.append('price_list', priceList);
           }
-          
+
+          const selectedWarehouse = usePOSProfileStore.getState().warehouse;
+          if (selectedWarehouse) {
+            params.append('warehouse', selectedWarehouse);
+          }
+
           if (search) params.append('search', search);
           if (category && category !== 'all') params.append('category', category);
           
@@ -342,6 +351,10 @@ export const useProductStore = create<ProductStoreState>()(
           clearTimeout(searchTimer);
           searchTimer = null;
         }
+        if (identifierTimer) {
+          clearTimeout(identifierTimer);
+          identifierTimer = null;
+        }
 
         set({ searchQuery: query, isSearching: true });
 
@@ -350,14 +363,20 @@ export const useProductStore = create<ProductStoreState>()(
           get().fetchProducts(true);
           return;
         }
-        
+
+        if (IDENTIFIER_LIKE_PATTERN.test(trimmedQuery)) {
+          identifierTimer = setTimeout(async () => {
+            await get().attemptIdentifierLookup(trimmedQuery);
+          }, 50);
+        }
+
         if (!immediate) {
           searchTimer = setTimeout(async () => {
             await get().executeSearch(trimmedQuery);
           }, 400);
           return;
         }
-        
+
         await get().executeSearch(trimmedQuery);
       },
 
@@ -386,10 +405,78 @@ export const useProductStore = create<ProductStoreState>()(
         }
       },
 
+      attemptIdentifierLookup: async (query: string) => {
+        const item = await get().fetchItemByIdentifier(query);
+
+        // The user kept typing/scanning since this lookup was scheduled - discard.
+        if (get().searchQuery.trim() !== query) return;
+        if (!item) return;
+
+        // Exact identifier match: cancel the slower fuzzy search and show
+        // just this item immediately.
+        if (searchTimer) {
+          clearTimeout(searchTimer);
+          searchTimer = null;
+        }
+
+        set({
+          products: [item],
+          totalCount: 1,
+          hasMore: false,
+          isSearching: false,
+        });
+
+        const autoAdd = !!usePOSProfileStore.getState().posDetails?.auto_add_item_to_cart;
+        if (autoAdd) {
+          await useCartStore.getState().addToCart({ ...item, item_code: item.id });
+          get().clearSearch();
+        }
+      },
+
+      fetchItemByIdentifier: async (code: string) => {
+        try {
+          const response = await fetch(
+            `/api/method/klik_pos.api.item.item_search.get_item_by_identifier?code=${encodeURIComponent(code)}`
+          );
+          if (!response.ok) return null;
+
+          const data = await response.json();
+          const message = data?.message;
+          if (!message?.item_code) return null;
+
+          const item: MenuItem = {
+            id: message.item_code,
+            item_code: message.item_code,
+            name: message.item_name || message.item_code,
+            category: message.item_group || 'General',
+            price: message.price || 0,
+            image: message.image || '',
+            available: message.available || 0,
+            is_stock_item: message.is_stock_item,
+            sold: 0,
+            description: message.description || '',
+            currency_symbol: message.currency_symbol,
+            is_product_bundle: message.is_product_bundle || false,
+            bundle_items: message.bundle_items || [],
+            is_variant_template: message.is_variant_template || false,
+            has_variants: message.has_variants || false,
+            variant_of: message.variant_of,
+            variant_based_on: message.variant_based_on,
+          };
+          return item;
+        } catch {
+          return null;
+        }
+      },
+
       clearSearch: () => {
         if (searchTimer) {
           clearTimeout(searchTimer);
           searchTimer = null;
+        }
+        if (identifierTimer) {
+          clearTimeout(identifierTimer);
+          identifierTimer = null;
         }
         set({ searchQuery: '' });
         get().fetchProducts(true);

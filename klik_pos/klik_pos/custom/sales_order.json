@@ -1,0 +1,67 @@
+{
+ "custom_fields": [
+  {
+   "doctype": "Custom Field",
+   "name": "Sales Order-custom_klik_pos_section",
+   "dt": "Sales Order",
+   "fieldname": "custom_klik_pos_section",
+   "fieldtype": "Section Break",
+   "label": "KLiK POS",
+   "insert_after": "amended_from",
+   "hidden": 1,
+   "collapsible": 0,
+   "module": "KLiK PoS"
+  },
+  {
+   "doctype": "Custom Field",
+   "name": "Sales Order-custom_pos_profile",
+   "dt": "Sales Order",
+   "fieldname": "custom_pos_profile",
+   "fieldtype": "Link",
+   "options": "POS Profile",
+   "label": "POS Profile",
+   "insert_after": "custom_klik_pos_section",
+   "hidden": 1,
+   "module": "KLiK PoS"
+  },
+  {
+   "doctype": "Custom Field",
+   "name": "Sales Order-custom_pos_opening_entry",
+   "dt": "Sales Order",
+   "fieldname": "custom_pos_opening_entry",
+   "fieldtype": "Link",
+   "options": "POS Opening Entry",
+   "label": "POS Opening Entry",
+   "insert_after": "custom_pos_profile",
+   "hidden": 1,
+   "module": "KLiK PoS"
+  },
+  {
+   "doctype": "Custom Field",
+   "name": "Sales Order-custom_is_klik_held",
+   "dt": "Sales Order",
+   "fieldname": "custom_is_klik_held",
+   "fieldtype": "Check",
+   "label": "KLiK POS Held Order",
+   "insert_after": "custom_pos_opening_entry",
+   "hidden": 1,
+   "module": "KLiK PoS"
+  },
+  {
+   "doctype": "Custom Field",
+   "name": "Sales Order-custom_klik_cart_meta",
+   "dt": "Sales Order",
+   "fieldname": "custom_klik_cart_meta",
+   "fieldtype": "Long Text",
+   "label": "KLiK Cart Metadata",
+   "insert_after": "custom_is_klik_held",
+   "hidden": 1,
+   "module": "KLiK PoS"
+  }
+ ],
+ "custom_perms": [],
+ "doctype": "Sales Order",
+ "links": [],
+ "property_setters": [],
+ "sync_on_migrate": 1
+}

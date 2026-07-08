@@ -6,6 +6,7 @@ import ProductTooltip from "./ProductTooltip"
 import ProductDetailsModal from "./ProductDetailsModal"
 
 import { formatCurrencyWithSymbol } from "../utils/currency"
+import { isItemOutOfStock } from "../utils/stock"
 
 interface ProductLineViewProps {
   items: MenuItem[]
@@ -13,6 +14,10 @@ interface ProductLineViewProps {
   isMobile?: boolean
   scannerOnly?: boolean
   showItemCode?: boolean
+  hideImages?: boolean
+  focusedIndex?: number
+  onItemFocus?: (index: number) => void
+  onItemKeyDown?: (index: number, item: MenuItem, e: React.KeyboardEvent<HTMLDivElement>) => void
 }
 
 export default function ProductLineView({
@@ -21,8 +26,13 @@ export default function ProductLineView({
   isMobile = false,
   scannerOnly = false,
   showItemCode = false,
+  hideImages = false,
+  focusedIndex = -1,
+  onItemFocus,
+  onItemKeyDown,
 }: ProductLineViewProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | number | null>(null)
+  const [hoveredImageId, setHoveredImageId] = useState<string | number | null>(null)
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
 
@@ -56,22 +66,22 @@ export default function ProductLineView({
 
   return (
     <>
-      <div className={`${isMobile ? "p-4" : "p-2"} bg-gray-50 dark:bg-gray-900`}>
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4 overflow-visible">
+      <div className={`${isMobile ? "p-4" : "p-1"} bg-gray-50 dark:bg-gray-900`}>
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-2 overflow-visible">
           {!isMobile && (
-            <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b">
-              <div className="col-span-4 text-xs font-semibold text-gray-900 dark:text-white">Product</div>
+            <div className="grid grid-cols-12 gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b">
+              <div className="col-span-6 text-xs font-semibold text-gray-900 dark:text-white">Product</div>
               <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Rate</div>
               <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Qty</div>
-              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">UOM</div>
-              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Action</div>
+              <div className="col-span-1 text-xs font-semibold text-center text-gray-900 dark:text-white">UOM</div>
+              <div className="col-span-1 text-xs font-semibold text-center text-gray-900 dark:text-white">Action</div>
             </div>
           )}
 
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
-            {items.map((item) => {
+            {items.map((item, rowIndex) => {
               const isServiceItem = item.is_stock_item === false
-              const isOutOfStock = item.is_stock_item !== false && item.available <= 0
+              const isOutOfStock = isItemOutOfStock(item)
               const isDisabled = isOutOfStock || scannerOnly
               const expectedPrice = Number(item.price_with_vat ?? item.price)
               const basePrice = Number(item.price || 0)
@@ -90,31 +100,54 @@ export default function ProductLineView({
               const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0
               const variantCount = item.is_variant_template ? item.variant_count || 0 : 0
 
+              const isRowFocused = focusedIndex === rowIndex;
               return (
                 <div
                   key={item.id}
-                  className={`${isMobile ? "px-3 py-3" : "grid grid-cols-12 gap-4 px-4 py-3"} hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    !isDisabled && "cursor-pointer"
-                  }`}
+                  tabIndex={0}
+                  data-product-index={rowIndex}
+                  onFocus={() => onItemFocus?.(rowIndex)}
+                  onKeyDown={(e) => onItemKeyDown?.(rowIndex, item, e)}
+                  className={`relative outline-none ${isMobile ? "px-3 py-2" : "grid grid-cols-12 gap-3 px-3 py-1.5"} transition-colors ${
+                    isRowFocused
+                      ? "bg-beveren-50 dark:bg-beveren-900/20 ring-inset ring-2 ring-beveren-400/50"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                  } ${!isDisabled && "cursor-pointer"}`}
                   onClick={() => !isDisabled && onAddToCart(item)}
                 >
-                  <div className={`${isMobile ? "flex items-center gap-2" : "col-span-4 flex items-center gap-2"}`}>
-                    {item.image ? (
-                      <img
-                        src={item.image}
-                        alt={item.name}
-                        className={`flex-shrink-0 rounded object-cover ${isMobile ? "w-8 h-8" : "w-9 h-9"} ${isDisabled ? "opacity-60" : ""}`}
-                      />
-                    ) : (
-                      <div className={`flex-shrink-0 rounded bg-gray-100 dark:bg-gray-700 ${isMobile ? "w-8 h-8" : "w-9 h-9"} ${isDisabled ? "opacity-60" : ""}`} />
+                  {/* Image zoom preview — rendered at row level to escape column clipping */}
+                  {hoveredImageId === item.id && item.image && !isMobile && (
+                    <div className="absolute left-10 top-1/2 -translate-y-1/2 z-50 pointer-events-none">
+                      <div className="rounded-lg overflow-hidden shadow-2xl ring-1 ring-black/10 dark:ring-white/10 bg-white dark:bg-gray-800">
+                        <img src={item.image} alt={item.name} className="w-32 h-32 object-cover" />
+                      </div>
+                    </div>
+                  )}
+                  <div className={`${isMobile ? "flex items-center gap-2" : "col-span-6 flex items-center gap-2"}`}>
+                    {!hideImages && (
+                      item.image ? (
+                        <div
+                          className="flex-shrink-0"
+                          onMouseEnter={() => !isMobile && setHoveredImageId(item.id)}
+                          onMouseLeave={() => !isMobile && setHoveredImageId(null)}
+                        >
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className={`rounded object-cover ${isMobile ? "w-8 h-8" : "w-7 h-7"} ${isDisabled ? "opacity-60" : ""}`}
+                          />
+                        </div>
+                      ) : (
+                        <div className={`flex-shrink-0 rounded bg-gray-100 dark:bg-gray-700 ${isMobile ? "w-8 h-8" : "w-7 h-7"} ${isDisabled ? "opacity-60" : ""}`} />
+                      )
                     )}
                     <div className="flex-1 min-w-0 relative">
-                      <div className="flex items-center gap-1">
-                        <h3 className={`font-medium text-gray-900 dark:text-white ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
+                      <div className="flex items-start gap-1">
+                        <h3 className={`font-medium text-gray-900 dark:text-white break-words ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isDisabled ? "opacity-60" : ""}`}>
                           {item.name}
                         </h3>
                         <div
-                          className="relative inline-block"
+                          className="relative inline-block flex-shrink-0 mt-px"
                           onMouseEnter={() => !isMobile && setHoveredItemId(item.id)}
                           onMouseLeave={() => !isMobile && setHoveredItemId(null)}
                         >
@@ -125,43 +158,43 @@ export default function ProductLineView({
                             }}
                             className={`text-gray-400 hover:text-blue-500 text-sm focus:outline-none transition-colors ${isDisabled ? "opacity-60" : ""}`}
                           >
-                            ℹ️
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                           </button>
                           {hoveredItemId === item.id && !isMobile && (
                             <ProductTooltip
                               item={item}
                               onClose={() => setHoveredItemId(null)}
-                              onViewDetails={() => {
-                                handleInfoClick(item)
-                              }}
+                              onViewDetails={() => handleInfoClick(item)}
                             />
                           )}
                         </div>
                       </div>
                       {showItemCode && (
-                        <p className={`text-gray-600 dark:text-gray-300 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
+                        <p className={`text-gray-600 dark:text-gray-300 break-words ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isDisabled ? "opacity-60" : ""}`}>
                           {item.item_code || item.id}
                         </p>
                       )}
-                      <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
-                        {item.category}
-                      </p>
-                      <span
-                        className={`mt-1 inline-flex max-w-full rounded border px-1.5 py-0.5 text-[9px] font-semibold leading-none ${taxBadgeClass} ${isDisabled ? "opacity-60" : ""}`}
-                        title={item.tax_info?.item_tax_template || item.tax_info?.source || taxBadgeLabel}
-                      >
-                        {taxBadgeLabel}
-                      </span>
-                      {item.is_product_bundle && (
-                        <p className={`text-amber-700 dark:text-amber-300 ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
-                          Bundle · {bundleCount} packed {bundleCount === 1 ? "item" : "items"}
-                        </p>
-                      )}
-                      {item.is_variant_template && (
-                        <p className={`text-sky-700 dark:text-sky-300 ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
-                          Options · {variantCount} {variantCount === 1 ? "variant" : "variants"}
-                        </p>
-                      )}
+                      <div className={`flex flex-wrap items-center gap-1 mt-0.5 ${isDisabled ? "opacity-60" : ""}`}>
+                        <span className="inline-flex items-center rounded border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700/60 px-1.5 py-px text-[9px] font-medium leading-none text-gray-500 dark:text-gray-400">
+                          {item.category}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded border px-1.5 py-px text-[9px] font-semibold leading-none ${taxBadgeClass}`}
+                          title={item.tax_info?.item_tax_template || item.tax_info?.source || taxBadgeLabel}
+                        >
+                          {taxBadgeLabel}
+                        </span>
+                        {item.is_product_bundle && (
+                          <span className="inline-flex items-center rounded border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-px text-[9px] font-medium leading-none text-amber-700 dark:text-amber-300">
+                            Bundle · {bundleCount}
+                          </span>
+                        )}
+                        {item.is_variant_template && (
+                          <span className="inline-flex items-center rounded border border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/30 px-1.5 py-px text-[9px] font-medium leading-none text-sky-700 dark:text-sky-300">
+                            {variantCount} variants
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -229,13 +262,13 @@ export default function ProductLineView({
                         </span>
                       </div>
 
-                      <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className={`col-span-1 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {item.uom || "Nos"}
                         </span>
                       </div>
 
-                      <div className="col-span-2 flex items-center justify-center">
+                      <div className="col-span-1 flex items-center justify-center">
                         {isDisabled ? (
                           <span className="text-gray-400 dark:text-gray-500 text-xs opacity-60">
                             {isOutOfStock ? "Out" : "Scan"}
@@ -246,7 +279,7 @@ export default function ProductLineView({
                               e.stopPropagation()
                               onAddToCart(item)
                             }}
-                            className="bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-md transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-slate-500 px-3 py-1.5 text-sm"
+                            className="bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-md transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-slate-500 px-2 py-1 text-xs"
                           >
                             Add
                           </button>

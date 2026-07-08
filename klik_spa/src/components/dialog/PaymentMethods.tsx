@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { CheckCircle } from "lucide-react";
 import type { PaymentMethod } from "./types";
 
@@ -8,6 +9,7 @@ interface PaymentMethodsProps {
   onAmountChange: (methodId: string, amount: string) => void;
   onAutoFill: (methodId: string) => void;
   setActiveMethodId: (id: string | null) => void;
+  headerRight?: ReactNode;
 }
 
 export default function PaymentMethods({
@@ -17,10 +19,14 @@ export default function PaymentMethods({
   onAmountChange,
   onAutoFill,
   setActiveMethodId,
+  headerRight,
 }: PaymentMethodsProps) {
   return (
     <div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Payment Methods</h3>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h3>
+        {headerRight}
+      </div>
       <div className="flex space-x-4 overflow-x-auto pb-2">
         {paymentMethods.map((method) => (
           <div

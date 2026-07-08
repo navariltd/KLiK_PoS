@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Minus, Plus, X, Copy, Package, ChevronDown, ChevronUp, AlertTriangle, Eye } from "lucide-react";
+import { Minus, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle, Eye } from "lucide-react";
 import { toast } from "react-toastify";
 import type { BundleEntry, CartItem } from "../../../types";
 import { QuantityInput } from "./QuantityInput";
@@ -104,7 +104,22 @@ export const CartItemRow = ({
   isMobile,
   autoFetchBatch = false,
 }: CartItemRowProps) => {
-  const { updateItemBundleEntries } = useCartStore();
+  const { updateItemBundleEntries, adjustQuantity } = useCartStore();
+  const highlightItemId = useCartStore((s) => s.highlightItemId);
+  const highlightNonce = useCartStore((s) => s.highlightNonce);
+  const [glowing, setGlowing] = useState(false);
+
+  useEffect(() => {
+    if (highlightItemId !== item.id) {
+      // Highlight moved to another item (or cleared) — make sure this row
+      // never stays stuck glowing, even on rapid successive clicks.
+      setGlowing(false);
+      return;
+    }
+    setGlowing(true);
+    const t = setTimeout(() => setGlowing(false), 1200);
+    return () => clearTimeout(t);
+  }, [highlightItemId, highlightNonce, item.id]);
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [isBundleDetailsOpen, setIsBundleDetailsOpen] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -150,6 +165,7 @@ export const CartItemRow = ({
   const warehouse = posDetails?.warehouse || "";
   const restrictCostVisibility = posDetails?.restrict_cost_visibility_in_tooltip ?? true;
   const allowPriceListSwitching = !!posDetails?.allow_price_list_switching;
+  const quickSwitchPrice = !!posDetails?.custom_quick_switch_price;
 
   const fetchFullItemDetails = useCallback(async () => {
     if (!warehouse) return;
@@ -170,10 +186,10 @@ export const CartItemRow = ({
   }, [item.item_code, item.id, warehouse]);
 
   useEffect(() => {
-    if (isExpanded && warehouse) {
+    if ((isExpanded || quickSwitchPrice) && warehouse) {
       fetchFullItemDetails();
     }
-  }, [isExpanded, warehouse, fetchFullItemDetails]);
+  }, [isExpanded, quickSwitchPrice, warehouse, fetchFullItemDetails]);
 
   const saveToCart = useCallback((entries: BundleEntry[]) => {
     const validEntries = entries.map(({ selected, ...e }) => e);
@@ -369,7 +385,8 @@ export const CartItemRow = ({
   const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
   const taxAmountPerUnit = roundCurrency(Math.max(0, displayRateInclTax - discountedPrice));
   const originalTotal = roundCurrency(item.price * item.quantity);
-  const discountedTotal = roundCurrency(displayRateInclTax * item.quantity);
+  // ERPNext convention: line displays the price-list (net) rate; tax shows in totals.
+  const discountedTotal = roundCurrency(discountedPrice * item.quantity);
   const amount = discountedTotal;
   const editableRate = hasExclusiveTax ? discountedPrice : displayRateInclTax;
   const displayRate = editableRate > 0 ? editableRate : "";
@@ -393,18 +410,16 @@ export const CartItemRow = ({
     <>
       <div
         data-cart-item-id={itemId}
-        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}
+        className={`${isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : "rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"}${glowing ? " cart-item-glow" : ""}`}
       >
-        <div className={isMobile ? "p-3" : "px-2 py-2"}>
+        <div
+          className={isMobile ? "p-3" : "px-2 py-2 cursor-pointer"}
+          onClick={onToggleExpand}
+        >
           {/* Row 1: name + remove */}
           <div className="flex items-start gap-1">
             <div className="flex-1 min-w-0">
-              <button
-                type="button"
-                onClick={onToggleExpand}
-                title="Show/Hide Details"
-                className="w-full text-left font-semibold text-gray-900 dark:text-white cursor-pointer text-sm leading-tight flex items-start gap-1"
-              >
+              <div className="w-full font-semibold text-gray-900 dark:text-white text-sm leading-tight flex items-start gap-1">
                 <svg
                   className={`flex-shrink-0 w-3 h-3 mt-0.5 text-gray-400 dark:text-gray-500 transform transition-transform duration-200 ${
                     isExpanded ? "rotate-90" : ""
@@ -416,7 +431,7 @@ export const CartItemRow = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
                 <span className="min-w-0 break-words">{item.name}</span>
-              </button>
+              </div>
               {!!posDetails?.custom_show_item_code_in_product_list && (item.item_code || item.id) && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 font-mono leading-tight pl-4">
                   {item.item_code || item.id}
@@ -427,7 +442,16 @@ export const CartItemRow = ({
               </p>
             </div>
             <button
-              onClick={() => onRemoveItem?.(item.id)}
+              onClick={(e) => { e.stopPropagation(); setShowProductModal(true); }}
+              className={`flex-shrink-0 ${
+                isMobile ? "w-8 h-8" : "w-6 h-6"
+              } rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
+              title="View full details"
+            >
+              <Eye size={isMobile ? 14 : 11} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemoveItem?.(item.id); }}
               className={`flex-shrink-0 ${
                 isMobile ? "w-8 h-8" : "w-6 h-6"
               } rounded-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-800 hover:text-red-600 dark:hover:text-red-400 transition-colors`}
@@ -441,13 +465,13 @@ export const CartItemRow = ({
           <div className="flex items-center gap-2 mt-1.5 pl-4">
             <div className="text-right">
               <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
-                {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
+                {formatCurrencyWithSymbol(discountedPrice, currency_symbol)}
               </p>
             </div>
 
             <div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-full overflow-hidden">
               <button
-                onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+                onClick={(e) => { e.stopPropagation(); adjustQuantity(item.id, -1); }}
                 className={`${
                   isMobile ? "w-7 h-7" : "w-6 h-6"
                 } flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400 transition-colors`}
@@ -461,7 +485,7 @@ export const CartItemRow = ({
                 onChange={(e) => setLocalQty(parseInt(e.target.value, 10) || 0)}
                 onBlur={() => {
                   const available = item.available;
-                  if (available > 0 && localQty > available) {
+                  if (available > 0 && localQty > available && !item.allow_negative_stock) {
                     setLocalQty(available);
                     onUpdateQuantity(item.id, available);
                     toast.warning(`Only ${available} units available. Quantity set to ${available}.`);
@@ -474,14 +498,7 @@ export const CartItemRow = ({
                 className={`${isMobile ? "w-9" : "w-8"} text-center font-semibold text-gray-900 dark:text-white text-sm border-x border-gray-200 dark:border-gray-600 py-0.5 bg-transparent focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               />
               <button
-                onClick={() => {
-                  const next = item.quantity + 1;
-                  if (item.available > 0 && next > item.available) {
-                    toast.warning(`Only ${item.available} units available.`);
-                  } else {
-                    onUpdateQuantity(item.id, next);
-                  }
-                }}
+                onClick={(e) => { e.stopPropagation(); adjustQuantity(item.id, 1); }}
                 className={`${
                   isMobile ? "w-7 h-7" : "w-6 h-6"
                 } flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 dark:hover:text-green-400 transition-colors`}
@@ -515,6 +532,35 @@ export const CartItemRow = ({
               )}
             </div>
           </div>
+
+          {/* Quick Switch Price: per-line price-list pills */}
+          {quickSwitchPrice && fullItemData?.price_lists?.length ? (
+            <div className="flex items-center gap-1 mt-1.5 pl-4 overflow-x-auto no-scrollbar">
+              {fullItemData.price_lists
+                .filter((priceList) => (!priceList.uom || priceList.uom === item.uom) && Number(priceList.rate || 0) > 0)
+                .map((priceList) => {
+                  const active = itemDiscount.selectedPriceList === priceList.price_list;
+                  const shortName =
+                    priceList.price_list.length > 8
+                      ? priceList.price_list.slice(0, 8)
+                      : priceList.price_list;
+                  return (
+                    <button
+                      key={`${priceList.price_list}-${priceList.uom || ""}-${priceList.rate}`}
+                      onClick={(e) => { e.stopPropagation(); handleLinePriceListChange(priceList.price_list); }}
+                      title={`${priceList.price_list}: ${formatCurrencyWithSymbol(Number(priceList.rate || 0), currency_symbol)}`}
+                      className={`flex-shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        active
+                          ? "border-beveren-500 bg-beveren-50 text-beveren-700 dark:bg-beveren-900/30 dark:text-beveren-300"
+                          : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-beveren-300"
+                      }`}
+                    >
+                      <span className="font-mono">{shortName} {Number(priceList.rate || 0).toFixed(2)}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          ) : null}
         </div>
 
         {isExpanded ? (
@@ -587,7 +633,7 @@ export const CartItemRow = ({
                 </div>
                 <div>
                   <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                    Amount (Incl. Tax)
+                    {hasExclusiveTax ? "Amount (Excl. Tax)" : "Amount (Incl. Tax)"}
                   </label>
                   <input
                     type="number"
@@ -828,25 +874,6 @@ export const CartItemRow = ({
               <></>
             )}
 
-              <div className="grid grid-cols-2 gap-3 my-3">
-                <button
-                  type="button"
-                  onClick={() => onDuplicateItem(item)}
-                  className="flex items-center justify-center gap-2 px-3 py-4 rounded-md border border-dashed border-beveren-400 dark:border-beveren-500 text-beveren-600 dark:text-beveren-400 bg-beveren-50 dark:bg-beveren-900/20 hover:bg-beveren-100 dark:hover:bg-beveren-900/40 transition-colors text-sm font-medium"
-                  title="Add another line for the same product with a different batch, serial or UOM"
-                >
-                  <Copy size={isMobile ? 15 : 13} />
-                  Duplicate Line
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowProductModal(true)}
-                  className="flex items-center justify-center gap-2 px-3 py-4 rounded-md border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors text-sm font-medium"
-                >
-                  <Eye size={isMobile ? 15 : 13} />
-                  View Full Details
-                </button>
-              </div>
             </div>
           </div>
         ) : (

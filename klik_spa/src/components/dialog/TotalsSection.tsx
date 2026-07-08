@@ -29,10 +29,7 @@ export default function TotalsSection({
   outstandingAmount,
   displayCurrencySymbol,
   isB2B,
-  backendTaxPreview,
 }: TotalsSectionProps) {
-  const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
-  const hasBackendTaxBreakdown = backendTaxLines.length > 0;
   const amountDue = checkoutPayableTotal ?? checkoutGrandTotal;
   const changeDue = totalPaidAmount > amountDue ? subtractCurrency(totalPaidAmount, amountDue) : 0;
 
@@ -68,20 +65,6 @@ export default function TotalsSection({
                   : formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)}
               </span>
             </div>
-            {hasBackendTaxBreakdown && (
-              <div className="rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 space-y-1 text-xs">
-                {backendTaxLines.map((line, index) => (
-                  <div key={`${line.account_head || line.description || "tax"}-${index}`} className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">{line.description || line.account_head || "Tax"}</span>
-                    <span className="text-gray-900 dark:text-white">
-                      {Number(line.included_in_print_rate) === 1
-                        ? `(${formatCurrencyWithSymbol(Number(line.tax_amount) || 0, displayCurrencySymbol)})`
-                        : formatCurrencyWithSymbol(Number(line.tax_amount) || 0, displayCurrencySymbol)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="space-y-2 md:border-l md:border-gray-200 md:dark:border-gray-600 md:pl-6">

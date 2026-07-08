@@ -15,7 +15,8 @@ import {
   submitDraftInvoice,
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
-import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
+import { checkoutHeldOrder, createHeldOrder } from "../../services/salesOrder";
+import { clearDraftInvoiceCache, getOriginalDraftInvoiceId, getOriginalHeldOrderId } from "../../utils/draftInvoiceCache";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
 import { calculateRemainingAmount, calculateTotalPayments, roundCurrency } from "../../utils/currencyMath";
 import { extractErrorFromException } from "../../utils/errorExtraction";
@@ -158,7 +159,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
-  const [taxPin, setTaxPin] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
@@ -194,7 +194,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const { salesTaxCharges, defaultTax, isLoading: salesTaxLoading } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
-  const { clearCart } = useCartStore();
+  const { clearCart, walkinDetails, setWalkinDetails, extraFields } = useCartStore();
   const posProfileName = typeof posDetails?.name === "string" ? posDetails.name : "";
   const posCompanyName =
     typeof posDetails?.company === "string"
@@ -629,7 +629,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       allowPartialPayment: allowPartialPayments,
       allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
-      tax_id: taxPin || null,
+      tax_id: walkinDetails.taxId || null,
+      walkin_name: walkinDetails.name || null,
+      walkin_phone: walkinDetails.phone || null,
+      extra_fields: extraFields,
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -646,6 +649,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     const draftResponse = await createDraftSalesInvoice({
       ...buildPaymentData(selectedDeliveryPersonnel, { excludeActiveMpesa: true }),
+      // No payment method is included yet (STK/reconcile payment is pending),
+      // so mark this as "held" to bypass the "must have a positive payment
+      // amount" cash-sale validation — same flag the hold-order flow uses.
+      status: "held",
       enable_background_invoice_submission: false,
     });
 
@@ -778,6 +785,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         invoice_name: draftInvoiceName,
         customer: selectedCustomer.id || selectedCustomer.name,
         mpesa_payments: selectedMpesaPayments.map((payment) => payment.name).join(","),
+        mode_of_payment: activeMpesaPayment.method,
         auto_save: 1,
         auto_submit: 0,
         merge_payments: mergeMpesaPayments ? 1 : 0,
@@ -1183,6 +1191,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     setIsProcessingPayment(true);
     const paymentData = buildPaymentData(deliveryPersonnel);
+    const originalHeldOrderId = getOriginalHeldOrderId();
     const originalDraftInvoiceId = getOriginalDraftInvoiceId();
     try {
       let response;
@@ -1195,8 +1204,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             enable_background_invoice_submission: enableBackgroundSubmission,
           }
         );
+      } else if (originalHeldOrderId) {
+        // Checkout from a held Sales Order — convert it to a submitted Sales Invoice
+        response = await checkoutHeldOrder(originalHeldOrderId, {
+          ...paymentData,
+          enable_background_invoice_submission: enableBackgroundSubmission,
+        });
       } else if (originalDraftInvoiceId) {
-        // If editing a held invoice, submit the original draft instead of creating a new one
+        // Legacy path: editing a held draft Sales Invoice
         response = await submitDraftInvoice(
           originalDraftInvoiceId,
           {
@@ -1307,6 +1322,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       const orderData = {
         items: orderItems,
         customer: { id: selectedCustomer.id },
+        customerData: selectedCustomer,
         subtotal: calculations.subtotal,
         total: checkoutGrandTotal,
         SalesTaxCharges: selectedSalesTaxCharges,
@@ -1322,23 +1338,26 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         status: "held",
         businessType: posDetails?.business_type,
         salesperson: currentSalesperson?.name || null,
-        tax_id: taxPin || null,
+        tax_id: walkinDetails.taxId || null,
+        walkin_name: walkinDetails.name || null,
+        walkin_phone: walkinDetails.phone || null,
+        extra_fields: extraFields,
         loyalty: appliedLoyalty
           ? {
               loyalty_program: appliedLoyalty.loyalty_program,
               loyalty_points: appliedLoyalty.loyalty_points,
             }
           : null,
-        draft_invoice_id: getOriginalDraftInvoiceId(),
+        held_order_id: getOriginalHeldOrderId(),
       };
 
-      const result = await createDraftSalesInvoice(orderData);
+      const result = await createHeldOrder(orderData);
       if (!result?.success) {
         throw new Error("Failed to hold order");
       }
 
       clearCart();
-      toast.success(orderData.draft_invoice_id ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
+      toast.success(orderData.held_order_id ? "Order updated and held successfully!" : "Order held successfully!");
       await Promise.resolve(onHoldOrder(orderData));
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");
@@ -1402,6 +1421,61 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (isCreditSale && !dueDate) return true;
     if (isB2C && !isCreditSale) return outstandingAmount > 0;
     return false;
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F10' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isActionButtonDisabled()) handleCompletePayment();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        // Completed screen: ESC does the default "Start New Order" action.
+        // Payment-entry screen: ESC closes the dialog.
+        if (invoiceSubmitted) {
+          void finalizeCompletedOrderState(() => onClose(true));
+        } else {
+          onClose(false);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, isActionButtonDisabled, handleCompletePayment, invoiceSubmitted, finalizeCompletedOrderState, onClose]);
+
+  const buildOrderText = () => {
+    const lines: string[] = [];
+    if (invoiceSubmitted && invoiceData?.name) {
+      lines.push(`Invoice: ${invoiceData.name}`);
+      if (invoiceData.posting_date) lines.push(`Date: ${invoiceData.posting_date}`);
+      const isPaid = Number(invoiceData.outstanding_amount ?? 0) === 0;
+      lines.push(`Status: ${isPaid ? "Paid" : "Unpaid"}`);
+      lines.push("");
+    }
+    const customerName = selectedCustomer?.name || selectedCustomer?.customerName;
+    if (customerName) lines.push(`Customer: ${customerName}`);
+    lines.push("");
+    lines.push("Items:");
+    for (const item of cartItems) {
+      const rate = getEffectiveDisplayRate(item as any);
+      const total = roundCurrency(rate * item.quantity);
+      const name = item.item_name || item.name;
+      lines.push(`  ${name}  ×${item.quantity}  @ ${formatCurrencyWithSymbol(rate, displayCurrencySymbol)}  =  ${formatCurrencyWithSymbol(total, displayCurrencySymbol)}`);
+    }
+    lines.push("");
+    lines.push(`Grand Total: ${formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}`);
+    return lines.join("\n");
+  };
+
+  const handleCopyOrder = () => {
+    const text = buildOrderText();
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Order copied to clipboard");
+    }).catch(() => {
+      toast.error("Failed to copy to clipboard");
+    });
   };
 
   const getProcessedMessage = () => {
@@ -1491,10 +1565,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     initializedCreditDefaultRef.current = true;
   }, [isOpen, allowPartialPayments, defaultSalesType]);
-
-  useEffect(() => {
-    if (isOpen) setTaxPin("");
-  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && defaultTax && !selectedSalesTaxCharges) {
@@ -1874,8 +1944,31 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             ) : (
               <>
                 <div>
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h2>
+                    {allowPartialPayments && (
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                          {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                        </button>
+                        {isCreditSale && (
+                          <div className="flex items-center gap-1.5">
+                            <label htmlFor="pos-credit-due-date-mobile" className="text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              Due:
+                            </label>
+                            <input
+                              id="pos-credit-due-date-mobile"
+                              type="date"
+                              value={dueDate}
+                              onChange={(e) => setDueDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                              disabled={invoiceSubmitted || isProcessingPayment}
+                              className={`px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex space-x-3 overflow-x-auto pb-2">
                     {paymentMethods.map((method) => (
@@ -1898,19 +1991,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 </div>
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
-                {allowPartialPayments && (
-                  <div className="space-y-3 pt-2">
-                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
-                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                    </button>
-                    {isCreditSale && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due Date</label>
-                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                      </div>
-                    )}
-                  </div>
-                )}
                 {isDeliveryChargeEnabled && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Delivery Charge (Service Item)</label>
@@ -1934,8 +2014,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
-                  taxPin={taxPin}
-                  onTaxPinChange={setTaxPin}
+                  taxPin={walkinDetails.taxId}
+                  onTaxPinChange={(v) => setWalkinDetails({ taxId: v })}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}
@@ -1977,7 +2057,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       </div>
                     </label>
                   </div>
-                  <button onClick={handleCompletePayment} disabled={isActionButtonDisabled()} className={`w-full py-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 ${isB2B ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                  <button id="pos-payment-submit-btn" onClick={handleCompletePayment} disabled={isActionButtonDisabled()} className={`w-full py-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 ${isB2B ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"}`}>
                     {isProcessingPayment ? (
                       <>
                         <Loader2 size={20} className="animate-spin" />
@@ -2067,6 +2147,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             void finalizeCompletedOrderState(afterClear);
           }}
           posDetails={posDetails}
+          onCopyOrder={handleCopyOrder}
         />
 
         <div className="flex flex-1 min-h-0">
@@ -2115,24 +2196,35 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onAmountChange={handleManualAmountChange}
                   onAutoFill={handleAutoFillPayment}
                   setActiveMethodId={setActiveMethodId}
+                  headerRight={
+                    allowPartialPayments ? (
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                          {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                        </button>
+                        {isCreditSale && (
+                          <div className="flex items-center gap-2">
+                            <label htmlFor="pos-credit-due-date" className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                              Due Date
+                            </label>
+                            <input
+                              id="pos-credit-due-date"
+                              type="date"
+                              value={dueDate}
+                              onChange={(e) => setDueDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                              disabled={invoiceSubmitted || isProcessingPayment}
+                              className={`px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
                 />
 
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
-
-                {allowPartialPayments && (
-                  <div className="space-y-3">
-                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
-                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                    </button>
-                    {isCreditSale && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due Date</label>
-                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-red-300 dark:border-red-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-red-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {isDeliveryChargeEnabled && (
                   <div>
@@ -2158,8 +2250,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
-                  taxPin={taxPin}
-                  onTaxPinChange={setTaxPin}
+                  taxPin={walkinDetails.taxId}
+                  onTaxPinChange={(v) => setWalkinDetails({ taxId: v })}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}

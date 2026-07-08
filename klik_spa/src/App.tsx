@@ -8,7 +8,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { setupGlobalErrorHandling } from "./utils/apiUtils";
-import Footer from "./components/Footer";
 import RetailSidebar from "./components/RetailSidebar";
 
 const queryClient = new QueryClient();
@@ -27,7 +26,6 @@ function App() {
             <ProductProvider>
               <RetailSidebar />
               <Outlet />
-              <Footer />
               <ToastContainer position="top-center" autoClose={3000} aria-label="Notification" />
             </ProductProvider>
           </I18nProvider>

@@ -180,7 +180,7 @@ export default function RetailPOSLayout() {
   return (
     <>
       {scannerOnlyIndicator}
-      <div className="flex h-screen bg-gray-50 pb-8">
+      <div className="flex h-screen bg-gray-50 pb-2">
         <div className="flex-1 overflow-hidden lg:ml-20">
           <MenuGrid
             items={filteredItems}

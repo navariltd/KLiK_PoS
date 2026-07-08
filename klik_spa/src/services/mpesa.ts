@@ -108,7 +108,7 @@ export async function fetchMpesaRegisterPayments(params: {
   if (params.search) query.set("search", params.search);
 
   const response = await fetch(
-    `/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.mpesa_quick_pay.get_mpesa_payments?${query.toString()}`,
+    `/api/method/klik_pos.api.mpesa.get_mpesa_payments?${query.toString()}`,
     {
       method: "GET",
       headers: { "Content-Type": "application/json" },
@@ -130,13 +130,14 @@ export async function processKlikPosMpesaPayments(payload: {
   invoice_name: string;
   customer: string;
   mpesa_payments: string;
+  mode_of_payment: string;
   auto_save?: 0 | 1;
   auto_submit?: 0 | 1;
   merge_payments?: 0 | 1;
 }) {
   const csrfToken = window.csrf_token;
   const response = await fetch(
-    "/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.mpesa_quick_pay.process_mpesa",
+    "/api/method/klik_pos.api.mpesa.process_mpesa",
     {
       method: "POST",
       headers: {

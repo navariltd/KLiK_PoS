@@ -52,6 +52,48 @@ def _apply_klik_invoice_flags(doc, is_held=None, is_submitted=None):
 		_set_checkbox_field_value(doc, "custom_is_submitted", is_submitted)
 
 
+def _apply_walkin_party_fields(doc, walkin_name=None, walkin_phone=None):
+	"""Set walk-in buyer name/phone on a selling doc when the optional custom
+	fields exist. tax_id is handled separately by the standard field path."""
+	if walkin_name and doc.meta.has_field("custom_walkin_customer_name"):
+		doc.custom_walkin_customer_name = walkin_name
+	if walkin_phone and doc.meta.has_field("custom_walkin_phone"):
+		doc.custom_walkin_phone = walkin_phone
+
+
+def _parse_extra_fields(data):
+	"""Extract the generic POS extra-fields map from a request payload."""
+	if not isinstance(data, dict):
+		return {}
+	raw = data.get("extra_fields")
+	if isinstance(raw, str):
+		try:
+			raw = json.loads(raw)
+		except Exception:
+			raw = {}
+	return raw if isinstance(raw, dict) else {}
+
+
+def _apply_extra_fields(doc, extra_fields, allowed=None):
+	"""Set each configured POS extra field on the document, guarded.
+
+	Writes only fields in the server-resolved allow-list (the POS Profile's
+	configured + eligible fields), that exist on the doctype, and have a
+	non-empty value. The allow-list stops a client from setting arbitrary
+	fields (e.g. invoice discounts) via the extra_fields map. Tests pass
+	``allowed`` explicitly; production resolves it from the active POS Profile.
+	"""
+	if allowed is None:
+		from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+		allowed = get_configured_extra_fieldnames()
+	for fieldname, value in (extra_fields or {}).items():
+		if fieldname not in allowed:
+			continue
+		if value in (None, "") or not doc.meta.has_field(fieldname):
+			continue
+		doc.set(fieldname, value)
+
+
 def validate_required_salesperson(doc):
 	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
 	if not doc or not getattr(doc, "is_pos", 0):
@@ -230,7 +272,7 @@ def _reserve_stock_for_queued_invoice(doc):
 			for row in frappe.get_all(
 				"Item",
 				filters={"name": ["in", item_codes]},
-				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom"],
+				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom", "allow_negative_stock"],
 			)
 		}
 
@@ -240,6 +282,9 @@ def _reserve_stock_for_queued_invoice(doc):
 
 		item_meta = item_meta_map.get(row.item_code)
 		if not item_meta or not int(item_meta.is_stock_item or 0):
+			continue
+		# Items allowed to go negative are exempt from reservation — nothing to reserve.
+		if int(item_meta.allow_negative_stock or 0):
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -310,14 +355,14 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 		return
 
 	item_codes_in_doc = list({row.item_code for row in doc.items if row.item_code})
-	item_stock_flag_map = {}
+	item_meta_map = {}
 	if item_codes_in_doc:
-		item_stock_flag_map = {
-			row.name: int(row.is_stock_item or 0)
+		item_meta_map = {
+			row.name: row
 			for row in frappe.get_all(
 				"Item",
 				filters={"name": ["in", item_codes_in_doc]},
-				fields=["name", "is_stock_item"],
+				fields=["name", "is_stock_item", "allow_negative_stock"],
 			)
 		}
 
@@ -328,7 +373,11 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 	for row in doc.items:
 		if not row.item_code or not row.warehouse:
 			continue
-		if item_stock_flag_map.get(row.item_code, 1) == 0:
+		item_meta = item_meta_map.get(row.item_code)
+		# Skip non-stock items and items allowed to go negative (no reservation enforced).
+		if item_meta and not int(item_meta.is_stock_item or 0):
+			continue
+		if item_meta and int(item_meta.allow_negative_stock or 0):
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -947,6 +996,9 @@ def validate_checkout_invoice(data):
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			walkin_name=data.get("walkin_name"),
+			walkin_phone=data.get("walkin_phone"),
+			extra_fields=_parse_extra_fields(data),
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1147,6 +1199,9 @@ def queue_sales_invoice(data):
 			loyalty_redemption,
 		) = parse_invoice_data(data)
 
+		from klik_pos.api.pos_profile import validate_required_extra_fields
+		validate_required_extra_fields(_parse_extra_fields(data))
+
 		if not customer:
 			frappe.throw("Customer is required")
 		if not items or len(items) == 0:
@@ -1170,6 +1225,9 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			walkin_name=data.get("walkin_name"),
+			walkin_phone=data.get("walkin_phone"),
+			extra_fields=_parse_extra_fields(data),
 		)
 
 		validate_required_salesperson(doc)
@@ -1376,6 +1434,10 @@ def create_draft_invoice(data):
 			loyalty_redemption,
 		) = parse_invoice_data(data)
 
+		walkin_name = data.get("walkin_name")
+		walkin_phone = data.get("walkin_phone")
+		extra_fields = _parse_extra_fields(data)
+
 		if target_draft_invoice_id:
 			doc = frappe.get_doc("Sales Invoice", target_draft_invoice_id)
 			if doc.docstatus != 0 or doc.status != "Draft":
@@ -1403,6 +1465,9 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=walkin_name,
+				walkin_phone=walkin_phone,
+				extra_fields=extra_fields,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1423,6 +1488,9 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=walkin_name,
+				walkin_phone=walkin_phone,
+				extra_fields=extra_fields,
 			)
 
 			validate_required_salesperson(doc)
@@ -1709,6 +1777,9 @@ def build_sales_invoice_doc(
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	walkin_name=None,
+	walkin_phone=None,
+	extra_fields=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1725,6 +1796,10 @@ def build_sales_invoice_doc(
 	# Set tax ID if provided
 	if tax_id:
 		doc.tax_id = tax_id
+
+	# Set walk-in buyer name/phone (guarded; fields are optional/button-installed)
+	_apply_walkin_party_fields(doc, walkin_name=walkin_name, walkin_phone=walkin_phone)
+	_apply_extra_fields(doc, extra_fields)
 
 	# Set salesperson in sales team
 	if salesperson:
@@ -1781,8 +1856,13 @@ def build_sales_invoice_doc(
 		_add_payment_entries(doc, mode_of_payment)
 		doc.calculate_taxes_and_totals()
 
-	if is_credit_sale and due_date:
-		doc.due_date = due_date
+	if is_credit_sale:
+		# Credit sales are unpaid-at-creation invoices; is_pos stays 0 so the
+		# outstanding balance isn't misclassified as a paid POS sale, unless
+		# the POS Profile opts in to treating credit sales as POS sales.
+		doc.is_pos = _is_pos_for_credit_sale(pos_profile)
+		if due_date:
+			doc.due_date = due_date
 
 	return doc
 
@@ -1805,6 +1885,9 @@ def _update_existing_draft_invoice(
 	tax_id=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	walkin_name=None,
+	walkin_phone=None,
+	extra_fields=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -1825,6 +1908,9 @@ def _update_existing_draft_invoice(
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
+		walkin_name=walkin_name,
+		walkin_phone=walkin_phone,
+		extra_fields=extra_fields,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -1833,6 +1919,15 @@ def _update_existing_draft_invoice(
 	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 	invoice_doc.tax_id = rebuilt_doc.tax_id
+	_apply_walkin_party_fields(
+		invoice_doc,
+		walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
+		walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
+	)
+	from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+	for _fn in get_configured_extra_fieldnames():
+		if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
+			invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company
 	invoice_doc.currency = rebuilt_doc.currency
@@ -2295,6 +2390,11 @@ def _determine_is_pos(customer, business_type):
 		return 0
 
 
+def _is_pos_for_credit_sale(pos_profile):
+	"""Whether a Credit Sale invoice should still be marked is_pos=1, per POS Profile opt-in."""
+	return 1 if cint(getattr(pos_profile, "custom_allow_credit_sales_as_pos", 0)) else 0
+
+
 def _check_customer_type_for_pos(customer):
 	"""Check if customer is an individual for B2B & B2C business type."""
 	global _cached_customer_data
@@ -2520,7 +2620,7 @@ def _resolve_item_tax_details_for_line(doc, item, pos_profile):
 		)
 
 	try:
-		resolved = get_item_details(ctx=ctx)
+		resolved = get_item_details(ctx=frappe._dict(ctx))
 		item_tax_template = resolved.get("item_tax_template") or item_tax_template
 		item_tax_rate = resolved.get("item_tax_rate") or item_tax_rate
 		if isinstance(item_tax_rate, str):
@@ -2990,14 +3090,14 @@ class CustomSalesInvoice(SalesInvoice):
 			return
 
 		item_codes = list({row.item_code for row in self.items if row.item_code})
-		item_stock_flag_map = {}
+		item_meta_map = {}
 		if item_codes:
-			item_stock_flag_map = {
-				row.name: int(row.is_stock_item or 0)
+			item_meta_map = {
+				row.name: row
 				for row in frappe.get_all(
 					"Item",
 					filters={"name": ["in", item_codes]},
-					fields=["name", "is_stock_item"],
+					fields=["name", "is_stock_item", "allow_negative_stock"],
 				)
 			}
 
@@ -3006,7 +3106,11 @@ class CustomSalesInvoice(SalesInvoice):
 		for row in self.items:
 			if not row.item_code or not row.warehouse:
 				continue
-			if item_stock_flag_map.get(row.item_code, 1) == 0:
+			item_meta = item_meta_map.get(row.item_code)
+			# Skip non-stock items and items allowed to go negative (no reservation enforced).
+			if item_meta and not int(item_meta.is_stock_item or 0):
+				continue
+			if item_meta and int(item_meta.allow_negative_stock or 0):
 				continue
 
 			required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -3697,6 +3801,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				loyalty_redemption,
 			) = parse_invoice_data(data)
 
+			_ef = _parse_extra_fields(data)
 			rebuilt_doc = build_sales_invoice_doc(
 				customer,
 				items,
@@ -3716,6 +3821,9 @@ def submit_draft_invoice(invoice_id, data=None):
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				walkin_name=data.get("walkin_name"),
+				walkin_phone=data.get("walkin_phone"),
+				extra_fields=_ef,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -3724,6 +3832,15 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
+			_apply_walkin_party_fields(
+				invoice_doc,
+				walkin_name=rebuilt_doc.get("custom_walkin_customer_name"),
+				walkin_phone=rebuilt_doc.get("custom_walkin_phone"),
+			)
+			from klik_pos.api.pos_profile import get_configured_extra_fieldnames
+			for _fn in get_configured_extra_fieldnames():
+				if invoice_doc.meta.has_field(_fn) and rebuilt_doc.meta.has_field(_fn):
+					invoice_doc.set(_fn, rebuilt_doc.get(_fn))
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile
 			invoice_doc.company = rebuilt_doc.company
 			invoice_doc.currency = rebuilt_doc.currency

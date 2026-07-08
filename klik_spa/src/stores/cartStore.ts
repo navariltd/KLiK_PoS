@@ -39,8 +39,8 @@ const roundToCurrencyPrecision = (value: number): number => {
   return roundCurrency(value);
 };
 
-const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean }) => {
-  if (item.is_stock_item === false) {
+const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean; allow_negative_stock?: boolean }) => {
+  if (item.is_stock_item === false || item.allow_negative_stock) {
     return false;
   }
   return typeof item.available === 'number' && Number.isFinite(item.available);
@@ -108,10 +108,17 @@ const fetchItemTaxDetails = async (
   }
 };
 
+export interface WalkinDetails { name: string; taxId: string; phone: string }
+const EMPTY_WALKIN: WalkinDetails = { name: '', taxId: '', phone: '' };
+
 interface CartState {
   cartItems: CartItem[]
   appliedCoupons: GiftCoupon[]
   selectedCustomer: Customer | null
+  walkinDetails: WalkinDetails
+  extraFields: Record<string, string>
+  highlightItemId: string | null
+  highlightNonce: number
   selectedPriceList: string | null
   isPricingLoading: boolean
   pricingError: string | null
@@ -119,12 +126,17 @@ interface CartState {
   addToCart: (item: Omit<CartItem, 'quantity'>) => Promise<void>
   addToCartWithQuantity: (item: Omit<CartItem, 'quantity'>, quantity: number) => Promise<void>
   updateQuantity: (id: string, quantity: number) => Promise<void>
+  adjustQuantity: (id: string, delta: number) => Promise<void>
   updateUOM: (id: string, uom: string, price: number) => Promise<void>
   removeItem: (id: string) => void
   clearCart: () => void
   applyCoupon: (coupon: GiftCoupon) => void
   removeCoupon: (couponCode: string) => void
   setSelectedCustomer: (customer: Customer | null) => Promise<void>
+  setWalkinDetails: (details: Partial<WalkinDetails>) => void
+  clearWalkinDetails: () => void
+  setExtraFields: (v: Record<string, string>) => void
+  clearExtraFields: () => void
   setSelectedPriceList: (priceList: string | null) => Promise<void>
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
@@ -135,12 +147,26 @@ const shouldInsertNewItemsAtTop = (): boolean => {
   return position === 'Top';
 };
 
+// Move the just-modified item to the configured insertion position (Top/Bottom)
+// so a quantity bump from the product list lands where new items appear.
+const reorderToInsertionPosition = (items: CartItem[], id: string): CartItem[] => {
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx === -1) return items;
+  const moved = items[idx];
+  const rest = [...items.slice(0, idx), ...items.slice(idx + 1)];
+  return shouldInsertNewItemsAtTop() ? [moved, ...rest] : [...rest, moved];
+};
+
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       cartItems: [],
       appliedCoupons: [],
       selectedCustomer: null,
+      walkinDetails: { name: '', taxId: '', phone: '' },
+      extraFields: {},
+      highlightItemId: null,
+      highlightNonce: 0,
       selectedPriceList: null,
       isPricingLoading: false,
       pricingError: null,
@@ -248,8 +274,8 @@ export const useCartStore = create<CartState>()(
             existingItem.uom || item.uom,
           );
 
-          set((state) => ({
-            cartItems: state.cartItems.map((cartItem) =>
+          set((state) => {
+            const updated = state.cartItems.map((cartItem) =>
               cartItem.id === targetId
                 ? {
                     ...cartItem,
@@ -260,8 +286,13 @@ export const useCartStore = create<CartState>()(
                     total_tax_rate: taxDetails.total_tax_rate,
                   }
                 : cartItem
-            )
-          }));
+            );
+            return {
+              cartItems: reorderToInsertionPosition(updated, targetId),
+              highlightItemId: targetId,
+              highlightNonce: state.highlightNonce + 1,
+            };
+          });
         } else {
           const taxDetails = await fetchItemTaxDetails(
             incomingCode,
@@ -282,7 +313,11 @@ export const useCartStore = create<CartState>()(
           const newCartItems = shouldInsertNewItemsAtTop()
             ? [newItem, ...state.cartItems]
             : [...state.cartItems, newItem];
-          set({ cartItems: newCartItems });
+          set((s) => ({
+            cartItems: newCartItems,
+            highlightItemId: newItem.id,
+            highlightNonce: s.highlightNonce + 1,
+          }));
         }
 
         await get().refreshCartPricing();
@@ -319,8 +354,8 @@ export const useCartStore = create<CartState>()(
             existingItem.uom || item.uom,
           );
 
-          set((state) => ({
-            cartItems: state.cartItems.map((cartItem) =>
+          set((state) => {
+            const updated = state.cartItems.map((cartItem) =>
               cartItem.id === targetId
                 ? {
                     ...cartItem,
@@ -331,8 +366,13 @@ export const useCartStore = create<CartState>()(
                     total_tax_rate: taxDetails.total_tax_rate,
                   }
                 : cartItem
-            )
-          }));
+            );
+            return {
+              cartItems: reorderToInsertionPosition(updated, targetId),
+              highlightItemId: targetId,
+              highlightNonce: state.highlightNonce + 1,
+            };
+          });
         } else {
           const taxDetails = await fetchItemTaxDetails(
             incomingCode,
@@ -353,7 +393,11 @@ export const useCartStore = create<CartState>()(
           const newCartItems = shouldInsertNewItemsAtTop()
             ? [newItem, ...state.cartItems]
             : [...state.cartItems, newItem];
-          set({ cartItems: newCartItems });
+          set((s) => ({
+            cartItems: newCartItems,
+            highlightItemId: newItem.id,
+            highlightNonce: s.highlightNonce + 1,
+          }));
         }
 
         await get().refreshCartPricing();
@@ -384,6 +428,38 @@ export const useCartStore = create<CartState>()(
         await get().refreshCartPricing();
       },
 
+      // Delta-based stepper action. Reads the current quantity fresh from the
+      // store at call time instead of trusting a value computed from a React
+      // prop, so rapid back-to-back clicks (which fire before the row
+      // re-renders) each apply correctly instead of collapsing into one.
+      adjustQuantity: async (id, delta) => {
+        const state = get();
+        const item = state.cartItems.find((cartItem) => cartItem.id === id);
+        if (!item) return;
+
+        const newQuantity = item.quantity + delta;
+
+        if (newQuantity <= 0) {
+          get().removeItem(id);
+          return;
+        }
+
+        if (hasFiniteAvailableStock(item) && newQuantity > item.available) {
+          toast.warning(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available.`);
+          return;
+        }
+
+        set((s) => ({
+          cartItems: s.cartItems.map((cartItem) =>
+            cartItem.id === id ? { ...cartItem, quantity: newQuantity } : cartItem
+          ),
+          highlightItemId: id,
+          highlightNonce: s.highlightNonce + 1,
+        }));
+
+        await get().refreshCartPricing();
+      },
+
       updateUOM: async (id, uom, price) => {
         set((state) => ({
           cartItems: state.cartItems.map((item) => {
@@ -409,6 +485,8 @@ export const useCartStore = create<CartState>()(
           cartItems: [],
           appliedCoupons: [],
           selectedCustomer: null,
+          walkinDetails: { ...EMPTY_WALKIN },
+          extraFields: {},
           selectedPriceList: null,
         }));
       },
@@ -428,11 +506,20 @@ export const useCartStore = create<CartState>()(
 
       setSelectedCustomer: async (customer) => {
         set({ selectedCustomer: customer });
+        if (!customer || customer.isWalkin !== 1) {
+          set({ walkinDetails: { ...EMPTY_WALKIN } });
+        }
         const state = get();
         if (state.cartItems.length > 0) {
           await state.refreshCartPricing();
         }
       },
+
+      setWalkinDetails: (details) =>
+        set((s) => ({ walkinDetails: { ...s.walkinDetails, ...details } })),
+      clearWalkinDetails: () => set({ walkinDetails: { ...EMPTY_WALKIN } }),
+      setExtraFields: (v) => set({ extraFields: v }),
+      clearExtraFields: () => set({ extraFields: {} }),
 
       setSelectedPriceList: async (priceList) => {
         set({ selectedPriceList: priceList });

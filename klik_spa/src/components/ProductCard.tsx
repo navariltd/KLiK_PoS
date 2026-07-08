@@ -5,6 +5,7 @@ import type { MenuItem } from "../../types";
 import ProductTooltip from "./ProductTooltip";
 import ProductDetailsModal from "./ProductDetailsModal";
 import { formatCurrencyWithSymbol } from "../utils/currency";
+import { isItemOutOfStock } from "../utils/stock";
 
 interface ProductCardProps {
   item: MenuItem;
@@ -12,6 +13,10 @@ interface ProductCardProps {
   isMobile?: boolean;
   scannerOnly?: boolean;
   showItemCode?: boolean;
+  productIndex?: number;
+  isFocused?: boolean;
+  onFocused?: () => void;
+  onKeyboardAction?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
 }
 
 export default function ProductCard({
@@ -20,11 +25,15 @@ export default function ProductCard({
   isMobile = false,
   scannerOnly = false,
   showItemCode = false,
+  productIndex,
+  isFocused = false,
+  onFocused,
+  onKeyboardAction,
 }: ProductCardProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const isServiceItem = item.is_stock_item === false;
-  const isOutOfStock = item.is_stock_item !== false && item.available <= 0;
+  const isOutOfStock = isItemOutOfStock(item);
   const isDisabled = isOutOfStock || scannerOnly;
   const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0;
   const variantCount = item.is_variant_template ? item.variant_count || 0 : 0;
@@ -61,7 +70,13 @@ export default function ProductCard({
   return (
     <>
       <div
-        className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible transition-all duration-200 relative flex flex-col ${
+        tabIndex={productIndex !== undefined ? 0 : undefined}
+        data-product-index={productIndex}
+        onFocus={onFocused}
+        onKeyDown={onKeyboardAction}
+        className={`bg-white dark:bg-gray-800 rounded-xl border overflow-visible transition-all duration-200 relative flex flex-col outline-none ${
+          isFocused ? "border-beveren-500 ring-2 ring-beveren-400/50 dark:ring-beveren-500/40" : "border-gray-200 dark:border-gray-700"
+        } ${
           showTooltip ? "z-[2]" : "z-1"
         } ${
           isDisabled
@@ -87,7 +102,7 @@ export default function ProductCard({
             }}
             className={`text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600 shadow-sm transition-colors ${isDisabled ? "opacity-70" : ""}`}
           >
-            ℹ️
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </button>
 
           {showTooltip && !isMobile && (

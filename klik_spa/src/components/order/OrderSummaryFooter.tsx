@@ -15,6 +15,7 @@ interface OrderSummaryFooterProps {
   isMobile?: boolean;
   currency_symbol?: string;
   allow_holding_invoices?: boolean;
+  taxExclusive?: boolean;
 }
 
 export const OrderSummaryFooter = ({
@@ -30,6 +31,7 @@ export const OrderSummaryFooter = ({
   isMobile,
   currency_symbol,
   allow_holding_invoices,
+  taxExclusive = false,
 }: OrderSummaryFooterProps) => {
   return (
     <div
@@ -47,6 +49,7 @@ export const OrderSummaryFooter = ({
       >
         {allow_holding_invoices && (
           <button
+            id="pos-hold-btn"
             onClick={onHoldOrder}
             disabled={isHoldingOrder}
             className={`px-3 py-2 border border-beveren-600 text-beveren-600 dark:text-beveren-400 rounded-lg font-medium hover:bg-beveren-600 hover:text-white transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed ${isHoldingOrder ? 'opacity-60 cursor-not-allowed' : ''}`}
@@ -64,6 +67,7 @@ export const OrderSummaryFooter = ({
 
       {/* Pay Button */}
       <button
+        id="pos-checkout-btn"
         onClick={onCheckout}
         disabled={isValidating}
         className={`w-full bg-beveren-600 text-white rounded-xl font-semibold hover:bg-beveren-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
@@ -72,7 +76,7 @@ export const OrderSummaryFooter = ({
       >
         {isValidating
           ? "Checking cart..."
-          : `Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}`}
+          : `Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}${taxExclusive ? " +" : ""}`}
       </button>
     </div>
   );

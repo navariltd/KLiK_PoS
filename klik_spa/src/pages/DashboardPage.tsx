@@ -942,7 +942,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-2">
 
       <div className="flex-1 flex flex-col overflow-hidden ml-20">
       {/* Header */}

@@ -721,7 +721,7 @@ export default function CustomerDetailsPage() {
 
   // Desktop layout
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-2">
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Fixed Header */}
         <div className="fixed top-0 left-20 right-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">

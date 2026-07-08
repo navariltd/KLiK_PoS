@@ -43,9 +43,6 @@ doc_events = {
             "klik_pos.api.pos_entry.validate_opening_entry",
         ],
     },
-    "Sales Person": {
-        "before_save": "klik_pos.overrides.sales_person.validate_unique_pos_pin"
-    },
     "POS Profile": {
         "validate": "klik_pos.overrides.pos_profile.remove_duplicate_sales_persons"
     },
@@ -138,7 +135,8 @@ doctype_js.update({"Company": "public/js/company.js"})
 # ------------
 
 before_install = "klik_pos.setup.install.before_install"
-# after_install = "klik_pos.install.after_install"
+after_install = "klik_pos.setup.pos_profile_fields.ensure_pos_profile_feature_fields"
+after_migrate = "klik_pos.setup.pos_profile_fields.ensure_pos_profile_feature_fields"
 
 # Uninstallation
 # ------------
