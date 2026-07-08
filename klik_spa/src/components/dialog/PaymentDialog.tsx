@@ -649,6 +649,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     const draftResponse = await createDraftSalesInvoice({
       ...buildPaymentData(selectedDeliveryPersonnel, { excludeActiveMpesa: true }),
+      // No payment method is included yet (STK/reconcile payment is pending),
+      // so mark this as "held" to bypass the "must have a positive payment
+      // amount" cash-sale validation — same flag the hold-order flow uses.
+      status: "held",
       enable_background_invoice_submission: false,
     });
 
@@ -1940,8 +1944,31 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             ) : (
               <>
                 <div>
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h2>
+                    {allowPartialPayments && (
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                          {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                        </button>
+                        {isCreditSale && (
+                          <div className="flex items-center gap-1.5">
+                            <label htmlFor="pos-credit-due-date-mobile" className="text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              Due:
+                            </label>
+                            <input
+                              id="pos-credit-due-date-mobile"
+                              type="date"
+                              value={dueDate}
+                              onChange={(e) => setDueDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                              disabled={invoiceSubmitted || isProcessingPayment}
+                              className={`px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex space-x-3 overflow-x-auto pb-2">
                     {paymentMethods.map((method) => (
@@ -1964,19 +1991,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 </div>
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
-                {allowPartialPayments && (
-                  <div className="space-y-3 pt-2">
-                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
-                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                    </button>
-                    {isCreditSale && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due Date</label>
-                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                      </div>
-                    )}
-                  </div>
-                )}
                 {isDeliveryChargeEnabled && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Delivery Charge (Service Item)</label>
@@ -2182,24 +2196,35 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onAmountChange={handleManualAmountChange}
                   onAutoFill={handleAutoFillPayment}
                   setActiveMethodId={setActiveMethodId}
+                  headerRight={
+                    allowPartialPayments ? (
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                          {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                        </button>
+                        {isCreditSale && (
+                          <div className="flex items-center gap-2">
+                            <label htmlFor="pos-credit-due-date" className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                              Due Date
+                            </label>
+                            <input
+                              id="pos-credit-due-date"
+                              type="date"
+                              value={dueDate}
+                              onChange={(e) => setDueDate(e.target.value)}
+                              min={new Date().toISOString().split("T")[0]}
+                              disabled={invoiceSubmitted || isProcessingPayment}
+                              className={`px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
                 />
 
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
-
-                {allowPartialPayments && (
-                  <div className="space-y-3">
-                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
-                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                    </button>
-                    {isCreditSale && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due Date</label>
-                        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-red-300 dark:border-red-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-red-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {isDeliveryChargeEnabled && (
                   <div>

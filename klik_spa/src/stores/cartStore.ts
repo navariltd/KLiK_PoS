@@ -126,6 +126,7 @@ interface CartState {
   addToCart: (item: Omit<CartItem, 'quantity'>) => Promise<void>
   addToCartWithQuantity: (item: Omit<CartItem, 'quantity'>, quantity: number) => Promise<void>
   updateQuantity: (id: string, quantity: number) => Promise<void>
+  adjustQuantity: (id: string, delta: number) => Promise<void>
   updateUOM: (id: string, uom: string, price: number) => Promise<void>
   removeItem: (id: string) => void
   clearCart: () => void
@@ -423,6 +424,38 @@ export const useCartStore = create<CartState>()(
             item.id === id ? { ...item, quantity } : item
           )
         });
+
+        await get().refreshCartPricing();
+      },
+
+      // Delta-based stepper action. Reads the current quantity fresh from the
+      // store at call time instead of trusting a value computed from a React
+      // prop, so rapid back-to-back clicks (which fire before the row
+      // re-renders) each apply correctly instead of collapsing into one.
+      adjustQuantity: async (id, delta) => {
+        const state = get();
+        const item = state.cartItems.find((cartItem) => cartItem.id === id);
+        if (!item) return;
+
+        const newQuantity = item.quantity + delta;
+
+        if (newQuantity <= 0) {
+          get().removeItem(id);
+          return;
+        }
+
+        if (hasFiniteAvailableStock(item) && newQuantity > item.available) {
+          toast.warning(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available.`);
+          return;
+        }
+
+        set((s) => ({
+          cartItems: s.cartItems.map((cartItem) =>
+            cartItem.id === id ? { ...cartItem, quantity: newQuantity } : cartItem
+          ),
+          highlightItemId: id,
+          highlightNonce: s.highlightNonce + 1,
+        }));
 
         await get().refreshCartPricing();
       },

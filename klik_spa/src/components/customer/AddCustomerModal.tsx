@@ -175,16 +175,15 @@ export default function AddCustomerModal({
                 availableTypes={getAvailableCustomerTypes()}
               />
             ) : (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer Type</h3>
-                <div className="bg-beveren-50 dark:bg-beveren-900/20 border-2 border-beveren-500 rounded-lg p-4">
+              <div className="mb-3 sm:mb-6">
+                <div className="bg-beveren-50 dark:bg-beveren-900/20 border-2 border-beveren-500 rounded-lg p-2.5 sm:p-4">
                   <div className="flex items-center">
-                    {formData.customer_type === "company" ? <Building size={24} className="text-beveren-600 mr-3" /> : <User size={24} className="text-beveren-600 mr-3" />}
+                    {formData.customer_type === "company" ? <Building size={18} className="text-beveren-600 mr-3 sm:size-6" /> : <User size={18} className="text-beveren-600 mr-3 sm:size-6" />}
                     <div>
                       <span className="font-medium text-beveren-900 dark:text-beveren-100">
                         {formData.customer_type === "company" ? "Company" : "Individual"} Customer
                       </span>
-                      <p className="text-sm text-beveren-700 dark:text-beveren-300 mt-1">
+                      <p className="hidden sm:block text-sm text-beveren-700 dark:text-beveren-300 mt-1">
                         {formData.customer_type === "company" ? "Business customer (B2B)" : "Personal customer (B2C)"}
                       </p>
                     </div>

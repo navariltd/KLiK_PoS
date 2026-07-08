@@ -56,9 +56,14 @@ export default function TaxSection({
               className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white uppercase tracking-widest ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
             />
           ) : (
-            <div className="flex-1 flex items-center">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Available for walk-in customers only.</p>
-            </div>
+            <input
+              type="text"
+              value={selectedCustomer?.taxId || ""}
+              placeholder="No Tax ID on file"
+              disabled
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest cursor-not-allowed opacity-75"
+            />
           )}
         </div>
         {/* <div>

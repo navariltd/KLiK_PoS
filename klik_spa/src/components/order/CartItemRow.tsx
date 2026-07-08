@@ -104,7 +104,7 @@ export const CartItemRow = ({
   isMobile,
   autoFetchBatch = false,
 }: CartItemRowProps) => {
-  const { updateItemBundleEntries } = useCartStore();
+  const { updateItemBundleEntries, adjustQuantity } = useCartStore();
   const highlightItemId = useCartStore((s) => s.highlightItemId);
   const highlightNonce = useCartStore((s) => s.highlightNonce);
   const [glowing, setGlowing] = useState(false);
@@ -471,7 +471,7 @@ export const CartItemRow = ({
 
             <div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-full overflow-hidden">
               <button
-                onClick={(e) => { e.stopPropagation(); onUpdateQuantity(item.id, item.quantity - 1); }}
+                onClick={(e) => { e.stopPropagation(); adjustQuantity(item.id, -1); }}
                 className={`${
                   isMobile ? "w-7 h-7" : "w-6 h-6"
                 } flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400 transition-colors`}
@@ -498,15 +498,7 @@ export const CartItemRow = ({
                 className={`${isMobile ? "w-9" : "w-8"} text-center font-semibold text-gray-900 dark:text-white text-sm border-x border-gray-200 dark:border-gray-600 py-0.5 bg-transparent focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
               />
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const next = item.quantity + 1;
-                  if (item.available > 0 && next > item.available && !item.allow_negative_stock) {
-                    toast.warning(`Only ${item.available} units available.`);
-                  } else {
-                    onUpdateQuantity(item.id, next);
-                  }
-                }}
+                onClick={(e) => { e.stopPropagation(); adjustQuantity(item.id, 1); }}
                 className={`${
                   isMobile ? "w-7 h-7" : "w-6 h-6"
                 } flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 dark:hover:text-green-400 transition-colors`}

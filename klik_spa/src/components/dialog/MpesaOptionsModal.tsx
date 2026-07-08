@@ -157,8 +157,11 @@ export default function MpesaOptionsModal({
                           </span>
                         </div>
                         <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                          <div>{payment.transid || payment.name}</div>
-                          <div>{payment.msisdn || payment.billrefnumber || "No phone/reference"}</div>
+                          <div>
+                            {payment.transid || payment.name}
+                            {payment.msisdn ? ` - ${payment.msisdn}` : ""}
+                          </div>
+                          <div>{payment.billrefnumber || "No reference"}</div>
                         </div>
                       </div>
                     </label>
