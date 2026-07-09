@@ -152,14 +152,6 @@ export default function RetailPOSLayout() {
 
   return (
     <>
-      {useScannerOnly && (
-        <div className="fixed top-4 right-4 z-50 bg-blue-600/90 text-white px-3 py-1.5 rounded-lg shadow-lg backdrop-blur-sm">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium">Scanner Only</span>
-          </div>
-        </div>
-      )}
-      
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900 pb-2">
         <div className="flex-1 overflow-hidden ml-20">
           <MenuGrid

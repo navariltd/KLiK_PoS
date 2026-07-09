@@ -124,6 +124,7 @@ interface CartState {
   pricingError: string | null
 
   addToCart: (item: Omit<CartItem, 'quantity'>) => Promise<void>
+  addToCartQueued: (item: Omit<CartItem, 'quantity'>) => Promise<void>
   addToCartWithQuantity: (item: Omit<CartItem, 'quantity'>, quantity: number) => Promise<void>
   updateQuantity: (id: string, quantity: number) => Promise<void>
   adjustQuantity: (id: string, delta: number) => Promise<void>
@@ -141,6 +142,12 @@ interface CartState {
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
 }
+
+// Serializes rapid-fire adds (e.g. fast barcode scanning) so each add's
+// read-modify-write of cartItems completes before the next one reads state -
+// otherwise two adds started in parallel can both read the same starting
+// quantity and one increment is lost.
+let addQueue: Promise<unknown> = Promise.resolve();
 
 const shouldInsertNewItemsAtTop = (): boolean => {
   const position = usePOSProfileStore.getState().posDetails?.custom_cart_item_insertion_position;
@@ -321,6 +328,16 @@ export const useCartStore = create<CartState>()(
         }
 
         await get().refreshCartPricing();
+      },
+
+      addToCartQueued: (item) => {
+        const run = addQueue
+          .then(() => get().addToCart(item))
+          .catch((error) => {
+            console.error('Queued add to cart failed:', error);
+          });
+        addQueue = run;
+        return run;
       },
 
       addToCartWithQuantity: async (item, quantity) => {

@@ -205,6 +205,12 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
                 <List className="w-4 h-4" />
               </button>
             </div>
+
+            {useScannerOnly && (
+              <div className="flex items-center h-8 px-3 rounded-lg bg-blue-600 text-white">
+                <span className="text-xs font-medium whitespace-nowrap">Scanner Only</span>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center space-x-4 ml-6 relative" ref={dropdownRef}>

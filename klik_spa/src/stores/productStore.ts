@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { toast } from 'react-toastify';
 import type { MenuItem, Customer, ItemGroup } from '../../types';
 import { usePOSProfileStore } from './posProfileStore';
 import { useCartStore } from './cartStore';
@@ -408,6 +409,37 @@ export const useProductStore = create<ProductStoreState>()(
       attemptIdentifierLookup: async (query: string) => {
         const item = await get().fetchItemByIdentifier(query);
 
+        const profile = usePOSProfileStore.getState();
+        const useScannerOnly = !!profile.useScannerOnly;
+        const autoAdd = !!profile.posDetails?.auto_add_item_to_cart;
+
+        if (useScannerOnly && autoAdd) {
+          // Cancel the slower fuzzy search regardless of match outcome.
+          if (searchTimer) {
+            clearTimeout(searchTimer);
+            searchTimer = null;
+          }
+
+          // Enqueue the add regardless of staleness - a confirmed item scanned
+          // in rapid succession must never be silently dropped.
+          if (item) {
+            void useCartStore.getState().addToCartQueued({ ...item, item_code: item.id });
+          }
+
+          // Only clear the box if it still holds exactly this scan (no newer
+          // scan is mid-type). Applies whether matched or not, so a doubled
+          // barcode (two scans concatenated into one unmatched string) still
+          // clears instead of sitting there as garbage.
+          if (get().searchQuery.trim() === query) {
+            if (!item) {
+              toast.info(`No item found for ${query}`);
+            }
+            get().clearSearch();
+          }
+          return;
+        }
+
+        // ---- non-scanner-only behavior, unchanged ----
         // The user kept typing/scanning since this lookup was scheduled - discard.
         if (get().searchQuery.trim() !== query) return;
         if (!item) return;
@@ -426,7 +458,6 @@ export const useProductStore = create<ProductStoreState>()(
           isSearching: false,
         });
 
-        const autoAdd = !!usePOSProfileStore.getState().posDetails?.auto_add_item_to_cart;
         if (autoAdd) {
           await useCartStore.getState().addToCart({ ...item, item_code: item.id });
           get().clearSearch();
