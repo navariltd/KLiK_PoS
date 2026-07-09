@@ -304,7 +304,14 @@ def _embed_mpesa_payments(invoice) -> dict:
 			},
 		)
 
-	invoice.set_missing_values()
+	# NOT set_missing_values(): when the invoice carries a real pos_profile
+	# (always true in production, unlike most fixtures in this test suite),
+	# it reaches ERPNext's set_pos_fields -> update_multi_mode_option, which
+	# unconditionally wipes and rebuilds the payments table from the POS
+	# Profile's configured modes with no amount set -- erasing the row just
+	# appended above. The invoice's accounts/taxes were already established
+	# when it was first created and saved as a draft, so this call is both
+	# unnecessary and destructive here.
 	invoice.calculate_taxes_and_totals()
 	invoice.save(ignore_permissions=True)
 
@@ -370,6 +377,23 @@ def _finalize_mpesa_reconciliation(invoice, embed_summary: dict | None = None) -
 		excess = flt(excess)
 		if excess <= 0:
 			continue
+
+		# Link the credit PE back onto the overflowing traceability rows, and
+		# reuse the same lookup to build the PE's reference. The Mpesa mode of
+		# payment resolves to a Bank-type account, and ERPNext's
+		# validate_transaction_reference() requires both reference_no and
+		# reference_date for Bank transactions -- use the real M-Pesa Trans ID(s)
+		# (not a generic description) so the credit is traceable back to the
+		# receipt(s) that funded it.
+		register_names = excess_registers_by_mode.get(mode, [])
+		matched_children = [
+			c
+			for c in invoice.get("custom_mpesa_reconciled_payments") or []
+			if c.mpesa_c2b_payment_register in register_names
+		]
+		transids = [c.transid for c in matched_children if c.transid]
+		reference_no = ", ".join(transids) if transids else f"Mpesa excess credit for {invoice.name}"
+
 		pe = create_payment_entry(
 			invoice.company,
 			invoice.customer,
@@ -377,27 +401,18 @@ def _finalize_mpesa_reconciliation(invoice, embed_summary: dict | None = None) -
 			invoice.currency,
 			mode,
 			party_type="Customer",
-			reference_no=f"Mpesa excess credit for {invoice.name}",
+			reference_no=reference_no,
+			reference_date=invoice.posting_date,
 			posting_date=invoice.posting_date,
 			submit=1,
 		)
 
-		# Link the credit PE back onto the overflowing traceability rows.
 		# custom_mpesa_reconciled_payments is read-only on the submitted parent,
 		# so write the child column directly.
-		for register_name in excess_registers_by_mode.get(mode, []):
-			child = next(
-				(
-					c
-					for c in invoice.get("custom_mpesa_reconciled_payments") or []
-					if c.mpesa_c2b_payment_register == register_name
-				),
-				None,
+		for child in matched_children:
+			frappe.db.set_value(
+				"POS Mpesa Reconciled Payment", child.name, "excess_payment_entry", pe.name
 			)
-			if child:
-				frappe.db.set_value(
-					"POS Mpesa Reconciled Payment", child.name, "excess_payment_entry", pe.name
-				)
 
 		results.append(
 			{

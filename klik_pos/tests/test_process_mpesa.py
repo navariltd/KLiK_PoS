@@ -2,6 +2,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt
 
+from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
 from erpnext.accounts.doctype.sales_invoice.test_sales_invoice import create_sales_invoice
 
 from klik_pos.api.mpesa import process_mpesa
@@ -110,6 +111,20 @@ class TestProcessMpesa(FrappeTestCase):
 		frappe.db.set_value("Mpesa C2B Payment Register", doc.name, "currency", "INR")
 		doc.reload()
 		return doc
+
+	def _ensure_bank_mode_of_payment(self, mode_of_payment="Cheque", account="_Test Bank - _TC"):
+		# Real M-Pesa modes of payment resolve to a Bank-type account (unlike
+		# this file's other fixtures, which all use "Cash" and so never
+		# exercise Payment Entry's Bank-transaction validation). "Cheque" is a
+		# stock Mode of Payment already typed "Bank"; give it a default
+		# account for _Test Company if one isn't already configured.
+		if not frappe.db.get_value(
+			"Mode of Payment Account", {"company": self.company, "parent": mode_of_payment}
+		):
+			mop = frappe.get_doc("Mode of Payment", mode_of_payment)
+			mop.append("accounts", {"company": self.company, "default_account": account})
+			mop.save()
+		return mode_of_payment
 
 	def test_records_traceability_without_touching_payments(self):
 		invoice = self._draft_invoice()
@@ -316,6 +331,46 @@ class TestProcessMpesa(FrappeTestCase):
 		# submit_payment=0 -> the register hook mints no per-row Payment Entry.
 		self.assertFalse(row.payment_entry)
 
+	def test_embed_survives_real_pos_profile_with_configured_payment_methods(self):
+		"""Regression: production invoices carry a real `pos_profile` with
+		configured `POS Payment Method` rows, unlike the other fixtures in this
+		file which leave `pos_profile` unset. `_embed_mpesa_payments` used to
+		call `invoice.set_missing_values()` AFTER appending the embedded M-Pesa
+		payment row; with a real pos_profile attached, that reaches ERPNext's
+		`set_pos_fields` -> `update_multi_mode_option`, which unconditionally
+		wipes and rebuilds the `payments` child table from the POS Profile's
+		configured modes (with no amount set), erasing the just-embedded row.
+		The invoice would submit with paid_amount=0 and the full grand_total
+		left outstanding, even though `custom_mpesa_reconciled_payments` shows
+		the receipt was reconciled.
+		"""
+		pos_profile = make_pos_profile(company=self.company)
+
+		invoice = self._draft_invoice(rate=100)
+		invoice.pos_profile = pos_profile.name
+		invoice.insert(ignore_permissions=True)
+		row = self._make_c2b_payment(amount=100)
+
+		result = process_mpesa(
+			doctype="Sales Invoice",
+			invoice_name=invoice.name,
+			customer=self.customer,
+			mpesa_payments=row.name,
+			mode_of_payment="Cash",
+			auto_save=1,
+			auto_submit=1,
+			merge_payments=0,
+		)
+
+		self.assertTrue(result["submitted"])
+
+		invoice.reload()
+		self.assertEqual(invoice.docstatus, 1)
+		self.assertEqual(len(invoice.payments), 1)
+		self.assertEqual(flt(invoice.payments[0].amount), 100)
+		self.assertEqual(flt(invoice.paid_amount), 100)
+		self.assertEqual(flt(invoice.outstanding_amount), 0)
+
 	def test_duplicate_register_row_name_in_same_call_is_rejected(self):
 		invoice = self._draft_invoice()
 		invoice.insert(ignore_permissions=True)
@@ -464,6 +519,52 @@ class TestProcessMpesa(FrappeTestCase):
 			if c.excess_payment_entry
 		]
 		self.assertIn(pe.name, linked)
+
+	def test_overpayment_credit_sets_reference_for_bank_mode(self):
+		"""Regression: real M-Pesa modes of payment resolve to a Bank-type
+		account (unlike "Cash", used by the other tests here), and ERPNext's
+		Payment Entry.validate_transaction_reference() throws "Reference No
+		and Reference Date is mandatory for Bank transaction" if either is
+		blank. create_payment_entry() used to be called for the excess credit
+		without a reference_date at all, and with a generic description (not
+		the real M-Pesa Trans ID) as reference_no -- invisible to this file's
+		other tests because they all use "Cash", which never reaches that
+		validation.
+		"""
+		mode_of_payment = self._ensure_bank_mode_of_payment()
+
+		invoice = self._draft_invoice(rate=100)
+		invoice.insert(ignore_permissions=True)
+		row_a = self._make_c2b_payment(amount=60, msisdn="254755555555")
+		row_b = self._make_c2b_payment(amount=70, msisdn="254766666666")
+
+		process_mpesa(
+			doctype="Sales Invoice",
+			invoice_name=invoice.name,
+			customer=self.customer,
+			mpesa_payments=f"{row_a.name},{row_b.name}",
+			mode_of_payment=mode_of_payment,
+			auto_save=1,
+			auto_submit=0,
+			merge_payments=0,
+		)
+
+		# Used to throw here: "Reference No and Reference Date is mandatory
+		# for Bank transaction" while creating the excess credit Payment Entry.
+		result = submit_draft_invoice(invoice.name, data=None)
+		self.assertTrue(result["success"])
+
+		recon = result["mpesa_reconciliation"][0]
+		pe = frappe.get_doc("Payment Entry", recon["payment_entry"])
+		self.assertEqual(pe.docstatus, 1)
+		self.assertTrue(pe.reference_date)
+		self.assertEqual(frappe.utils.getdate(pe.reference_date), frappe.utils.getdate(invoice.posting_date))
+		# reference_no must trace back to the real M-Pesa receipt that
+		# straddled the cap (row_a's 60 is fully embedded with no excess;
+		# row_b's 70 embeds 40 and overflows the remaining 30), not a
+		# generic description.
+		self.assertIn(row_b.transid, pe.reference_no)
+		self.assertNotIn(row_a.transid, pe.reference_no)
 
 	def test_embedded_mpesa_is_visible_to_shift_reconciliation(self):
 		"""The paid portion must appear in the POS closing/drawer reconciliation,
