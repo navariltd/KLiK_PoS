@@ -1337,6 +1337,14 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		doc.save(ignore_permissions=True)
 		if tax_id:
 			doc.tax_id = tax_id
+
+		# Hybrid M-Pesa: embed recorded receipts (capped at payable) before submit.
+		mpesa_embed_summary = None
+		if doc.get("custom_mpesa_reconciled_payments"):
+			from klik_pos.api.mpesa import _embed_mpesa_payments
+
+			mpesa_embed_summary = _embed_mpesa_payments(doc)
+
 		_apply_klik_invoice_flags(doc, is_submitted=True)
 		doc.submit()
 		doc.reload()
@@ -1347,6 +1355,16 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 				frappe.get_traceback(),
 				f"Failed to cancel reservations after submit for {doc.name}",
 			)
+		if doc.get("custom_mpesa_reconciled_payments"):
+			from klik_pos.api.mpesa import _finalize_mpesa_reconciliation
+
+			try:
+				_finalize_mpesa_reconciliation(doc, mpesa_embed_summary)
+			except Exception:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"Failed to finalize Mpesa reconciliation for {doc.name}",
+				)
 		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
 		if hasattr(doc, "queue_error"):
 			doc.queue_error = ""
@@ -3914,6 +3932,16 @@ def submit_draft_invoice(invoice_id, data=None):
 				"invoice": invoice_doc,
 			}
 		else:
+			# Hybrid M-Pesa: embed the recorded receipts (capped at the payable
+			# total) BEFORE submit so POS paid-amount validation passes and the
+			# take is visible to shift reconciliation; the overpaid excess
+			# becomes an unallocated credit PE after submit.
+			mpesa_embed_summary = None
+			if invoice_doc.get("custom_mpesa_reconciled_payments"):
+				from klik_pos.api.mpesa import _embed_mpesa_payments
+
+				mpesa_embed_summary = _embed_mpesa_payments(invoice_doc)
+
 			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
 			invoice_doc.submit()
 			try:
@@ -3924,12 +3952,21 @@ def submit_draft_invoice(invoice_id, data=None):
 					f"Failed to cancel reservations after submit for {invoice_doc.name}",
 				)
 
-			return {
+			mpesa_reconciliation = None
+			if invoice_doc.get("custom_mpesa_reconciled_payments"):
+				from klik_pos.api.mpesa import _finalize_mpesa_reconciliation
+
+				mpesa_reconciliation = _finalize_mpesa_reconciliation(invoice_doc, mpesa_embed_summary)
+
+			response = {
 				"success": True,
 				"message": f"Draft invoice {invoice_id} submitted successfully",
 				"invoice_name": invoice_doc.name,
 				"invoice": invoice_doc,
 			}
+			if mpesa_reconciliation:
+				response["mpesa_reconciliation"] = mpesa_reconciliation
+			return response
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}

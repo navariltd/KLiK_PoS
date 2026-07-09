@@ -1233,6 +1233,20 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setMpesaDraftInvoiceName(null);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
 
+      // M-Pesa overpayment: the excess is held as reusable customer credit, not
+      // handed back as cash change. Surface it explicitly.
+      const mpesaExcess = (response?.mpesa_reconciliation || []).reduce(
+        (sum: number, r: any) => sum + Number(r?.excess_amount || 0),
+        0
+      );
+      if (mpesaExcess > 0) {
+        const who = selectedCustomer?.customerName || selectedCustomer?.name || "the customer";
+        toast.success(
+          `${formatCurrencyWithSymbol(mpesaExcess)} credit added to ${who}'s account — no cash change is given for M-Pesa.`,
+          { autoClose: 8000 }
+        );
+      }
+
       clearDraftInvoiceCache();
     } catch (err: any) {
       const defaultMessage = isB2B ? "Failed to submit invoice" : "Failed to process payment";

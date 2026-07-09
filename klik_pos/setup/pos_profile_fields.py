@@ -187,10 +187,50 @@ def install_mpesa_reconciled_payment_child():
                     "fieldtype": "Data",
                     "in_list_view": 1,
                 },
+                {
+                    "fieldname": "mode_of_payment",
+                    "label": "Mode of Payment",
+                    "fieldtype": "Link",
+                    "options": "Mode of Payment",
+                    "in_list_view": 1,
+                },
+                {
+                    "fieldname": "excess_payment_entry",
+                    "label": "Excess Payment Entry",
+                    "fieldtype": "Data",
+                    "description": "Name of the unallocated Payment Entry holding this receipt's overpaid excess as reusable customer credit (plain text, not a Link).",
+                    "read_only": 1,
+                },
             ],
             "permissions": [],
         })
         child.insert(ignore_permissions=True)
+    else:
+        child = frappe.get_doc("DocType", "POS Mpesa Reconciled Payment")
+        _missing_child_fields = [
+            {
+                "fieldname": "mode_of_payment",
+                "label": "Mode of Payment",
+                "fieldtype": "Link",
+                "options": "Mode of Payment",
+                "in_list_view": 1,
+            },
+            {
+                "fieldname": "excess_payment_entry",
+                "label": "Excess Payment Entry",
+                "fieldtype": "Data",
+                "description": "Name of the unallocated Payment Entry holding this receipt's overpaid excess as reusable customer credit (plain text, not a Link).",
+                "read_only": 1,
+            },
+        ]
+        existing = {f.fieldname for f in child.fields}
+        appended = False
+        for field_def in _missing_child_fields:
+            if field_def["fieldname"] not in existing:
+                child.append("fields", field_def)
+                appended = True
+        if appended:
+            child.save(ignore_permissions=True)
 
     if not frappe.db.exists(
         "Custom Field", {"dt": "Sales Invoice", "fieldname": "custom_mpesa_reconciled_payments"}
