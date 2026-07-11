@@ -931,7 +931,7 @@ export default function ClosingShiftPage() {
           </div>
         </div>
 
-        <div className="flex-1 px-6 py-8 mt-16 space-y-6">
+        <div className="flex-1 px-4 py-4 mt-16 space-y-4">
           {/* Warning if no opening entry */}
           {hasNoOpeningEntry && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
@@ -955,11 +955,11 @@ export default function ClosingShiftPage() {
           {!hideExpectedAmount && !hasNoOpeningEntry && (
             <>
               {/* Payment Method Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {Object.values(paymentStats).map((stat) => (
                   // @ts-expect-error just ignore for now
-                  <div key={stat.name} className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between mb-4">
+                  <div key={stat.name} className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-3">
                                             {/* @ts-expect-error just ignore */}
                       <h3 className="font-semibold text-gray-900 dark:text-white">{stat.name}</h3>
                                             {/* @ts-expect-error just ignore */}
@@ -989,8 +989,8 @@ export default function ClosingShiftPage() {
           )}
 
           {/* Filters */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                 <input
@@ -1049,7 +1049,7 @@ export default function ClosingShiftPage() {
 
           {/* Invoices Table */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 All Invoices ({filteredInvoices.length})
               </h3>
@@ -1258,8 +1258,8 @@ export default function ClosingShiftPage() {
 
         {/* Held Orders */}
         {(heldOrders.length > 0 || isLoadingHeldOrders) && (
-          <div className="mx-4 mb-6 bg-white dark:bg-gray-800 rounded-xl border border-orange-200 dark:border-orange-700 overflow-hidden">
-            <div className="px-4 py-4 border-b border-orange-200 dark:border-orange-700 flex items-center justify-between">
+          <div className="mx-4 mb-4 bg-white dark:bg-gray-800 rounded-xl border border-orange-200 dark:border-orange-700 overflow-hidden">
+            <div className="px-4 py-3 border-b border-orange-200 dark:border-orange-700 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Held Orders ({heldOrders.length})
               </h3>

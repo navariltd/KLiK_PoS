@@ -294,7 +294,7 @@ export default function PaymentEntriesPage() {
         </div>
       </div>
 
-      <main className="px-4 py-6 sm:px-6">
+      <main className="px-4 py-4 sm:px-6">
         {activeTab === "invoice" ? (
           <section className="space-y-4">
             <div className="relative max-w-xl">
@@ -408,25 +408,25 @@ export default function PaymentEntriesPage() {
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {isLoadingCustomers ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-5 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                <div className="rounded-lg border border-gray-200 bg-white p-3 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                   <span className="inline-flex items-center gap-2">
                     <Loader2 size={18} className="animate-spin" />
                     Loading customers...
                   </span>
                 </div>
               ) : customerError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                   {customerError.message}
                 </div>
               ) : customers.length === 0 ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-5 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                <div className="rounded-lg border border-gray-200 bg-white p-3 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                   No customers found.
                 </div>
               ) : (
                 customers.map((customer) => (
                   <div
                     key={customer.id}
-                    className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
+                    className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -469,7 +469,7 @@ export default function PaymentEntriesPage() {
               </div>
             )}
 
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-3 xl:grid-cols-2">
               <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
                   <h2 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
@@ -480,14 +480,14 @@ export default function PaymentEntriesPage() {
                 </div>
                 <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
                   {isLoadingReconciliation ? (
-                    <div className="p-5 text-gray-500 dark:text-gray-400">
+                    <div className="p-3 text-gray-500 dark:text-gray-400">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 size={18} className="animate-spin" />
                         Loading credits...
                       </span>
                     </div>
                   ) : credits.length === 0 ? (
-                    <div className="p-5 text-gray-500 dark:text-gray-400">No unallocated payment entries found.</div>
+                    <div className="p-3 text-gray-500 dark:text-gray-400">No unallocated payment entries found.</div>
                   ) : (
                     credits.map((credit) => {
                       const isSelected = selectedCredit?.name === credit.name;
@@ -534,14 +534,14 @@ export default function PaymentEntriesPage() {
                 </div>
                 <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
                   {isLoadingReconciliation ? (
-                    <div className="p-5 text-gray-500 dark:text-gray-400">
+                    <div className="p-3 text-gray-500 dark:text-gray-400">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 size={18} className="animate-spin" />
                         Loading invoices...
                       </span>
                     </div>
                   ) : reconcileInvoices.length === 0 ? (
-                    <div className="p-5 text-gray-500 dark:text-gray-400">No outstanding invoices found.</div>
+                    <div className="p-3 text-gray-500 dark:text-gray-400">No outstanding invoices found.</div>
                   ) : (
                     reconcileInvoices.map((invoice) => {
                       const isSelected = selectedReconcileInvoice?.name === invoice.name;
@@ -580,8 +580,8 @@ export default function PaymentEntriesPage() {
               </div>
             </div>
 
-            <div className="sticky bottom-20 rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800 lg:bottom-4">
-              <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <div className="sticky bottom-20 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800 lg:bottom-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
                 <div>
                   <div className="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Selected Credit</div>
                   <div className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
