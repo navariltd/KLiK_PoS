@@ -974,11 +974,11 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
         </div>
       </div>
 
-        <div className="flex-1 px-6 py-8 mt-16">
+        <div className="flex-1 px-4 py-4 mt-16">
         {/* Enhanced Filters */}
         {showFilters && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700 mb-6 sm:mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Dashboard Filters</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Dashboard Filters</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Time Range</label>
@@ -1047,90 +1047,90 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
         )}
 
         {/* Enhanced Key Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                 <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   {formatCurrencyWithSymbol(filteredStats.totalRevenue, posDetails?.currency || 'USD')}
                 </p>
-                <div className="flex items-center mt-2">
+                <div className="flex items-center mt-1">
                   <TrendingUp className="w-4 h-4 text-orange-500 mr-1" />
                   <span className="text-sm text-orange-600 dark:text-orange-400">+12.5%</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 hidden sm:inline">vs last period</span>
                 </div>
               </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
-                <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+              <div className="w-9 h-9 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Transactions</p>
                 <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   {filteredStats.totalTransactions}
                 </p>
-                <div className="flex items-center mt-2">
+                <div className="flex items-center mt-1">
                   <TrendingUp className="w-4 h-4 text-orange-500 mr-1" />
                   <span className="text-sm text-orange-600 dark:text-blue-400">+8.2%</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 hidden sm:inline">vs last period</span>
                 </div>
               </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
-                <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-blue-400" />
+              <div className="w-9 h-9 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5 text-orange-600 dark:text-blue-400" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
                 <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   {formatCurrencyWithSymbol(filteredStats.averageOrderValue, posDetails?.currency || 'USD')}
                 </p>
-                <div className="flex items-center mt-2">
+                <div className="flex items-center mt-1">
                   <TrendingUp className="w-4 h-4 text-orange-500 mr-1" />
                   <span className="text-sm text-orange-600 dark:text-orange-400">+3.8%</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 hidden sm:inline">vs last period</span>
                 </div>
               </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+              <div className="w-9 h-9 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Items Sold</p>
                 <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   {filteredStats.totalItems}
                 </p>
-                <div className="flex items-center mt-2">
+                <div className="flex items-center mt-1">
                   <TrendingDown className="w-4 h-4 text-red-500 mr-1" />
                   <span className="text-sm text-red-600 dark:text-red-400">-2.1%</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 hidden sm:inline">vs last period</span>
                 </div>
               </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
-                <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+              <div className="w-9 h-9 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
+                <Activity className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               </div>
             </div>
           </div>
         </div>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 gap-3 mb-4">
           {/* Sales by Hour Chart - Only show for today */}
           {timeRange === "today" && salesByHourData.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Sales by Hour (Today)</h3>
                 <div className="flex items-center space-x-4">
                   {/* Graph Type Toggle */}
@@ -1165,10 +1165,10 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                   </div>
                 </div>
               </div>
-              <div className="h-48 sm:h-64 flex items-end justify-between space-x-1">
+              <div className="h-32 sm:h-40 flex items-end justify-between space-x-1">
                 {salesByHourData.map((item: { hour: string; sales: number }, index: number) => {
                   const maxSales = Math.max(...salesByHourData.map(s => s.sales))
-                  const height = maxSales > 0 ? (item.sales / maxSales) * 180 : 4
+                  const height = maxSales > 0 ? (item.sales / maxSales) * 110 : 4
 
                   return (
                     <div key={index} className="flex flex-col items-center flex-1 group">
@@ -1219,7 +1219,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                   )
                 })}
               </div>
-              <div className="mt-4 text-center">
+              <div className="mt-3 text-center">
                 <div className="text-sm text-gray-600 dark:text-gray-400">
                   Total Revenue: <span className="font-semibold text-beveren-600 dark:text-beveren-400">
                     {formatCurrencyWithSymbol(salesByHourData.reduce((sum, item) => sum + item.sales, 0), posDetails?.currency || 'USD')}
@@ -1230,17 +1230,17 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
           )}
 
           {/* Enhanced Payment Methods Chart */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h3>
               <PieChart className="w-5 h-5 text-gray-400" />
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {paymentMethodsData.map((method, index) => {
                 const colors = ['bg-orange-500', 'bg-beveren-600', 'bg-green-500', 'bg-purple-500', 'bg-pink-500']
                 const color = colors[index % colors.length]
                 return (
-                  <div key={method.method} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div key={method.method} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <div className={`w-4 h-4 ${color} rounded`}></div>
                       <span className="text-sm text-gray-700 dark:text-gray-300">{method.method}</span>
@@ -1262,7 +1262,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                 </div>
               )}
             </div>
-            <div className="mt-4">
+            <div className="mt-3">
               <div className="flex rounded-lg overflow-hidden h-4">
                 {paymentMethodsData.map((method, index) => {
                   const colors = ['bg-orange-500', 'bg-beveren-600', 'bg-green-500', 'bg-purple-500', 'bg-pink-500']
@@ -1281,18 +1281,18 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
         </div>
 
         {/* Additional Stats Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className={`grid grid-cols-1 ${posDetails?.is_zatca_enabled && zatcaData.total > 0 ? "lg:grid-cols-2" : ""} gap-3 mb-4`}>
           {/* ZATCA Status Bar Chart (desktop) */}
           {posDetails?.is_zatca_enabled && zatcaData.total > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">ZATCA Status</h3>
                 <BarChart3 className="w-5 h-5 text-gray-400" />
               </div>
-              <div className="h-64 flex items-end justify-between space-x-3 mb-6">
+              <div className="h-40 flex items-end justify-between space-x-3 mb-3">
                 {zatcaData.segments.map((segment) => {
                   const maxCount = Math.max(...zatcaData.segments.map(s => s.count))
-                  const height = maxCount > 0 ? (segment.count / maxCount) * 200 : 4
+                  const height = maxCount > 0 ? (segment.count / maxCount) * 110 : 4
 
                   return (
                     <div key={segment.status} className="flex flex-col items-center flex-1 group">
@@ -1330,7 +1330,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                   </div>
                 ))}
               </div>
-              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+              <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
                 <div className="text-center text-sm text-gray-600 dark:text-gray-400">
                   Total Invoices: <span className="font-semibold text-beveren-600 dark:text-beveren-400">{zatcaData.total}</span>
                 </div>
@@ -1338,34 +1338,33 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
             </div>
           )}
 
-
           {/* Enhanced Top Cashier */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Performer</h3>
               <Users className="w-5 h-5 text-beveren-600" />
             </div>
             {topPerformer ? (
               <div className="text-center">
-                <div className="w-16 h-16 bg-beveren-600 rounded-full flex items-center justify-center mx-auto mb-3 relative">
-                  <span className="text-white font-bold text-xl">
+                <div className="w-12 h-12 bg-beveren-600 rounded-full flex items-center justify-center mx-auto mb-2 relative">
+                  <span className="text-white font-bold text-lg">
                     {topPerformer.name
                       .split(" ")
                       .map((n: string) => n[0])
                       .join("")}
                   </span>
-                  <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center">
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center">
                     <span className="text-xs">👑</span>
                   </div>
                 </div>
                 <h4 className="font-semibold text-gray-900 dark:text-white">{topPerformer.name}</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
                   {topPerformer.transactions} transactions
                 </p>
                 <p className="text-lg font-bold text-beveren-600 dark:text-beveren-400">
                   {formatCurrencyWithSymbol(topPerformer.sales, posDetails?.currency || 'USD')}
                 </p>
-                <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {filteredStats.totalRevenue > 0 ? ((topPerformer.sales / filteredStats.totalRevenue) * 100).toFixed(1) : 0}% of total sales
                 </div>
               </div>
@@ -1375,23 +1374,21 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
               </div>
             )}
           </div>
-
-
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {/* Enhanced Top Products */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Selling Products</h3>
               <button className="text-sm text-beveren-600 dark:text-beveren-400 hover:underline">View All</button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {topProducts.map((product, index) => (
                 <div
                   key={product.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                  className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-beveren-100 dark:bg-beveren-900/20 rounded-lg flex items-center justify-center">
@@ -1421,8 +1418,8 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
           </div>
 
           {/* Enhanced Recent Transactions */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Transactions</h3>
               <button
                 onClick={() => navigate("/closing_shift")}
@@ -1431,11 +1428,11 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                 View All Reports
               </button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {recentTransactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                  className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-gray-100 dark:bg-gray-600 rounded-lg flex items-center justify-center">

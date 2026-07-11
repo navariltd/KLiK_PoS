@@ -232,3 +232,20 @@ export const formatDateTime = (dateString: string, timeString?: string): string 
 
   return formattedDate;
 };
+
+/**
+ * Convert a date + time pair into a numeric timestamp for chronological sorting.
+ * Avoids string comparison pitfalls entirely (locale collation, formatting drift, etc).
+ * @param dateString - Date string (e.g. posting_date, "YYYY-MM-DD")
+ * @param timeString - Time string (e.g. posting_time, "HH:MM:SS[.ffffff]")
+ * @returns Epoch milliseconds, or 0 if the date is missing/unparseable
+ */
+export const toSortableTimestamp = (dateString?: string, timeString?: string): number => {
+  if (!dateString) return 0;
+
+  const time = timeString && timeString.trim() ? formatTime(timeString) : '00:00:00';
+  const parsed = new Date(`${dateString}T${time}`);
+  const timestamp = parsed.getTime();
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};

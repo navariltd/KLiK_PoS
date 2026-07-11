@@ -44,8 +44,10 @@ import { getHeldOrders } from "../services/salesOrder";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { handlePrintInvoice } from "../utils/printHandler";
 import { useCartStore } from "../stores/cartStore";
-import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
+import { isToday, isThisWeek, isThisMonth, isThisYear, formatDateTime, toSortableTimestamp } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
+import { useTableSort } from "../hooks/useTableSort";
+import SortableHeaderButton from "../components/SortableHeaderButton";
 // import InvoiceViewPage from "./InvoiceViewPage";
 
 const INVOICE_HISTORY_VIEW_MODE_KEY = "invoice-history-view-mode";
@@ -224,12 +226,16 @@ export default function InvoiceHistoryPage() {
   const isAdminUser = userInfo?.is_admin_user || false;
   const currentUserCashier = userInfo?.full_name || "";
 
-  // Set default cashier filter for non-admin users
+  // Force the cashier filter to the current (non-admin) user once fresh user
+  // info has loaded. This also self-corrects any stale/leftover cashier name
+  // that was persisted to localStorage (filters or user info) by a different
+  // user on a shared device, instead of only seeding it once from "all".
   useEffect(() => {
-    if (!isAdminUser && currentUserCashier && cashierFilter === "all") {
+    if (userInfoLoading) return;
+    if (!isAdminUser && currentUserCashier && cashierFilter !== currentUserCashier) {
       setCashierFilter(currentUserCashier);
     }
-  }, [isAdminUser, currentUserCashier, cashierFilter]);
+  }, [isAdminUser, currentUserCashier, cashierFilter, userInfoLoading]);
 
   useEffect(() => {
     window.localStorage.setItem(INVOICE_HISTORY_VIEW_MODE_KEY, viewMode);
@@ -383,6 +389,19 @@ const getStatusBadge = (status: string) => {
     return filtered;
   }, [invoices, heldOrders, activeTab, dateFilter, customerFilter, paymentFilter, cashierFilter, isLoading, error, filterInvoiceByDate]);
 
+  const { sortedData: sortedInvoices, sortKey: invoiceSortKey, sortDirection: invoiceSortDirection, toggleSort: toggleInvoiceSort } = useTableSort(
+    filteredInvoices,
+    {
+      id: (invoice) => invoice.id,
+      date: (invoice) => toSortableTimestamp(invoice.date, invoice.time),
+      customer: (invoice) => invoice.customer,
+      cashier: (invoice) => invoice.cashier,
+      paymentMethod: (invoice) => invoice.paymentMethod,
+      amount: (invoice) => invoice.totalAmount,
+      status: (invoice) => invoice.status,
+    }
+  );
+
   const uniqueCashiers = useMemo(() => {
     return [...new Set(invoices.map(invoice => invoice.cashier).filter(Boolean))];
   }, [invoices]);
@@ -457,7 +476,7 @@ const getStatusBadge = (status: string) => {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-lg max-w-md">
+        <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded-lg max-w-md">
           <h3 className="text-lg font-medium text-red-800 dark:text-red-200">Error loading invoices</h3>
            {/* @ts-expect-error just ignore */}
           <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error.message}</p>
@@ -554,7 +573,7 @@ const getStatusBadge = (status: string) => {
 
   const renderInvoicesTable = () => (
     <div className="w-full max-w-none bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between p-2 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           {activeTab === "all" ? "All Invoices" : tabs.find(t => t.id === activeTab)?.name} ({filteredInvoices.length})
         </h3>
@@ -588,25 +607,25 @@ const getStatusBadge = (status: string) => {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Invoice
+                  <SortableHeaderButton label="Invoice" sortKey="id" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                  Date
+                  <SortableHeaderButton label="Date" sortKey="date" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Customer
+                  <SortableHeaderButton label="Customer" sortKey="customer" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Cashier
+                  <SortableHeaderButton label="Cashier" sortKey="cashier" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 w-40 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Payment
+                  <SortableHeaderButton label="Payment" sortKey="paymentMethod" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Amount
+                  <SortableHeaderButton label="Amount" sortKey="amount" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Status
+                  <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
                 {posDetails?.is_zatca_enabled && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -619,14 +638,13 @@ const getStatusBadge = (status: string) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {filteredInvoices.map((invoice) => (
+              {sortedInvoices.map((invoice) => (
                 <tr key={`${activeTab}-${invoice.id}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 dark:text-white">{invoice.date}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{invoice.time}</div>
+                    <div className="text-sm text-gray-900 dark:text-white">{formatDateTime(invoice.date, invoice.time)}</div>
                   </td>
                   <td className="px-6 py-4 max-w-[12rem]">
                     <div title={invoice.customer} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
@@ -713,7 +731,7 @@ const getStatusBadge = (status: string) => {
           </table>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-2">
           {filteredInvoices.map((invoice) => (
             <div
               key={`${activeTab}-${invoice.id}`}
@@ -1157,7 +1175,7 @@ const getStatusBadge = (status: string) => {
                   </button>
                 </div>
               </div>
-              <div className="p-6 flex-1 overflow-hidden flex flex-col">
+              <div className="p-2 flex-1 overflow-hidden flex flex-col">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Choose a customer to process multi-invoice returns
                 </p>
@@ -1274,7 +1292,7 @@ const getStatusBadge = (status: string) => {
           <div className="sticky top-20 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur pb-2">
             {/* Status Tabs - Now full width like the table */}
             <div className="mb-8 w-full max-w-none">
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-2">
                 <div className="border-b border-gray-200 dark:border-gray-700">
                   <nav className="-mb-px flex space-x-8 overflow-x-auto">
                     {tabs.map((tab) => (
@@ -1331,7 +1349,7 @@ const getStatusBadge = (status: string) => {
                   </button>
                 </div>
               </div>
-              <div className="p-6 flex-1 overflow-hidden flex flex-col">
+              <div className="p-2 flex-1 overflow-hidden flex flex-col">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Choose a customer to process multi-invoice returns
                 </p>

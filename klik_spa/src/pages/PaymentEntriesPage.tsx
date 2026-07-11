@@ -13,6 +13,33 @@ import {
   type UnallocatedCustomerPaymentEntry,
 } from "../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../utils/currency";
+import { formatDateTime, toSortableTimestamp } from "../utils/time";
+import { useTableSort } from "../hooks/useTableSort";
+import SortableHeaderButton from "../components/SortableHeaderButton";
+
+const getStatusBadge = (status: string) => {
+  const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
+  const normalized = status?.toLowerCase() || "";
+
+  switch (normalized) {
+    case "paid":
+      return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400`;
+    case "unpaid":
+      return `${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400`;
+    case "partly paid":
+      return `${baseClasses} bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400`;
+    case "overdue":
+      return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
+    case "draft":
+      return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400`;
+    case "return":
+      return `${baseClasses} bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400`;
+    case "cancelled":
+      return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
+    default:
+      return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400`;
+  }
+};
 
 type PaymentTab = "invoice" | "customer" | "reconciliation";
 const PAYMENT_ENTRIES_TAB_CACHE_KEY = "klik_pos_payment_entries_active_tab";
@@ -103,6 +130,17 @@ export default function PaymentEntriesPage() {
       window.clearTimeout(timer);
     };
   }, [reconcileSearch]);
+
+  const { sortedData: sortedInvoices, sortKey: invoiceSortKey, sortDirection: invoiceSortDirection, toggleSort: toggleInvoiceSort } = useTableSort(
+    invoices,
+    {
+      name: (invoice) => invoice.name,
+      customer: (invoice) => invoice.customer_name || invoice.customer,
+      date: (invoice) => toSortableTimestamp(invoice.posting_date, invoice.posting_time),
+      outstanding: (invoice) => invoice.outstanding_amount,
+      status: (invoice) => invoice.status,
+    }
+  );
 
   const invoiceCustomer = useMemo(() => {
     if (!selectedInvoice) return null;
@@ -272,30 +310,35 @@ export default function PaymentEntriesPage() {
 
             <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <table className="min-w-full">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
-                        Invoice
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <SortableHeaderButton label="Invoice" sortKey="name" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
-                        Customer
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <SortableHeaderButton label="Customer" sortKey="customer" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
-                        Date
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                        <SortableHeaderButton label="Date" sortKey="date" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
-                        Outstanding
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <span className="inline-flex w-full justify-end">
+                          <SortableHeaderButton label="Outstanding" sortKey="outstanding" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
+                        </span>
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Action
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                     {isLoadingInvoices ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                        <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                           <span className="inline-flex items-center gap-2">
                             <Loader2 size={18} className="animate-spin" />
                             Loading invoices...
@@ -304,33 +347,35 @@ export default function PaymentEntriesPage() {
                       </tr>
                     ) : invoiceError ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-red-600 dark:text-red-400">
+                        <td colSpan={6} className="px-6 py-10 text-center text-red-600 dark:text-red-400">
                           {invoiceError}
                         </td>
                       </tr>
                     ) : invoices.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                        <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                           No outstanding invoices found.
                         </td>
                       </tr>
                     ) : (
-                      invoices.map((invoice) => (
-                        <tr key={invoice.name} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                          <td className="whitespace-nowrap px-4 py-3">
-                            <div className="font-medium text-gray-900 dark:text-white">{invoice.name}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{invoice.status}</div>
+                      sortedInvoices.map((invoice) => (
+                        <tr key={invoice.name} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.name}</div>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                             {invoice.customer_name || invoice.customer}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                            {invoice.posting_date}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900 dark:text-white">{formatDateTime(invoice.posting_date, invoice.posting_time)}</div>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-gray-900 dark:text-white">
                             {formatCurrencyWithSymbol(invoice.outstanding_amount, invoice.currency)}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right">
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <button
                               type="button"
                               onClick={() => setSelectedInvoice(invoice)}

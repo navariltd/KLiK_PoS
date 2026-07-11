@@ -225,6 +225,7 @@ def get_outstanding_sales_invoices(limit=100, start=0, search=""):
 			SELECT
 				si.name,
 				si.posting_date,
+				si.posting_time,
 				si.due_date,
 				si.customer,
 				si.customer_name,

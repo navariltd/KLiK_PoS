@@ -26,6 +26,7 @@ export interface CustomerPaymentEntryResponse {
 export interface OutstandingSalesInvoice {
   name: string;
   posting_date: string;
+  posting_time?: string;
   due_date?: string;
   customer: string;
   customer_name: string;

@@ -27,8 +27,10 @@ import { getHeldOrders, deleteHeldOrder } from "../services/salesOrder";
 import { addHeldOrderToCart } from "../utils/heldOrderToCart";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { formatCurrencyWithSymbol } from "../utils/currency";
-import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
+import { isToday, isThisWeek, isThisMonth, isThisYear, formatDateTime, toSortableTimestamp } from "../utils/time";
 import { clearAllCache } from "../utils/clearCache";
+import { useTableSort } from "../hooks/useTableSort";
+import SortableHeaderButton from "../components/SortableHeaderButton";
 
 export default function ClosingShiftPage() {
   const navigate = useNavigate();
@@ -182,6 +184,18 @@ export default function ClosingShiftPage() {
 
   }, [invoices, searchQuery, statusFilter, dateFilter, paymentFilter, isLoading, error, posDetails]);
 
+  const { sortedData: sortedInvoices, sortKey: invoiceSortKey, sortDirection: invoiceSortDirection, toggleSort: toggleInvoiceSort } = useTableSort(
+    filteredInvoices,
+    {
+      id: (invoice) => invoice.id,
+      date: (invoice) => toSortableTimestamp(invoice.date, invoice.time),
+      customer: (invoice) => invoice.customer,
+      cashier: (invoice) => invoice.cashier,
+      paymentMethod: (invoice) => invoice.paymentMethod,
+      amount: (invoice) => invoice.totalAmount,
+      status: (invoice) => invoice.status,
+    }
+  );
 
   // Payment Stats Calculation - Calculate from filtered invoices
   const paymentStats = useMemo(() => {
@@ -654,8 +668,7 @@ export default function ClosingShiftPage() {
                         <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">{invoice.date}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{invoice.time}</div>
+                        <div className="text-sm text-gray-900 dark:text-white">{formatDateTime(invoice.date, invoice.time)}</div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
@@ -1046,25 +1059,25 @@ export default function ClosingShiftPage() {
                 <thead className="bg-gray-50 dark:bg-gray-700">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Invoice
+                      <SortableHeaderButton label="Invoice" sortKey="id" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                      Date
+                      <SortableHeaderButton label="Date" sortKey="date" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Customer
+                      <SortableHeaderButton label="Customer" sortKey="customer" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Cashier
+                      <SortableHeaderButton label="Cashier" sortKey="cashier" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Payment
+                      <SortableHeaderButton label="Payment" sortKey="paymentMethod" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Amount
+                      <SortableHeaderButton label="Amount" sortKey="amount" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
+                      <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                     </th>
                     {posDetails?.is_zatca_enabled && (
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1077,14 +1090,13 @@ export default function ClosingShiftPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                  {filteredInvoices.map((invoice) => (
+                  {sortedInvoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">{invoice.date}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{invoice.time}</div>
+                        <div className="text-sm text-gray-900 dark:text-white">{formatDateTime(invoice.date, invoice.time)}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
