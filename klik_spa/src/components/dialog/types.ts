@@ -33,6 +33,7 @@ export interface PaymentAmount {
 export interface Calculations {
   subtotal: number;
   couponDiscount: number;
+  orderDiscountAmount: number;
   taxableAmount: number;
   taxAmount: number;
   grandTotal: number;

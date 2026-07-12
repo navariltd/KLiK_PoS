@@ -116,10 +116,15 @@ export default function InvoicePreview({
           <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
           <span className="text-gray-900 dark:text-white">{formatCurrencyWithSymbol(displaySubtotal, displayCurrencySymbol)}</span>
         </div>
-        {calculations.couponDiscount > 0 && (
+        {(calculations.couponDiscount || 0) + (calculations.orderDiscountAmount || 0) > 0 && (
           <div className="flex justify-between text-green-600 dark:text-green-400">
             <span>Discount</span>
-            <span>-{formatCurrencyWithSymbol(calculations.couponDiscount, displayCurrencySymbol)}</span>
+            <span>
+              -{formatCurrencyWithSymbol(
+                (calculations.couponDiscount || 0) + (calculations.orderDiscountAmount || 0),
+                displayCurrencySymbol
+              )}
+            </span>
           </div>
         )}
         <div className="flex justify-between">

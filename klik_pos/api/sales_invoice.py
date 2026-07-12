@@ -999,6 +999,7 @@ def validate_checkout_invoice(data):
 			walkin_name=data.get("walkin_name"),
 			walkin_phone=data.get("walkin_phone"),
 			extra_fields=_parse_extra_fields(data),
+			order_discount_amount=flt(data.get("orderDiscountAmount") or 0),
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1228,6 +1229,7 @@ def queue_sales_invoice(data):
 			walkin_name=data.get("walkin_name"),
 			walkin_phone=data.get("walkin_phone"),
 			extra_fields=_parse_extra_fields(data),
+			order_discount_amount=flt(data.get("orderDiscountAmount") or 0),
 		)
 
 		validate_required_salesperson(doc)
@@ -1486,6 +1488,7 @@ def create_draft_invoice(data):
 				walkin_name=walkin_name,
 				walkin_phone=walkin_phone,
 				extra_fields=extra_fields,
+				order_discount_amount=flt(data.get("orderDiscountAmount") or 0),
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1509,6 +1512,7 @@ def create_draft_invoice(data):
 				walkin_name=walkin_name,
 				walkin_phone=walkin_phone,
 				extra_fields=extra_fields,
+				order_discount_amount=flt(data.get("orderDiscountAmount") or 0),
 			)
 
 			validate_required_salesperson(doc)
@@ -1798,6 +1802,7 @@ def build_sales_invoice_doc(
 	walkin_name=None,
 	walkin_phone=None,
 	extra_fields=None,
+	order_discount_amount=0.0,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1829,6 +1834,17 @@ def build_sales_invoice_doc(
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
+
+	# Order-level discount, gated by the POS Profile's Allow Discount Change permission
+	# (same flag that gates per-item discount fields on the frontend).
+	order_discount_amount = flt(order_discount_amount or 0)
+	if order_discount_amount < 0:
+		frappe.throw(_("Discount amount cannot be negative."))
+	if order_discount_amount > 0:
+		if not cint(getattr(pos_profile, "allow_discount_change", 0) or 0):
+			frappe.throw(_("Discount changes are not allowed for this POS Profile."))
+		doc.apply_discount_on = "Grand Total"
+		doc.discount_amount = order_discount_amount
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_no_variant_templates(items)
@@ -1906,6 +1922,7 @@ def _update_existing_draft_invoice(
 	walkin_name=None,
 	walkin_phone=None,
 	extra_fields=None,
+	order_discount_amount=0.0,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -1929,6 +1946,7 @@ def _update_existing_draft_invoice(
 		walkin_name=walkin_name,
 		walkin_phone=walkin_phone,
 		extra_fields=extra_fields,
+		order_discount_amount=order_discount_amount,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -1962,6 +1980,8 @@ def _update_existing_draft_invoice(
 	invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 	invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+	invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
+	invoice_doc.discount_amount = rebuilt_doc.discount_amount
 	invoice_doc.set("items", [])
 	for item_row in rebuilt_doc.get("items", []):
 		invoice_doc.append("items", item_row.as_dict())
@@ -3844,6 +3864,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				walkin_name=data.get("walkin_name"),
 				walkin_phone=data.get("walkin_phone"),
 				extra_fields=_ef,
+				order_discount_amount=flt(data.get("orderDiscountAmount") or 0),
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -3877,6 +3898,8 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 			invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+			invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
+			invoice_doc.discount_amount = rebuilt_doc.discount_amount
 			invoice_doc.set("items", [])
 			for item_row in rebuilt_doc.get("items", []):
 				invoice_doc.append("items", item_row.as_dict())

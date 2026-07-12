@@ -32,6 +32,7 @@ export default function TotalsSection({
 }: TotalsSectionProps) {
   const amountDue = checkoutPayableTotal ?? checkoutGrandTotal;
   const changeDue = totalPaidAmount > amountDue ? subtractCurrency(totalPaidAmount, amountDue) : 0;
+  const totalDiscount = (calculations.couponDiscount || 0) + (calculations.orderDiscountAmount || 0);
 
   return (
     <div>
@@ -47,10 +48,10 @@ export default function TotalsSection({
                 {formatCurrencyWithSymbol(displaySubtotal, displayCurrencySymbol)}
               </span>
             </div>
-            {calculations.couponDiscount > 0 && (
+            {totalDiscount > 0 && (
               <div className="flex justify-between text-green-600 dark:text-green-400">
-                <span>Coupon Discount</span>
-                <span>-{formatCurrencyWithSymbol(calculations.couponDiscount, displayCurrencySymbol)}</span>
+                <span>Discount</span>
+                <span>-{formatCurrencyWithSymbol(totalDiscount, displayCurrencySymbol)}</span>
               </div>
             )}
             <div className="flex justify-between">

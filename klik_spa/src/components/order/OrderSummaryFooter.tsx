@@ -33,6 +33,8 @@ export const OrderSummaryFooter = ({
   allow_holding_invoices,
   taxExclusive = false,
 }: OrderSummaryFooterProps) => {
+  const discount = totalItemDiscount + couponDiscount;
+
   return (
     <div
       className={`${
@@ -41,6 +43,22 @@ export const OrderSummaryFooter = ({
           : "p-4 border-t border-gray-100 dark:border-gray-700"
       } space-y-3`}
     >
+      {/* Summary */}
+      <div className="space-y-1 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+          <span className="font-medium text-gray-900 dark:text-white">
+            {formatCurrencyWithSymbol(subtotal, currency_symbol)}
+          </span>
+        </div>
+        {discount > 0 && (
+          <div className="flex justify-between text-green-600 dark:text-green-400">
+            <span>Discount</span>
+            <span>-{formatCurrencyWithSymbol(discount, currency_symbol)}</span>
+          </div>
+        )}
+      </div>
+
       {/* Action Buttons */}
       <div
         className={`grid ${

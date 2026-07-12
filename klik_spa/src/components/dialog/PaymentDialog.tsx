@@ -159,6 +159,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [orderDiscountAmount, setOrderDiscountAmount] = useState(0);
+  const [orderDiscountPercentInput, setOrderDiscountPercentInput] = useState(0);
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
@@ -216,6 +218,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     typeof posDetails?.custom_delivery_charge_item === "string"
       ? posDetails.custom_delivery_charge_item
       : "";
+  const allowDiscountChange =
+    posDetails?.allow_discount_change === 1
+    || posDetails?.allow_discount_change === "1"
+    || posDetails?.allow_discount_change === true;
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
@@ -299,7 +305,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       return roundCurrency(sum + roundCurrency(getEffectiveItemRate(item) * item.quantity));
     }, 0);
     const couponDiscount = appliedCoupons.reduce((sum, coupon) => roundCurrency(sum + coupon.value), 0);
-    const taxableAmount = roundCurrency(Math.max(0, subtotal - couponDiscount));
+    const taxableAmount = roundCurrency(Math.max(0, subtotal - couponDiscount - orderDiscountAmount));
     const selectedTax = selectedTaxTemplate;
     const taxRate = selectedTax?.rate || 0;
     const isInclusive = isTaxIncludedInBasicRate || selectedTax?.is_inclusive || false;
@@ -315,13 +321,36 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return {
       subtotal,
       couponDiscount,
+      orderDiscountAmount,
       taxableAmount,
       taxAmount,
       grandTotal: roundCurrency(grandTotal),
       selectedTax,
       isInclusive,
     };
-  }, [cartItems, appliedCoupons, getEffectiveItemRate, isTaxIncludedInBasicRate, selectedTaxTemplate]);
+  }, [cartItems, appliedCoupons, getEffectiveItemRate, isTaxIncludedInBasicRate, selectedTaxTemplate, orderDiscountAmount]);
+
+  useEffect(() => {
+    if (!allowDiscountChange) {
+      setOrderDiscountAmount(0);
+      setOrderDiscountPercentInput(0);
+    }
+  }, [allowDiscountChange]);
+
+  const handleOrderDiscountAmountChange = (value: number) => {
+    const amt = Math.max(0, value || 0);
+    setOrderDiscountAmount(amt);
+    setOrderDiscountPercentInput(
+      calculations.subtotal > 0 ? parseFloat(((amt / calculations.subtotal) * 100).toFixed(2)) : 0
+    );
+  };
+
+  const handleOrderDiscountPercentChange = (value: number) => {
+    const pct = Math.min(100, Math.max(0, value || 0));
+    const amt = roundCurrency((calculations.subtotal * pct) / 100);
+    setOrderDiscountPercentInput(pct);
+    setOrderDiscountAmount(amt);
+  };
 
   // Inclusive grand total: sum of discountedPriceIncl (already computed correctly in OrderSummary mapping)
   // This is reliable regardless of whether items have ERPNext Item Tax Templates
@@ -614,6 +643,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       taxAmount: displayTaxTotal,
       taxType: displayTaxIsIncluded ? "inclusive" : "exclusive",
       couponDiscount: calculations.couponDiscount,
+      orderDiscountAmount: Number(orderDiscountAmount || 0),
       deliveryCharge: Number(deliveryCharge || 0),
       delivery_charge: Number(deliveryCharge || 0),
       grandTotal: checkoutGrandTotal,
@@ -921,6 +951,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       SalesTaxCharges: selectedSalesTaxCharges,
       businessType: posDetails?.business_type || "",
       deliveryCharge: Number(deliveryCharge || 0),
+      orderDiscountAmount: Number(orderDiscountAmount || 0),
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -980,6 +1011,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           deliveryCharge,
+          orderDiscountAmount: Number(orderDiscountAmount || 0),
           loyalty: appliedLoyalty
             ? {
                 loyalty_program: appliedLoyalty.loyalty_program,
@@ -1055,6 +1087,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     deliveryCharge,
+    orderDiscountAmount,
     appliedLoyalty,
     isCreditSale,
     dueDate,
@@ -2035,6 +2068,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   backendTaxPreview={backendTaxPreview}
                   isTaxPreviewLoading={isTaxPreviewLoading}
                   taxPreviewError={taxPreviewError}
+                  allowDiscountChange={allowDiscountChange}
+                  orderDiscountAmount={orderDiscountAmount}
+                  orderDiscountPercentInput={orderDiscountPercentInput}
+                  onOrderDiscountAmountChange={handleOrderDiscountAmountChange}
+                  onOrderDiscountPercentChange={handleOrderDiscountPercentChange}
                 />
 
                 <TotalsSection
@@ -2259,7 +2297,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     </p>
                   </div>
                 )}
-
                 <TaxSection
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
@@ -2271,6 +2308,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   backendTaxPreview={backendTaxPreview}
                   isTaxPreviewLoading={isTaxPreviewLoading}
                   taxPreviewError={taxPreviewError}
+                  allowDiscountChange={allowDiscountChange}
+                  orderDiscountAmount={orderDiscountAmount}
+                  orderDiscountPercentInput={orderDiscountPercentInput}
+                  onOrderDiscountAmountChange={handleOrderDiscountAmountChange}
+                  onOrderDiscountPercentChange={handleOrderDiscountPercentChange}
                 />
 
                 <SalesPersonSection
