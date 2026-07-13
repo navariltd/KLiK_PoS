@@ -38,6 +38,23 @@ def _set_checkbox_field_value(doc, fieldname, value):
 	setattr(doc, fieldname, cint(bool(value)))
 
 
+def _enforce_submit_permission(doc, user=None):
+	"""Explicitly check submit permission for `doc`.
+
+	Several call sites use `save(ignore_permissions=True)` earlier in the same
+	flow, which sets `doc.flags.ignore_permissions = True` on the instance and
+	causes the framework's own permission check inside `doc.submit()` to be
+	skipped silently. `frappe.has_permission` goes straight to the permission
+	engine and ignores that flag, so it still enforces whatever the Role
+	Permission Manager says for the acting user.
+	"""
+	if not frappe.has_permission(doc.doctype, "submit", doc=doc, user=user):
+		frappe.throw(
+			_("You do not have permission to submit {0} {1}").format(_(doc.doctype), doc.name),
+			frappe.PermissionError,
+		)
+
+
 def _apply_klik_invoice_flags(doc, is_held=None, is_submitted=None):
 	"""Track Klik-origin invoices and hold/submission state using custom checkbox fields."""
 	if not doc:
@@ -1286,6 +1303,7 @@ def queue_sales_invoice(data):
 				doc.db_set("tax_id", tax_id)
 
 			_apply_klik_invoice_flags(doc, is_submitted=True)
+			_enforce_submit_permission(doc)
 			doc.submit()
 			doc.reload()
 
@@ -1348,6 +1366,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 			mpesa_embed_summary = _embed_mpesa_payments(doc)
 
 		_apply_klik_invoice_flags(doc, is_submitted=True)
+		_enforce_submit_permission(doc, user=requested_by or frappe.session.user)
 		doc.submit()
 		doc.reload()
 		try:
@@ -3089,6 +3108,7 @@ def return_sales_invoice(invoice_name):
 			)
 
 		return_doc.save(ignore_permissions=True)
+		_enforce_submit_permission(return_doc)
 		return_doc.submit()
 
 		return {"success": True, "return_invoice": return_doc.name}
@@ -3687,6 +3707,7 @@ def create_partial_return(
 			pass
 
 		return_doc.save(ignore_permissions=True)
+		_enforce_submit_permission(return_doc)
 		return_doc.submit()
 
 		return {
@@ -3966,6 +3987,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				mpesa_embed_summary = _embed_mpesa_payments(invoice_doc)
 
 			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
+			_enforce_submit_permission(invoice_doc)
 			invoice_doc.submit()
 			try:
 				_cancel_sales_invoice_reservations(invoice_doc.name)
