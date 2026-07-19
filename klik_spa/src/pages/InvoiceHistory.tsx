@@ -661,7 +661,7 @@ const getStatusBadge = (status: string) => {
                     </div>
                     {invoice.giftCardDiscount > 0 && (
                       <div className="text-xs text-orange-600 dark:text-green-400">
-                        -{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)} gift card
+                        -{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)} discount
                       </div>
                     )}
                   </td>

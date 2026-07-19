@@ -2,7 +2,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, nowdate
 
 from klik_pos.api.sales_invoice import (
     _apply_extra_fields,
@@ -90,7 +90,24 @@ def _build_cart_meta(data, parsed_items, business_type, salesperson, tax_id,
     }
 
 
-def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta):
+def _apply_order_discount(so, pos_profile, order_discount_amount):
+    """Set the Sales Order's native additional-discount fields, gated by the
+    POS Profile's Allow Discount Change permission (same flag used for the
+    Sales Invoice's order-level discount)."""
+    order_discount_amount = flt(order_discount_amount or 0)
+    if order_discount_amount < 0:
+        frappe.throw(_("Discount amount cannot be negative."))
+    if order_discount_amount > 0:
+        if not cint(getattr(pos_profile, "allow_discount_change", 0) or 0):
+            frappe.throw(_("Discount changes are not allowed for this POS Profile."))
+        so.apply_discount_on = "Grand Total"
+        so.discount_amount = order_discount_amount
+    else:
+        so.apply_discount_on = ""
+        so.discount_amount = 0
+
+
+def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta, order_discount_amount=0.0):
     """Create a new draft Sales Order from parsed cart data."""
     pos_profile = _get_active_pos_profile()
     opening_entry = get_current_pos_opening_entry() or ""
@@ -109,6 +126,8 @@ def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta):
     so.custom_pos_opening_entry = opening_entry
     so.custom_is_klik_held = 1
     so.custom_klik_cart_meta = json.dumps(cart_meta)
+
+    _apply_order_discount(so, pos_profile, order_discount_amount)
 
     if cart_meta.get("tax_id") and so.meta.has_field("tax_id"):
         so.tax_id = cart_meta.get("tax_id")
@@ -134,7 +153,7 @@ def _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta):
     return so
 
 
-def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta):
+def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta, order_discount_amount=0.0):
     """Overwrite an existing held Sales Order with refreshed cart data."""
     pos_profile = _get_active_pos_profile()
     warehouse = getattr(pos_profile, "warehouse", "") or ""
@@ -143,6 +162,8 @@ def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta):
     so.delivery_date = nowdate()
     so.taxes_and_charges = sales_and_tax_charges or getattr(pos_profile, "taxes_and_charges", "") or ""
     so.set("items", [])
+
+    _apply_order_discount(so, pos_profile, order_discount_amount)
 
     if cart_meta.get("tax_id") and so.meta.has_field("tax_id"):
         so.tax_id = cart_meta.get("tax_id")
@@ -193,16 +214,17 @@ def create_held_order(data):
             data, items, business_type, salesperson, tax_id,
             delivery_charge, delivery_personnel, sales_and_tax_charges, roundoff_amount,
         )
+        order_discount_amount = flt(data.get("orderDiscountAmount") or 0) if isinstance(data, dict) else 0
 
         if target_order_id:
             so = frappe.get_doc("Sales Order", target_order_id)
             if so.docstatus != 0:
                 frappe.throw(_("Cannot update held order {0}: it is no longer a draft.").format(target_order_id))
-            _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta)
+            _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta, order_discount_amount)
             so.custom_klik_cart_meta = json.dumps(cart_meta)
             so.save(ignore_permissions=True)
         else:
-            so = _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta)
+            so = _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta, order_discount_amount)
             so.insert(ignore_permissions=True)
 
         return {"success": True, "order_name": so.name}
@@ -269,6 +291,8 @@ def get_held_order_details(order_id):
             "cart_meta": cart_meta,
             "grand_total": flt(so.grand_total),
             "currency": so.currency,
+            "discount_amount": flt(so.discount_amount or 0),
+            "apply_discount_on": so.apply_discount_on or "",
         }
 
     except Exception as e:

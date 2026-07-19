@@ -8,24 +8,36 @@ interface DraftInvoiceCache {
   customer: Customer | null;
   originalDraftInvoiceId: string; // draft SI (M-Pesa / legacy held)
   originalHeldOrderId?: string;   // SO-based held order
+  orderDiscountAmount?: number;   // additional discount amount carried over from hold/draft
 }
 
 const CACHE_KEY = 'draft-invoice-cache';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-export function cacheDraftInvoiceItems(invoiceId: string, items: CartItem[], customer: Customer | null): void {
+export function cacheDraftInvoiceItems(
+  invoiceId: string,
+  items: CartItem[],
+  customer: Customer | null,
+  orderDiscountAmount = 0,
+): void {
   const cache: DraftInvoiceCache = {
     items,
     timestamp: Date.now(),
     invoiceId,
     customer,
     originalDraftInvoiceId: invoiceId,
+    orderDiscountAmount,
   };
 
   localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 }
 
-export function cacheHeldOrder(orderId: string, items: CartItem[], customer: Customer | null): void {
+export function cacheHeldOrder(
+  orderId: string,
+  items: CartItem[],
+  customer: Customer | null,
+  orderDiscountAmount = 0,
+): void {
   const cache: DraftInvoiceCache = {
     items,
     timestamp: Date.now(),
@@ -33,6 +45,7 @@ export function cacheHeldOrder(orderId: string, items: CartItem[], customer: Cus
     customer,
     originalDraftInvoiceId: '',
     originalHeldOrderId: orderId,
+    orderDiscountAmount,
   };
   localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 }
@@ -115,4 +128,9 @@ export function getOriginalDraftInvoiceId(): string | null {
 export function getOriginalHeldOrderId(): string | null {
   const cachedData = getCachedDraftInvoiceItems();
   return cachedData?.originalHeldOrderId || null;
+}
+
+export function getOriginalOrderDiscountAmount(): number {
+  const cachedData = getCachedDraftInvoiceItems();
+  return cachedData?.orderDiscountAmount || 0;
 }

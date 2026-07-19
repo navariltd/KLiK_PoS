@@ -16,7 +16,7 @@ import {
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
 import { checkoutHeldOrder, createHeldOrder } from "../../services/salesOrder";
-import { clearDraftInvoiceCache, getOriginalDraftInvoiceId, getOriginalHeldOrderId } from "../../utils/draftInvoiceCache";
+import { clearDraftInvoiceCache, getOriginalDraftInvoiceId, getOriginalHeldOrderId, getOriginalOrderDiscountAmount } from "../../utils/draftInvoiceCache";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
 import { calculateRemainingAmount, calculateTotalPayments, roundCurrency } from "../../utils/currencyMath";
 import { extractErrorFromException } from "../../utils/errorExtraction";
@@ -181,6 +181,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const taxPreviewRequestIdRef = useRef(0);
   const taxPreviewCacheRef = useRef<Map<string, CachedTaxPreviewEntry>>(new Map());
   const initializedCreditDefaultRef = useRef(false);
+  const initializedOrderDiscountRef = useRef(false);
 
   const { posDetails } = usePOSProfileStore();
   const posLoading = false;
@@ -351,6 +352,26 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     setOrderDiscountPercentInput(pct);
     setOrderDiscountAmount(amt);
   };
+
+  // Restore an order-level discount carried over from a resumed held order or
+  // edited draft invoice — otherwise it silently resets to 0 on reopen and
+  // gets wiped from the invoice on the next save/submit.
+  useEffect(() => {
+    if (!isOpen) {
+      initializedOrderDiscountRef.current = false;
+      return;
+    }
+    if (initializedOrderDiscountRef.current) {
+      return;
+    }
+    if (allowDiscountChange && (getOriginalHeldOrderId() || getOriginalDraftInvoiceId())) {
+      const restoredDiscount = getOriginalOrderDiscountAmount();
+      if (restoredDiscount > 0) {
+        handleOrderDiscountAmountChange(restoredDiscount);
+      }
+    }
+    initializedOrderDiscountRef.current = true;
+  }, [isOpen, allowDiscountChange]);
 
   // Inclusive grand total: sum of discountedPriceIncl (already computed correctly in OrderSummary mapping)
   // This is reliable regardless of whether items have ERPNext Item Tax Templates
@@ -1376,6 +1397,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         taxAmount: calculations.taxAmount,
         taxType: calculations.isInclusive ? "inclusive" : "exclusive",
         couponDiscount: calculations.couponDiscount,
+        orderDiscountAmount: Number(orderDiscountAmount || 0),
         deliveryCharge,
         grandTotal: checkoutGrandTotal,
         appliedCoupons,

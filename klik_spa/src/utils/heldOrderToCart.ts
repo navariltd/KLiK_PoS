@@ -59,7 +59,7 @@ export async function addHeldOrderToCart(orderId: string): Promise<boolean> {
     }
   }
 
-  cacheHeldOrder(orderId, items, customer);
+  cacheHeldOrder(orderId, items, customer, Number(orderData.discount_amount) || 0);
 
   // Restore per-transaction walk-in details (name/tax_id/phone) into the cart store.
   // Also recovers tax_id, which was previously dropped from the UI on resume.

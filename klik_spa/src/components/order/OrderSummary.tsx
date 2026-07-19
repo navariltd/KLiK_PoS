@@ -15,7 +15,7 @@ import {
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
 import { createHeldOrder } from "../../services/salesOrder";
-import { getOriginalDraftInvoiceId, getOriginalHeldOrderId } from "../../utils/draftInvoiceCache";
+import { getOriginalDraftInvoiceId, getOriginalHeldOrderId, getOriginalOrderDiscountAmount } from "../../utils/draftInvoiceCache";
 import { CustomerSearchSection } from "./CustomerSearchSection";
 import CustomerLoyaltySummary from "./CustomerLoyaltySummary";
 import { CartItemRow } from "./CartItemRow";
@@ -372,6 +372,10 @@ export default function OrderSummary({
         status: "held",
         salesperson: activeSalesperson?.name || null,
         held_order_id: originalHeldOrderId,
+        // Preserve an order-level discount carried over from a resumed held
+        // order — this page has no discount UI of its own, so there's never
+        // a new value to apply here, only a prior one to avoid wiping.
+        orderDiscountAmount: originalHeldOrderId ? getOriginalOrderDiscountAmount() : 0,
       });
       if (result?.success) {
         handleClearCart();
