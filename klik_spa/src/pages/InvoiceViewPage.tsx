@@ -41,6 +41,7 @@ import { deleteDraftInvoice } from "../services/salesInvoice";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { extractErrorFromException } from "../utils/errorExtraction";
+import { qzReprint } from "../utils/qzPrint";
 import { toast } from "react-toastify";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import DisplayPrintPreview from "../utils/invoicePrint";
@@ -483,6 +484,18 @@ export default function InvoiceViewPage() {
                     Print Invoice
                   </span>
                 </button>
+
+                {(posDetails?.custom_enable_qz_print === 1 || posDetails?.custom_enable_qz_print === '1' || posDetails?.custom_enable_qz_print === true) ? (
+                  <button
+                    className="group relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
+                    onClick={() => { void qzReprint(invoice.name || invoice.id || ""); }}
+                  >
+                    <Printer size={20} />
+                    <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
+                      QZ Print
+                    </span>
+                  </button>
+                ) : ""}
 
                 <button
                   className="group relative p-2 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900 rounded-lg transition-all duration-200"
