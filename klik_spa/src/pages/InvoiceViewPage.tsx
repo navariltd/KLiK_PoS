@@ -42,6 +42,7 @@ import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import { qzReprint } from "../utils/qzPrint";
+import QzPrintIcon from "../components/QzPrintIcon";
 import { toast } from "react-toastify";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import DisplayPrintPreview from "../utils/invoicePrint";
@@ -490,7 +491,7 @@ export default function InvoiceViewPage() {
                     className="group relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                     onClick={() => { void qzReprint(invoice.name || invoice.id || ""); }}
                   >
-                    <Printer size={20} />
+                    <QzPrintIcon size={20} />
                     <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
                       QZ Print
                     </span>

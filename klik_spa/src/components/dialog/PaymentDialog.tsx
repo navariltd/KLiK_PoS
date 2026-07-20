@@ -39,6 +39,7 @@ import DisplayPrintPreview from "../../utils/invoicePrint";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { handlePrintInvoice } from "../../utils/printHandler";
 import { qzReprint } from "../../utils/qzPrint";
+import QzPrintIcon from "../QzPrintIcon";
 import { useSalespersonStore } from "../../stores/salespersonStore";
 import {
   getEffectiveDisplayRate as getSharedEffectiveDisplayRate,
@@ -1993,7 +1994,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                         void qzReprint(invoiceData?.name || invoiceData?.id || "");
                       }}
                     >
-                      <Printer size={18} />
+                      <QzPrintIcon size={18} />
                       <span>Reprint</span>
                     </button>
                   ) : ""}
