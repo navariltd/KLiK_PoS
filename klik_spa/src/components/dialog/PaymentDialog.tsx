@@ -38,6 +38,7 @@ import type { PaymentDialogProps, PaymentAmount, Calculations, BackendTaxPreview
 import DisplayPrintPreview from "../../utils/invoicePrint";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { handlePrintInvoice } from "../../utils/printHandler";
+import { qzReprint } from "../../utils/qzPrint";
 import { useSalespersonStore } from "../../stores/salespersonStore";
 import {
   getEffectiveDisplayRate as getSharedEffectiveDisplayRate,
@@ -1979,6 +1980,23 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     <Printer size={18} />
                     <span>Print</span>
                   </button>
+                  {(posDetails?.custom_enable_qz_print === 1 || posDetails?.custom_enable_qz_print === '1' || posDetails?.custom_enable_qz_print === true) ? (
+                    <button
+                      className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      onClick={() => {
+                        const alreadyPrinted = Boolean(invoiceData?.custom_is_printed);
+                        const preventReprint = Boolean(posDetails?.custom_prevent_invoice_reprinting);
+                        if (alreadyPrinted && preventReprint) {
+                          toast.error("Reprinting is not allowed for this invoice");
+                          return;
+                        }
+                        void qzReprint(invoiceData?.name || invoiceData?.id || "");
+                      }}
+                    >
+                      <Printer size={18} />
+                      <span>Reprint</span>
+                    </button>
+                  ) : ""}
                   <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { void finalizeCompletedOrderState(() => { window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }); }}>
                     <MailPlus size={18} />
                     <span>Email</span>
