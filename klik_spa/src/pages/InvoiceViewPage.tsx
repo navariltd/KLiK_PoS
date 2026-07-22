@@ -24,7 +24,6 @@ import {
   TrendingUp,
   Clock,
   CreditCard,
-  Percent,
   Banknote,
   ClipboardCopy,
 } from "lucide-react";
@@ -719,47 +718,6 @@ export default function InvoiceViewPage() {
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Tax Details Section */}
-                  {invoice.taxes && invoice.taxes.length > 0 && (
-                    <div className="px-6 py-4 bg-beveren-50 dark:bg-beveren-900/20 border-t border-gray-200 dark:border-gray-600">
-                      <div className="flex items-center space-x-2 mb-3">
-                        <Percent className="w-5 h-5 text-beveren-600 dark:text-beveren-400" />
-                        <h4 className="text-sm font-semibold text-beveren-900 dark:text-beveren-100">Tax Details</h4>
-                      </div>
-                      <div className="space-y-2">
-                        {invoice.taxes.map((tax, index) => (
-                          <div key={index} className="flex justify-between items-center text-sm">
-                            <div className="flex items-center space-x-2">
-                                          {/* @ts-expect-error just ignore */}
-
-                              <span className="text-beveren-700 dark:text-beveren-300 font-medium">{tax.account_head}</span>
-                                         {/* @ts-expect-error just ignore */}
-
-                              <span className="text-beveren-600 dark:text-beveren-400">({tax.rate}%)</span>
-                                         {/* @ts-expect-error just ignore */}
-
-                              {tax.included_in_print_rate === 1 && (
-                                <span className="px-2 py-1 bg-beveren-100 dark:bg-beveren-800 text-beveren-800 dark:text-beveren-200 text-xs rounded-full">
-                                  Inclusive
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-beveren-900 dark:text-beveren-100 font-semibold">
-                                         {/* @ts-expect-error just ignore */}
-                              {formatCurrencyWithSymbol(tax.tax_amount, invoice.currency)}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex justify-between items-center text-sm pt-2 border-t border-beveren-200 dark:border-beveren-700">
-                          <span className="text-beveren-700 dark:text-beveren-300 font-semibold">Total Tax:</span>
-                          <span className="text-beveren-900 dark:text-beveren-100 font-bold">
-                            {formatCurrencyWithSymbol(invoice.total_taxes_and_charges, invoice.currency)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Totals */}
                   <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700">
