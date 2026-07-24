@@ -227,10 +227,23 @@ def get_items(
         stock_map = _fetch_batch_stock(item_codes, warehouse)
         product_bundle_map = _fetch_product_bundle_map(item_codes, warehouse)
         variant_count_map = _fetch_variant_count_map(item_codes)
-        
-        enriched_items = []
+
         current_date = frappe.utils.today()
 
+        # Batch-fetch prices and UOM conversion factors for all items in one query
+        # each (was one query per item inside the loop below).
+        item_prices_map = _fetch_item_prices_map(item_codes, price_list, current_date)
+        conversion_factor_map = _fetch_conversion_factor_map(item_codes)
+
+        # The company default currency and each currency's symbol are constant across
+        # the loop; resolve them once instead of re-querying per item.
+        default_currency = (
+            frappe.db.get_value("Company", pos_doc.company, "default_currency")
+            or frappe.defaults.get_global_default("currency")
+        )
+        currency_symbol_cache = {}
+
+        enriched_items = []
         price_by_item = {}
 
         for item in items:
@@ -260,38 +273,42 @@ def get_items(
             ):
                 continue
 
-            item_prices = _fetch_item_prices_sql(item_code, price_list, current_date)
-            
+            item_prices = item_prices_map.get(item_code, [])
+
             stock_uom_price = next((d for d in item_prices if d.get("uom") == item.stock_uom), {})
             item_uom = item.stock_uom
             item_uom_price = stock_uom_price
-            
+
             if item.sales_uom and item.sales_uom != item.stock_uom:
                 item_uom = item.sales_uom
                 sales_uom_price = next((d for d in item_prices if d.get("uom") == item.sales_uom), {})
                 if sales_uom_price:
                     item_uom_price = sales_uom_price
-            
+
             if item_prices and not item_uom_price:
                 item_uom = item_prices[0].get("uom")
                 item_uom_price = item_prices[0]
-            
-            conversion_factor = _get_conversion_factor_sql(item_code, item_uom)
-            
+
+            conversion_factor = conversion_factor_map.get((item_code, item_uom), 1)
+
             if item.stock_uom != item_uom and conversion_factor:
                 balance = balance // conversion_factor
-            
+
             price = 0
-            currency = frappe.db.get_value("Company", pos_doc.company, "default_currency") or frappe.defaults.get_global_default("currency")
-            
+            currency = default_currency
+
             if item_uom_price:
                 price = flt(item_uom_price.get("price_list_rate", 0))
                 currency = item_uom_price.get("currency") or currency
-                
+
                 if item_uom and item_uom != item_uom_price.get("uom") and conversion_factor:
                     price = price * conversion_factor
-            
-            currency_symbol = frappe.db.get_value("Currency", currency, "symbol") if currency else currency
+
+            if currency not in currency_symbol_cache:
+                currency_symbol_cache[currency] = (
+                    frappe.db.get_value("Currency", currency, "symbol") if currency else currency
+                )
+            currency_symbol = currency_symbol_cache[currency]
             price_by_item[item_code] = price
 
             enriched_items.append(
@@ -352,33 +369,43 @@ def get_items(
         frappe.throw(_("Something went wrong while fetching item data."))
  
 
-def _fetch_item_prices_sql(item_code, price_list, current_date):
-    if not price_list:
-        return []
-    
+def _fetch_item_prices_map(item_codes, price_list, current_date):
+    """Fetch all applicable item prices for the given item codes in one query.
+
+    Returns a dict mapping item_code -> list of price rows, each list ordered by
+    valid_from DESC (matching the previous per-item query's ordering so callers can
+    rely on rows[0] being the most recently valid price)."""
+    if not item_codes or not price_list:
+        return {}
+
     try:
-        query = """
-            SELECT price_list_rate, currency, uom, batch_no, valid_from, valid_upto
+        placeholders = ", ".join(["%s"] * len(item_codes))
+        query = f"""
+            SELECT item_code, price_list_rate, currency, uom, batch_no, valid_from, valid_upto
             FROM `tabItem Price`
             WHERE price_list = %s
-            AND item_code = %s
+            AND item_code IN ({placeholders})
             AND selling = 1
             AND (valid_from <= %s OR valid_from IS NULL)
             AND (valid_upto >= %s OR valid_upto IS NULL)
             ORDER BY valid_from DESC
         """
-        
+
         query = apply_sql_permissions(query)
-        
+
         results = frappe.db.sql(
             query,
-            (price_list, item_code, current_date, current_date),
+            (price_list, *item_codes, current_date, current_date),
             as_dict=True,
         )
-        
-        return results
     except Exception:
-        return []
+        return {}
+
+    prices_map = {}
+    for row in results:
+        prices_map.setdefault(row["item_code"], []).append(row)
+
+    return prices_map
 
 
 def _empty_tax_info():
@@ -591,23 +618,32 @@ def _fetch_item_tax_template_details(template_names):
     return details
 
    
-def _get_conversion_factor_sql(item_code, uom):
+def _fetch_conversion_factor_map(item_codes):
+    """Fetch UOM conversion factors for all item codes in one query.
+
+    Returns a dict keyed by (item_code, uom) -> conversion_factor. Callers should
+    default to 1 when a (item_code, uom) pair is absent, matching the previous
+    per-item lookup behaviour."""
+    if not item_codes:
+        return {}
+
     try:
-        query = """
-            SELECT conversion_factor
+        placeholders = ", ".join(["%s"] * len(item_codes))
+        query = f"""
+            SELECT parent, uom, conversion_factor
             FROM `tabUOM Conversion Detail`
-            WHERE parent = %s AND uom = %s
-            LIMIT 1
+            WHERE parent IN ({placeholders})
         """
-        
-        result = frappe.db.sql(query, (item_code, uom), as_dict=True)
-        
-        if result:
-            return flt(result[0].get("conversion_factor", 1))
-        
-        return 1
+
+        rows = frappe.db.sql(query, tuple(item_codes), as_dict=True)
     except Exception:
-        return 1
+        return {}
+
+    cf_map = {}
+    for row in rows:
+        cf_map[(row["parent"], row["uom"])] = flt(row.get("conversion_factor", 1))
+
+    return cf_map
 
 
 def _get_item_groups_with_counts(
@@ -680,60 +716,94 @@ def _get_item_groups_with_counts(
         if not allowed_groups:
             return []
         
-        for group_name in allowed_groups:
-            count_query = """
-                SELECT COUNT(DISTINCT i.name) as item_count
-                FROM `tabItem` i
-                LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0
-                WHERE i.disabled = 0
-                AND IFNULL(i.is_sales_item, 1) = 1
-                AND i.item_group = %s
-            """
-            if not include_service_items:
-                count_query += " AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)"
-            params = [group_name]
-            
-            if hide_unavailable and warehouse:
-                count_query += " AND (i.has_variants = 1 OR pb.name IS NOT NULL OR EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0))"
-                params.append(warehouse)
-            
-            if search_term:
-                s_clauses, s_params = build_item_search_conditions(search_term, enhanced_search)
-                count_query += " " + " ".join(s_clauses)
-                params.extend(s_params)
-            
-            count_sql = apply_sql_permissions(count_query)
-            args = _prepare_sql_args(count_sql, params)
+        # Fetch per-group item counts for all allowed groups in a single grouped
+        # query (was one COUNT query per group). Groups with zero matching items
+        # are simply absent from the result, matching the previous item_count > 0
+        # filter.
+        placeholders = ", ".join(["%s"] * len(allowed_groups))
+        count_query = f"""
+            SELECT i.item_group AS item_group, COUNT(DISTINCT i.name) as item_count
+            FROM `tabItem` i
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0
+            WHERE i.disabled = 0
+            AND IFNULL(i.is_sales_item, 1) = 1
+            AND i.item_group IN ({placeholders})
+        """
+        count_params = list(allowed_groups)
 
-            if args is None:
-                continue
-            
-            result = frappe.db.sql(count_sql, args, as_dict=True)
-            item_count = result[0]["item_count"] if result else 0
-            
-            if item_count > 0:
-                try:
-                    group_doc = frappe.get_doc("Item Group", group_name)
-                    
-                    item_groups.append({
-                        "id": group_name,
-                        "name": group_doc.item_group_name,
-                        "name_en": group_doc.get("item_group_name"),
-                        "name_ar": group_doc.get("item_group_name_ar"),
-                        "parent_group": group_doc.parent_item_group,
-                        "is_group": group_doc.is_group,
-                        "image": group_doc.image,
-                        "count": item_count,
-                        "custom_icon": group_doc.get("custom_icon"),
-                        "custom_color": group_doc.get("custom_color"),
-                    })
-                except Exception:
-                    item_groups.append({
-                        "id": group_name,
-                        "name": group_name,
-                        "count": item_count,
-                    })
-        
+        if not include_service_items:
+            count_query += " AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)"
+
+        if hide_unavailable and warehouse:
+            count_query += " AND (i.has_variants = 1 OR pb.name IS NOT NULL OR EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0))"
+            count_params.append(warehouse)
+
+        if search_term:
+            s_clauses, s_params = build_item_search_conditions(search_term, enhanced_search)
+            count_query += " " + " ".join(s_clauses)
+            count_params.extend(s_params)
+
+        count_query += " GROUP BY i.item_group"
+
+        count_sql = apply_sql_permissions(count_query)
+        args = _prepare_sql_args(count_sql, count_params)
+
+        if args is None:
+            return []
+
+        count_rows = frappe.db.sql(count_sql, args, as_dict=True)
+        count_by_group = {row["item_group"]: row["item_count"] for row in count_rows}
+
+        groups_with_items = [g for g in allowed_groups if (count_by_group.get(g) or 0) > 0]
+        if not groups_with_items:
+            return []
+
+        # Fetch all needed Item Group metadata in one query (was one get_doc per
+        # group). Optional custom fields are only selected when they exist on the
+        # doctype so this never breaks on sites without them.
+        group_docs = {}
+        try:
+            meta = frappe.get_meta("Item Group")
+            optional_fields = [
+                f
+                for f in ("item_group_name_ar", "custom_icon", "custom_color")
+                if meta.has_field(f)
+            ]
+            group_rows = frappe.get_all(
+                "Item Group",
+                filters={"name": ["in", groups_with_items]},
+                fields=["name", "item_group_name", "parent_item_group", "is_group", "image"]
+                + optional_fields,
+                ignore_permissions=True,
+            )
+            group_docs = {row["name"]: row for row in group_rows}
+        except Exception:
+            group_docs = {}
+
+        for group_name in groups_with_items:
+            item_count = count_by_group.get(group_name) or 0
+            group_doc = group_docs.get(group_name)
+
+            if group_doc:
+                item_groups.append({
+                    "id": group_name,
+                    "name": group_doc.get("item_group_name"),
+                    "name_en": group_doc.get("item_group_name"),
+                    "name_ar": group_doc.get("item_group_name_ar"),
+                    "parent_group": group_doc.get("parent_item_group"),
+                    "is_group": group_doc.get("is_group"),
+                    "image": group_doc.get("image"),
+                    "count": item_count,
+                    "custom_icon": group_doc.get("custom_icon"),
+                    "custom_color": group_doc.get("custom_color"),
+                })
+            else:
+                item_groups.append({
+                    "id": group_name,
+                    "name": group_name,
+                    "count": item_count,
+                })
+
         return item_groups
         
     except Exception as e:
