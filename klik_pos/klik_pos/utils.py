@@ -7,10 +7,11 @@ _cached_pos_profiles = {}
 _cached_company_data = {}
 
 
-def get_current_pos_profile():
-	"""Get the active POS Profile with identity-only caching keyed by user and opening entry.
+def _resolve_pos_profile_name():
+	"""Resolve the active POS Profile name for the current user/opening entry.
 
-	Returns a fresh POS Profile Doc each call to avoid stale field values.
+	Uses identity-only caching keyed by user and opening entry (the name is
+	stable for a session; only the profile's field values may change).
 	"""
 	user = frappe.session.user
 
@@ -19,24 +20,44 @@ def get_current_pos_profile():
 	current_opening_entry = get_current_pos_opening_entry()
 	cache_key = f"{user}|{current_opening_entry or 'none'}"
 
-	# Resolve POS Profile name using cache identity
 	if cache_key in _cached_pos_profiles:
-		pos_profile_name = _cached_pos_profiles[cache_key]
-	else:
-		if current_opening_entry:
-			opening_doc = frappe.get_doc("POS Opening Entry", current_opening_entry)
-			pos_profile_name = opening_doc.pos_profile
-		else:
-			pos_profile_name = frappe.get_value("POS Profile User", {"user": user}, "parent")
-			if not pos_profile_name:
-				frappe.throw(_("No POS Profile found for user {0}").format(user))
+		return _cached_pos_profiles[cache_key]
 
-		# Cache identity (name) only
-		_cached_pos_profiles[cache_key] = pos_profile_name
+	if current_opening_entry:
+		pos_profile_name = frappe.db.get_value("POS Opening Entry", current_opening_entry, "pos_profile")
+	else:
+		pos_profile_name = frappe.get_value("POS Profile User", {"user": user}, "parent")
+		if not pos_profile_name:
+			frappe.throw(_("No POS Profile found for user {0}").format(user))
+
+	# Cache identity (name) only
+	_cached_pos_profiles[cache_key] = pos_profile_name
+	return pos_profile_name
+
+
+def get_current_pos_profile():
+	"""Get the active POS Profile with identity-only caching keyed by user and opening entry.
+
+	Returns a fresh POS Profile Doc each call to avoid stale field values.
+	"""
+	pos_profile_name = _resolve_pos_profile_name()
 
 	# Mania: Always fetch a fresh doc to ensure latest fields -> Issue reported 04/11/2025
 	pos_profile_doc = frappe.get_doc("POS Profile", pos_profile_name)
 	return pos_profile_doc
+
+
+def get_current_pos_profile_lite(fields):
+	"""Return only the requested POS Profile fields as a frappe._dict.
+
+	Avoids loading the full document (parent row + every child table: taxes,
+	item_groups, payments, …) on latency-critical paths that need just a few
+	scalar fields, e.g. barcode/identifier scan lookups. Values are read live
+	from the DB, so field freshness matches get_current_pos_profile.
+	"""
+	pos_profile_name = _resolve_pos_profile_name()
+	values = frappe.db.get_value("POS Profile", pos_profile_name, fields, as_dict=True)
+	return values or frappe._dict()
 
 
 def clear_pos_profile_cache(user=None):

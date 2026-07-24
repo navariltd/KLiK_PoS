@@ -2,7 +2,12 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.klik_pos.utils import get_current_pos_profile_lite
+
+# Scan/identifier lookups only need these scalar POS Profile fields; fetching
+# just these avoids loading the full profile doc (and all its child tables) on
+# every scan.
+_SCAN_POS_PROFILE_FIELDS = ["warehouse", "selling_price_list", "custom_enable_service_items"]
 
 from ..sql_builder import apply_sql_permissions
 from .item_price import fetch_item_price
@@ -36,9 +41,9 @@ def _validate_item_sales_eligibility(item_data, include_service_items):
 @frappe.whitelist(allow_guest=True)
 def get_item_by_barcode(barcode: str):
     try:
-        pos_doc = get_current_pos_profile()
-        warehouse = pos_doc.warehouse
-        price_list = pos_doc.selling_price_list
+        pos_doc = get_current_pos_profile_lite(_SCAN_POS_PROFILE_FIELDS)
+        warehouse = pos_doc.get("warehouse")
+        price_list = pos_doc.get("selling_price_list")
         include_service_items = _include_service_items(pos_doc)
 
         item_sql = """
@@ -204,9 +209,9 @@ def get_item_by_identifier(code: str):
         if not code:
             frappe.throw(_("Identifier required"))
 
-        pos_doc = get_current_pos_profile()
-        warehouse = pos_doc.warehouse
-        price_list = pos_doc.selling_price_list
+        pos_doc = get_current_pos_profile_lite(_SCAN_POS_PROFILE_FIELDS)
+        warehouse = pos_doc.get("warehouse")
+        price_list = pos_doc.get("selling_price_list")
         include_service_items = _include_service_items(pos_doc)
     except Exception as e:
         frappe.log_error(
