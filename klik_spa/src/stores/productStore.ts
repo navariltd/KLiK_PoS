@@ -60,7 +60,7 @@ interface ProductStoreState {
   getEffectivePriceList: () => string;
 }
 
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 250;
 const LOAD_MORE_SIZE = 500;
 const CACHE_DURATION = 5 * 60 * 1000;
 let currentPosName = '';
