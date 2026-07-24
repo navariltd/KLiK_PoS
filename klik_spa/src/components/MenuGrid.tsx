@@ -36,6 +36,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     selectedCategory,
     setCategory,
     searchProducts,
+    resolveSearchNow,
     clearSearch,
     filteredItems,
     defaultView,
@@ -105,14 +106,24 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
       document.querySelector<HTMLElement>('[data-product-index="0"]')?.focus();
       return;
     }
-    if (!posDetails?.auto_add_item_to_cart) return;
-    if (e.key !== 'Enter' || !searchQuery.trim() || isSearching) return;
-    if (filteredItems.length !== 1) return;
-    const item = filteredItems[0];
-    if (!item || item.is_variant_template || item.has_variants) return;
-    if (isItemOutOfStock(item)) return;
-    void addToCart({ ...item, item_code: item.id });
-    clearSearch();
+    if (e.key !== 'Enter' || !searchQuery.trim()) return;
+
+    // Existing behaviour: when the grid is already narrowed to a single addable
+    // item and auto-add is on, Enter adds it to the cart.
+    if (posDetails?.auto_add_item_to_cart && !isSearching && filteredItems.length === 1) {
+      const item = filteredItems[0];
+      if (item && !item.is_variant_template && !item.has_variants && !isItemOutOfStock(item)) {
+        void addToCart({ ...item, item_code: item.id });
+        clearSearch();
+        return;
+      }
+    }
+
+    // Otherwise treat Enter as a definitive submit (a barcode scanner sends it as
+    // a suffix): flush any pending debounced lookup immediately instead of waiting
+    // out the debounce. resolveSearchNow acts only on a still-pending timer, so a
+    // scan that already resolved won't be processed a second time.
+    void resolveSearchNow();
   };
 
   useEffect(() => {

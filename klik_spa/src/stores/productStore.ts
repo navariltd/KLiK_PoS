@@ -29,6 +29,7 @@ interface ProductStoreState {
   fetchProducts: (reset?: boolean) => Promise<void>;
   loadMoreProducts: () => Promise<void>;
   searchProducts: (query: string, immediate?: boolean) => Promise<void>;
+  resolveSearchNow: () => Promise<void>;
   clearSearch: () => void;
   setCategory: (category: string) => void;
   refreshStockOnly: () => Promise<boolean>;
@@ -40,7 +41,7 @@ interface ProductStoreState {
   stopBackgroundRefresh: () => void;
   startBackgroundRefresh: () => void;
   executeSearch: (query: string) => Promise<void>;
-  attemptIdentifierLookup: (query: string) => Promise<void>;
+  attemptIdentifierLookup: (query: string) => Promise<boolean>;
   fetchItemByIdentifier: (code: string) => Promise<MenuItem | null>;
   fetchProductsFromAPI: (limit: number, offset: number, search: string, category: string, customerId: string, priceList?: string) => Promise<{
     items: MenuItem[];
@@ -365,20 +366,73 @@ export const useProductStore = create<ProductStoreState>()(
           return;
         }
 
-        if (IDENTIFIER_LIKE_PATTERN.test(trimmedQuery)) {
+        const isIdentifierLike = IDENTIFIER_LIKE_PATTERN.test(trimmedQuery);
+
+        // Definitive scan (hardware scan button or scanner Enter suffix): resolve
+        // the exact identifier immediately and skip the heavy fuzzy search. Only
+        // fall back to fuzzy when the code matched nothing and the identifier
+        // lookup didn't already own the UI (e.g. scanner-only mode).
+        if (immediate && isIdentifierLike) {
+          const handled = await get().attemptIdentifierLookup(trimmedQuery);
+          if (!handled) {
+            await get().executeSearch(trimmedQuery);
+          }
+          return;
+        }
+
+        if (isIdentifierLike) {
           identifierTimer = setTimeout(async () => {
+            // Null the handle as it fires so resolveSearchNow can tell a still
+            // pending lookup from one that already ran (avoids double-processing).
+            identifierTimer = null;
             await get().attemptIdentifierLookup(trimmedQuery);
           }, 50);
         }
 
         if (!immediate) {
           searchTimer = setTimeout(async () => {
+            searchTimer = null;
             await get().executeSearch(trimmedQuery);
           }, 400);
           return;
         }
 
         await get().executeSearch(trimmedQuery);
+      },
+
+      // Flush any pending debounced lookup immediately (e.g. on the Enter suffix a
+      // barcode scanner sends). Acts only on a *pending* timer, so if the scan has
+      // already resolved this is a no-op - it can never process the same scan
+      // twice. Falls back to fuzzy search only when an identifier lookup was
+      // pending and matched nothing.
+      resolveSearchNow: async () => {
+        const query = get().searchQuery.trim();
+        if (!query) return;
+
+        const identifierPending = !!identifierTimer;
+        const searchPending = !!searchTimer;
+
+        if (identifierTimer) {
+          clearTimeout(identifierTimer);
+          identifierTimer = null;
+        }
+        if (searchTimer) {
+          clearTimeout(searchTimer);
+          searchTimer = null;
+        }
+
+        if (identifierPending) {
+          const handled = await get().attemptIdentifierLookup(query);
+          if (!handled) {
+            await get().executeSearch(query);
+          }
+          return;
+        }
+
+        if (searchPending) {
+          await get().executeSearch(query);
+        }
+        // Nothing was pending: the scan/search already resolved - do nothing.
       },
 
       executeSearch: async (query: string) => {
@@ -406,7 +460,11 @@ export const useProductStore = create<ProductStoreState>()(
         }
       },
 
-      attemptIdentifierLookup: async (query: string) => {
+      // Returns true when this lookup owned the outcome (matched, or scanner-only
+      // mode which drives its own UX, or a newer query already superseded it) and
+      // false only when nothing matched in interactive mode, so an immediate
+      // caller can decide whether to fall back to the fuzzy search.
+      attemptIdentifierLookup: async (query: string): Promise<boolean> => {
         const item = await get().fetchItemByIdentifier(query);
 
         const profile = usePOSProfileStore.getState();
@@ -436,13 +494,17 @@ export const useProductStore = create<ProductStoreState>()(
             }
             get().clearSearch();
           }
-          return;
+          // Scanner-only mode fully owns the scan UX (add or toast+clear), so the
+          // caller must never fall back to a fuzzy search.
+          return true;
         }
 
-        // ---- non-scanner-only behavior, unchanged ----
-        // The user kept typing/scanning since this lookup was scheduled - discard.
-        if (get().searchQuery.trim() !== query) return;
-        if (!item) return;
+        // ---- non-scanner-only behavior ----
+        // The user kept typing/scanning since this lookup was scheduled - a newer
+        // query is already driving the UI, so treat this as handled.
+        if (get().searchQuery.trim() !== query) return true;
+        // No identifier match: let the caller fall back to fuzzy search.
+        if (!item) return false;
 
         // Exact identifier match: cancel the slower fuzzy search and show
         // just this item immediately.
@@ -462,6 +524,7 @@ export const useProductStore = create<ProductStoreState>()(
           await useCartStore.getState().addToCart({ ...item, item_code: item.id });
           get().clearSearch();
         }
+        return true;
       },
 
       fetchItemByIdentifier: async (code: string) => {

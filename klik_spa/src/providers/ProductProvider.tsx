@@ -32,6 +32,7 @@ interface ProductContextType {
   fetchProducts: (reset?: boolean) => Promise<void>;
   loadMoreProducts: () => Promise<void>;
   searchProducts: (query: string, immediate?: boolean) => Promise<void>;
+  resolveSearchNow: () => Promise<void>;
   clearSearch: () => void;
   setCategory: (category: string) => void;
   refreshStockOnly: () => Promise<boolean>;
@@ -99,6 +100,7 @@ export function ProductProvider({ children, posName, initialCustomerId }: Produc
     fetchProducts: store.fetchProducts,
     loadMoreProducts: store.loadMoreProducts,
     searchProducts: store.searchProducts,
+    resolveSearchNow: store.resolveSearchNow,
     clearSearch: store.clearSearch,
     setCategory: store.setCategory,
     refreshStockOnly: store.refreshStockOnly,
