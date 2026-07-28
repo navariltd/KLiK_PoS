@@ -1,14 +1,18 @@
 import type { ReactNode } from "react";
-import { CheckCircle } from "lucide-react";
+import { Circle, CheckCircle2 } from "lucide-react";
 import type { PaymentMethod } from "./types";
+import { isReferenceMethod } from "./paymentIcons";
 
 interface PaymentMethodsProps {
   paymentMethods: PaymentMethod[];
   invoiceSubmitted: boolean;
   isProcessingPayment: boolean;
   onAmountChange: (methodId: string, amount: string) => void;
-  onAutoFill: (methodId: string) => void;
+  onToggle: (methodId: string) => void;
+  onReferenceChange: (methodId: string, value: string) => void;
   setActiveMethodId: (id: string | null) => void;
+  activeMethods: Set<string>;
+  references: Record<string, string>;
   headerRight?: ReactNode;
 }
 
@@ -17,44 +21,50 @@ export default function PaymentMethods({
   invoiceSubmitted,
   isProcessingPayment,
   onAmountChange,
-  onAutoFill,
+  onToggle,
+  onReferenceChange,
   setActiveMethodId,
+  activeMethods,
+  references,
   headerRight,
 }: PaymentMethodsProps) {
+  const disabled = invoiceSubmitted || isProcessingPayment;
+
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h3>
         {headerRight}
       </div>
-      <div className="flex space-x-4 overflow-x-auto pb-2">
-        {paymentMethods.map((method) => (
-          <div
-            key={method.id}
-            className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[300px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}
-          >
-            <div className="flex items-center space-x-3 mb-3">
-              <div className={`w-8 h-6 rounded-md ${method.color} text-white flex items-center justify-center`}>
+
+      <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+        {paymentMethods.map((method) => {
+          const isActive = activeMethods.has(method.id) || (method.amount || 0) > 0;
+          const showRef = isActive && isReferenceMethod(method.type, method.name);
+
+          return (
+            <div
+              key={method.id}
+              className={`flex flex-wrap items-center gap-3 px-3 py-2 ${disabled ? "bg-gray-50 dark:bg-gray-800" : ""}`}
+            >
+              <button
+                type="button"
+                onClick={() => onToggle(method.id)}
+                disabled={disabled}
+                title="Use this method (fill outstanding)"
+                className={`shrink-0 ${disabled ? "cursor-not-allowed opacity-50" : "hover:text-beveren-600"} ${isActive ? "text-beveren-600" : "text-gray-400"}`}
+              >
+                {isActive ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+              </button>
+
+              <div className={`w-7 h-6 rounded-md ${method.color} text-white flex items-center justify-center shrink-0`}>
                 <div className="scale-75">{method.icon}</div>
               </div>
-              <div className="flex-1">
-                <p className="font-medium text-gray-900 dark:text-white text-sm">{method.name}</p>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Amount</label>
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => onAutoFill(method.id)}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`p-1 rounded text-xs ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : "hover:bg-beveren-100 text-beveren-600"}`}
-                    title="Auto-fill with grand total"
-                  >
-                    <CheckCircle size={16} />
-                  </button>
-                </div>
-              </div>
+
+              <span className="flex-1 min-w-[7rem] font-medium text-gray-900 dark:text-white text-sm truncate">
+                {method.name}
+              </span>
+
               <input
                 type="number"
                 min="0"
@@ -74,12 +84,23 @@ export default function PaymentMethods({
                   }
                 }}
                 placeholder="0.00"
-                disabled={invoiceSubmitted || isProcessingPayment}
-                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                disabled={disabled}
+                className={`w-28 shrink-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm text-right ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
               />
+
+              {showRef && (
+                <input
+                  type="text"
+                  value={references[method.id] || ""}
+                  onChange={(e) => onReferenceChange(method.id, e.target.value)}
+                  placeholder="Reference / Cheque no."
+                  disabled={disabled}
+                  className={`w-full sm:w-40 shrink-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+                />
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

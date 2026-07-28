@@ -131,6 +131,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [paymentAmounts, setPaymentAmounts] = useState<PaymentAmount>({});
   const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
   const [lastModifiedMethodId, setLastModifiedMethodId] = useState<string | null>(null);
+  const [paymentReferences, setPaymentReferences] = useState<Record<string, string>>({});
+  const [activeMethods, setActiveMethods] = useState<Set<string>>(new Set());
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [invoiceSubmitted, setInvoiceSubmitted] = useState(false);
@@ -660,6 +662,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           paymentLine.custom_reference_text = mpesaFlow.requestName;
         }
 
+        // Bank/Cheque manual reference — never overwrite the M-Pesa auto reference above.
+        if (!paymentLine.reference_no && paymentReferences[method]) {
+          paymentLine.reference_no = paymentReferences[method];
+        }
+
         return paymentLine;
       }),
       subtotal: displaySubtotal,
@@ -923,14 +930,41 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     });
   };
 
-  const handleAutoFillPayment = (methodId: string) => {
+  const handleToggleMethod = (methodId: string) => {
     if (invoiceSubmitted || isProcessingPayment) return;
-    const newPaymentAmounts: PaymentAmount = {};
-    paymentMethods.forEach((method) => { newPaymentAmounts[method.id] = 0; });
-    newPaymentAmounts[methodId] = checkoutPayableTotal;
-    setLastModifiedMethodId(methodId);
-    setPaymentAmounts(newPaymentAmounts);
-    setActiveMethodId(methodId);
+    const isActive = activeMethods.has(methodId);
+    if (isActive) {
+      setActiveMethods((prev) => {
+        const next = new Set(prev);
+        next.delete(methodId);
+        return next;
+      });
+      setPaymentAmounts((amts) => ({ ...amts, [methodId]: 0 }));
+      setPaymentReferences((refs) => {
+        const r = { ...refs };
+        delete r[methodId];
+        return r;
+      });
+    } else {
+      setActiveMethods((prev) => {
+        const next = new Set(prev);
+        next.add(methodId);
+        return next;
+      });
+      setPaymentAmounts((amts) => {
+        const others = Object.entries(amts)
+          .filter(([id]) => id !== methodId)
+          .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
+        const remaining = roundCurrency(Math.max(0, checkoutPayableTotal - others));
+        return { ...amts, [methodId]: remaining };
+      });
+      setLastModifiedMethodId(methodId);
+      setActiveMethodId(methodId);
+    }
+  };
+
+  const handleReferenceChange = (methodId: string, value: string) => {
+    setPaymentReferences((refs) => ({ ...refs, [methodId]: value }));
   };
 
   const handleManualAmountChange = (methodId: string, amount: string) => {
@@ -2288,8 +2322,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
                   onAmountChange={handleManualAmountChange}
-                  onAutoFill={handleAutoFillPayment}
+                  onToggle={handleToggleMethod}
+                  onReferenceChange={handleReferenceChange}
                   setActiveMethodId={setActiveMethodId}
+                  activeMethods={activeMethods}
+                  references={paymentReferences}
                   headerRight={
                     allowPartialPayments ? (
                       <div className="flex items-center gap-2">
