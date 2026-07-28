@@ -24,6 +24,7 @@ export interface PaymentMethod {
   color: string;
   enabled: boolean;
   amount: number;
+  type?: string; // mode_of_payment type: Cash | Bank | Phone | General (cheque by name)
 }
 
 export interface PaymentAmount {

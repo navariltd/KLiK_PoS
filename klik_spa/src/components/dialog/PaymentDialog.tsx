@@ -448,6 +448,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         color,
         enabled: true,
         amount: paymentAmounts[mode.mode_of_payment] || 0,
+        type: mode.type || "",
       };
     });
   }, [modes, paymentAmounts]);
