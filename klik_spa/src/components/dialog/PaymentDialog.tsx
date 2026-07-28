@@ -131,6 +131,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [paymentAmounts, setPaymentAmounts] = useState<PaymentAmount>({});
   const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
   const [lastModifiedMethodId, setLastModifiedMethodId] = useState<string | null>(null);
+  const [paymentReferences, setPaymentReferences] = useState<Record<string, string>>({});
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [invoiceSubmitted, setInvoiceSubmitted] = useState(false);
@@ -448,6 +449,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         color,
         enabled: true,
         amount: paymentAmounts[mode.mode_of_payment] || 0,
+        type: mode.type || "",
       };
     });
   }, [modes, paymentAmounts]);
@@ -657,6 +659,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           paymentLine.phone_number = mpesaFlow.phoneNumber;
           paymentLine.type = "Phone";
           paymentLine.custom_reference_text = mpesaFlow.requestName;
+        }
+
+        // Bank/Cheque manual reference — never overwrite the M-Pesa auto reference above.
+        if (!paymentLine.reference_no && paymentReferences[method]) {
+          paymentLine.reference_no = paymentReferences[method];
         }
 
         return paymentLine;
@@ -912,24 +919,28 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return updatedAmounts;
   };
 
-  const handlePaymentAmountChange = (methodId: string, amount: string) => {
+  const handleToggleMethod = (methodId: string) => {
     if (invoiceSubmitted || isProcessingPayment) return;
-    const numericAmount = roundCurrency(parseFloat(amount) || 0);
-    setLastModifiedMethodId(methodId);
-    setPaymentAmounts((prev) => {
-      const baseAmounts = { ...prev, [methodId]: numericAmount };
-      return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
-    });
+    const currentAmount = paymentAmounts[methodId] || 0;
+    if (currentAmount > 0) {
+      // turn off: clear this row's amount (reference is pruned by the effect in Step 2)
+      setPaymentAmounts((amts) => ({ ...amts, [methodId]: 0 }));
+    } else {
+      // turn on: fill the remaining outstanding, preserving other rows
+      setPaymentAmounts((amts) => {
+        const others = Object.entries(amts)
+          .filter(([id]) => id !== methodId)
+          .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
+        const remaining = roundCurrency(Math.max(0, checkoutPayableTotal - others));
+        return { ...amts, [methodId]: remaining };
+      });
+      setLastModifiedMethodId(methodId);
+      setActiveMethodId(methodId);
+    }
   };
 
-  const handleAutoFillPayment = (methodId: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
-    const newPaymentAmounts: PaymentAmount = {};
-    paymentMethods.forEach((method) => { newPaymentAmounts[method.id] = 0; });
-    newPaymentAmounts[methodId] = checkoutPayableTotal;
-    setLastModifiedMethodId(methodId);
-    setPaymentAmounts(newPaymentAmounts);
-    setActiveMethodId(methodId);
+  const handleReferenceChange = (methodId: string, value: string) => {
+    setPaymentReferences((refs) => ({ ...refs, [methodId]: value }));
   };
 
   const handleManualAmountChange = (methodId: string, amount: string) => {
@@ -941,6 +952,22 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
     });
   };
+
+  // Keep references in sync with amounts: a method zeroed by any path (toggle-off,
+  // auto-allocate re-apportioning, manual clear) drops its stored reference.
+  useEffect(() => {
+    setPaymentReferences((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if ((paymentAmounts[key] || 0) <= 0) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [paymentAmounts]);
 
   useEffect(() => {
     const requestId = taxPreviewRequestIdRef.current + 1;
@@ -2031,10 +2058,17 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               </div>
             ) : (
               <>
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h2>
-                    {allowPartialPayments && (
+                <PaymentMethods
+                  paymentMethods={paymentMethods}
+                  invoiceSubmitted={invoiceSubmitted}
+                  isProcessingPayment={isProcessingPayment}
+                  onAmountChange={handleManualAmountChange}
+                  onToggle={handleToggleMethod}
+                  onReferenceChange={handleReferenceChange}
+                  setActiveMethodId={setActiveMethodId}
+                  references={paymentReferences}
+                  headerRight={
+                    allowPartialPayments ? (
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
                           {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
@@ -2056,27 +2090,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex space-x-3 overflow-x-auto pb-2">
-                    {paymentMethods.map((method) => (
-                      <div key={method.id} className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[280px] max-w-[280px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}>
-                        <div className="flex items-center space-x-3 mb-3">
-                          <div className={`w-10 h-10 rounded-lg ${method.color} text-white flex items-center justify-center`}>
-                            <div className="scale-75">{method.icon}</div>
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white text-sm">{method.name}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount</label>
-                          <input type="number" value={method.amount.toFixed(2) || ""} onChange={(e) => handlePaymentAmountChange(method.id, e.target.value)} placeholder="0.00" disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                    ) : undefined
+                  }
+                />
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
                 {isDeliveryChargeEnabled && (
@@ -2287,8 +2303,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
                   onAmountChange={handleManualAmountChange}
-                  onAutoFill={handleAutoFillPayment}
+                  onToggle={handleToggleMethod}
+                  onReferenceChange={handleReferenceChange}
                   setActiveMethodId={setActiveMethodId}
+                  references={paymentReferences}
                   headerRight={
                     allowPartialPayments ? (
                       <div className="flex items-center gap-2">

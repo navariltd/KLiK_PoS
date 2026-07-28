@@ -22,3 +22,12 @@ export const getIconAndColor = (label: string): { icon: React.ReactNode; color: 
 
   return { icon: React.createElement(CreditCard, { size: 20 }), color: "bg-gray-600" };
 };
+
+// True for methods that take a manual reference number (bank transfers, cheques).
+// Cash needs none; phone/M-Pesa auto-fills its own reference via the STK/register flow.
+export const isReferenceMethod = (typeOrName?: string, name?: string): boolean => {
+  const hay = `${typeOrName || ""} ${name || ""}`.toLowerCase();
+  if (hay.includes("cash")) return false;
+  if (hay.includes("phone") || hay.includes("mpesa") || hay.includes("m-pesa")) return false;
+  return hay.includes("bank") || hay.includes("cheque") || hay.includes("check");
+};
