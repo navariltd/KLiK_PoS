@@ -11,7 +11,6 @@ interface PaymentMethodsProps {
   onToggle: (methodId: string) => void;
   onReferenceChange: (methodId: string, value: string) => void;
   setActiveMethodId: (id: string | null) => void;
-  activeMethods: Set<string>;
   references: Record<string, string>;
   headerRight?: ReactNode;
 }
@@ -24,7 +23,6 @@ export default function PaymentMethods({
   onToggle,
   onReferenceChange,
   setActiveMethodId,
-  activeMethods,
   references,
   headerRight,
 }: PaymentMethodsProps) {
@@ -39,7 +37,7 @@ export default function PaymentMethods({
 
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
         {paymentMethods.map((method) => {
-          const isActive = activeMethods.has(method.id) || (method.amount || 0) > 0;
+          const isActive = (method.amount || 0) > 0;
           const showRef = isActive && isReferenceMethod(method.type, method.name);
 
           return (

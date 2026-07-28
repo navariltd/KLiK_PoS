@@ -132,7 +132,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
   const [lastModifiedMethodId, setLastModifiedMethodId] = useState<string | null>(null);
   const [paymentReferences, setPaymentReferences] = useState<Record<string, string>>({});
-  const [activeMethods, setActiveMethods] = useState<Set<string>>(new Set());
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [invoiceSubmitted, setInvoiceSubmitted] = useState(false);
@@ -923,25 +922,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const handleToggleMethod = (methodId: string) => {
     if (invoiceSubmitted || isProcessingPayment) return;
     const currentAmount = paymentAmounts[methodId] || 0;
-    const isActive = activeMethods.has(methodId) || currentAmount > 0;
-    if (isActive) {
-      setActiveMethods((prev) => {
-        const next = new Set(prev);
-        next.delete(methodId);
-        return next;
-      });
+    if (currentAmount > 0) {
+      // turn off: clear this row's amount (reference is pruned by the effect in Step 2)
       setPaymentAmounts((amts) => ({ ...amts, [methodId]: 0 }));
-      setPaymentReferences((refs) => {
-        const r = { ...refs };
-        delete r[methodId];
-        return r;
-      });
     } else {
-      setActiveMethods((prev) => {
-        const next = new Set(prev);
-        next.add(methodId);
-        return next;
-      });
+      // turn on: fill the remaining outstanding, preserving other rows
       setPaymentAmounts((amts) => {
         const others = Object.entries(amts)
           .filter(([id]) => id !== methodId)
@@ -967,6 +952,22 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
     });
   };
+
+  // Keep references in sync with amounts: a method zeroed by any path (toggle-off,
+  // auto-allocate re-apportioning, manual clear) drops its stored reference.
+  useEffect(() => {
+    setPaymentReferences((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if ((paymentAmounts[key] || 0) <= 0) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [paymentAmounts]);
 
   useEffect(() => {
     const requestId = taxPreviewRequestIdRef.current + 1;
@@ -2065,7 +2066,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onToggle={handleToggleMethod}
                   onReferenceChange={handleReferenceChange}
                   setActiveMethodId={setActiveMethodId}
-                  activeMethods={activeMethods}
                   references={paymentReferences}
                   headerRight={
                     allowPartialPayments ? (
@@ -2306,7 +2306,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onToggle={handleToggleMethod}
                   onReferenceChange={handleReferenceChange}
                   setActiveMethodId={setActiveMethodId}
-                  activeMethods={activeMethods}
                   references={paymentReferences}
                   headerRight={
                     allowPartialPayments ? (
