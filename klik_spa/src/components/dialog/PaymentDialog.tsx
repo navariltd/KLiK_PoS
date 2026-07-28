@@ -920,16 +920,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return updatedAmounts;
   };
 
-  const handlePaymentAmountChange = (methodId: string, amount: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
-    const numericAmount = roundCurrency(parseFloat(amount) || 0);
-    setLastModifiedMethodId(methodId);
-    setPaymentAmounts((prev) => {
-      const baseAmounts = { ...prev, [methodId]: numericAmount };
-      return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
-    });
-  };
-
   const handleToggleMethod = (methodId: string) => {
     if (invoiceSubmitted || isProcessingPayment) return;
     const currentAmount = paymentAmounts[methodId] || 0;
@@ -2067,10 +2057,18 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               </div>
             ) : (
               <>
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h2>
-                    {allowPartialPayments && (
+                <PaymentMethods
+                  paymentMethods={paymentMethods}
+                  invoiceSubmitted={invoiceSubmitted}
+                  isProcessingPayment={isProcessingPayment}
+                  onAmountChange={handleManualAmountChange}
+                  onToggle={handleToggleMethod}
+                  onReferenceChange={handleReferenceChange}
+                  setActiveMethodId={setActiveMethodId}
+                  activeMethods={activeMethods}
+                  references={paymentReferences}
+                  headerRight={
+                    allowPartialPayments ? (
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
                           {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
@@ -2092,27 +2090,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex space-x-3 overflow-x-auto pb-2">
-                    {paymentMethods.map((method) => (
-                      <div key={method.id} className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[280px] max-w-[280px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}>
-                        <div className="flex items-center space-x-3 mb-3">
-                          <div className={`w-10 h-10 rounded-lg ${method.color} text-white flex items-center justify-center`}>
-                            <div className="scale-75">{method.icon}</div>
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white text-sm">{method.name}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount</label>
-                          <input type="number" value={method.amount.toFixed(2) || ""} onChange={(e) => handlePaymentAmountChange(method.id, e.target.value)} placeholder="0.00" disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                    ) : undefined
+                  }
+                />
                 {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
                 {isDeliveryChargeEnabled && (
