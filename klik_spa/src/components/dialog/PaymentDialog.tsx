@@ -932,7 +932,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const handleToggleMethod = (methodId: string) => {
     if (invoiceSubmitted || isProcessingPayment) return;
-    const isActive = activeMethods.has(methodId);
+    const currentAmount = paymentAmounts[methodId] || 0;
+    const isActive = activeMethods.has(methodId) || currentAmount > 0;
     if (isActive) {
       setActiveMethods((prev) => {
         const next = new Set(prev);
