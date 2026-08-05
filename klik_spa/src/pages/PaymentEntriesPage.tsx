@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Banknote, CreditCard, FileText, Loader2, Search, User } from "lucide-react";
 import { toast } from "react-toastify";
 import BottomNavigation from "../components/BottomNavigation";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
-import { useCustomers } from "../hooks/useCustomers";
+import CustomerReceivablesTable from "../components/customer/CustomerReceivablesTable";
 import type { Customer } from "../types/customer";
 import {
+  getCustomerReceivables,
   getOutstandingSalesInvoices,
   getUnallocatedCustomerPaymentEntries,
   reconcilePaymentEntryWithInvoice,
+  type CustomerReceivable,
   type OutstandingSalesInvoice,
+  type ReceivableInvoice,
   type UnallocatedCustomerPaymentEntry,
 } from "../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../utils/currency";
@@ -50,6 +53,23 @@ const getCachedPaymentTab = (): PaymentTab => {
   return cached === "customer" || cached === "reconciliation" || cached === "invoice" ? cached : "invoice";
 };
 
+const buildModalCustomer = (id: string, name: string): Customer =>
+  ({
+    id,
+    name,
+    email: "",
+    phone: "",
+    address: { street: "", city: "", state: "", zipCode: "", country: "" },
+    loyaltyPoints: 0,
+    totalSpent: 0,
+    totalOrders: 0,
+    preferredPaymentMethod: "Cash",
+    tags: [],
+    status: "active",
+    type: "individual",
+    createdAt: new Date().toISOString(),
+  }) as Customer;
+
 export default function PaymentEntriesPage() {
   const [activeTab, setActiveTab] = useState<PaymentTab>(getCachedPaymentTab);
   const [invoiceSearch, setInvoiceSearch] = useState("");
@@ -59,8 +79,17 @@ export default function PaymentEntriesPage() {
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<OutstandingSalesInvoice | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const { customers, isLoading: isLoadingCustomers, error: customerError } = useCustomers(customerSearch);
+  const [receivables, setReceivables] = useState<CustomerReceivable[]>([]);
+  const [receivablesCurrency, setReceivablesCurrency] = useState("");
+  const [isLoadingReceivables, setIsLoadingReceivables] = useState(false);
+  const [receivablesError, setReceivablesError] = useState<string | null>(null);
+  const [receivableTarget, setReceivableTarget] = useState<{
+    customer: Customer;
+    salesInvoiceName?: string;
+    outstandingAmount?: number;
+    defaultAmount: number;
+    allocationTargets?: ReceivableInvoice[];
+  } | null>(null);
   const [reconcileSearch, setReconcileSearch] = useState("");
   const [reconcileInvoices, setReconcileInvoices] = useState<OutstandingSalesInvoice[]>([]);
   const [credits, setCredits] = useState<UnallocatedCustomerPaymentEntry[]>([]);
@@ -144,32 +173,45 @@ export default function PaymentEntriesPage() {
 
   const invoiceCustomer = useMemo(() => {
     if (!selectedInvoice) return null;
-    return {
-      id: selectedInvoice.customer,
-      name: selectedInvoice.customer_name || selectedInvoice.customer,
-      email: "",
-      phone: "",
-      address: {
-        street: "",
-        city: "",
-        state: "",
-        zipCode: "",
-        country: "",
-      },
-      loyaltyPoints: 0,
-      totalSpent: 0,
-      totalOrders: 0,
-      preferredPaymentMethod: "Cash",
-      tags: [],
-      status: "active",
-      type: "individual",
-      createdAt: new Date().toISOString(),
-    } as Customer;
+    return buildModalCustomer(
+      selectedInvoice.customer,
+      selectedInvoice.customer_name || selectedInvoice.customer
+    );
   }, [selectedInvoice]);
+
+  const loadReceivables = useCallback(async () => {
+    setIsLoadingReceivables(true);
+    setReceivablesError(null);
+    try {
+      const response = await getCustomerReceivables();
+      setReceivables(response.data || []);
+      setReceivablesCurrency(response.currency || "");
+    } catch (err) {
+      setReceivablesError(err instanceof Error ? err.message : "Failed to fetch customer receivables");
+      setReceivables([]);
+    } finally {
+      setIsLoadingReceivables(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "customer") return;
+    loadReceivables();
+  }, [activeTab, loadReceivables]);
+
+  const filteredReceivables = useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+    if (!term) return receivables;
+    return receivables.filter(
+      (receivable) =>
+        receivable.customer.toLowerCase().includes(term) ||
+        receivable.customer_name.toLowerCase().includes(term) ||
+        receivable.invoices.some((invoice) => invoice.name.toLowerCase().includes(term))
+    );
+  }, [receivables, customerSearch]);
 
   const closePaymentModal = () => {
     setSelectedInvoice(null);
-    setSelectedCustomer(null);
   };
 
   const handlePaymentCreated = () => {
@@ -401,54 +443,32 @@ export default function PaymentEntriesPage() {
                 type="text"
                 value={customerSearch}
                 onChange={(event) => setCustomerSearch(event.target.value)}
-                placeholder="Search customer"
+                placeholder="Search customer or invoice"
                 className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               />
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {isLoadingCustomers ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-3 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 size={18} className="animate-spin" />
-                    Loading customers...
-                  </span>
-                </div>
-              ) : customerError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                  {customerError.message}
-                </div>
-              ) : customers.length === 0 ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-3 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                  No customers found.
-                </div>
-              ) : (
-                customers.map((customer) => (
-                  <div
-                    key={customer.id}
-                    className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-gray-900 dark:text-white">{customer.name}</div>
-                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{customer.id}</div>
-                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          {customer.phone || customer.email || "No contact"}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCustomer(customer)}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-beveren-600 px-3 py-2 text-sm font-medium text-white hover:bg-beveren-700"
-                      >
-                        <Banknote size={16} />
-                        <span>Receive</span>
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <CustomerReceivablesTable
+              receivables={filteredReceivables}
+              currency={receivablesCurrency}
+              isLoading={isLoadingReceivables}
+              error={receivablesError}
+              onReceiveCustomer={(receivable) =>
+                setReceivableTarget({
+                  customer: buildModalCustomer(receivable.customer, receivable.customer_name),
+                  defaultAmount: Math.max(0, receivable.outstanding),
+                  allocationTargets: receivable.invoices,
+                })
+              }
+              onReceiveInvoice={(receivable, invoice) =>
+                setReceivableTarget({
+                  customer: buildModalCustomer(receivable.customer, receivable.customer_name),
+                  salesInvoiceName: invoice.name,
+                  outstandingAmount: invoice.outstanding,
+                  defaultAmount: invoice.outstanding,
+                })
+              }
+            />
           </section>
         ) : (
           <section className="space-y-4">
@@ -643,11 +663,19 @@ export default function PaymentEntriesPage() {
         />
       )}
 
-      {selectedCustomer && (
+      {receivableTarget && (
         <CustomerPaymentEntryModal
-          customer={selectedCustomer}
-          onClose={closePaymentModal}
-          onCreated={handlePaymentCreated}
+          customer={receivableTarget.customer}
+          salesInvoiceName={receivableTarget.salesInvoiceName}
+          outstandingAmount={receivableTarget.outstandingAmount}
+          defaultAmount={receivableTarget.defaultAmount}
+          invoiceCurrency={receivablesCurrency}
+          allocationTargets={receivableTarget.allocationTargets}
+          onClose={() => setReceivableTarget(null)}
+          onCreated={() => {
+            setReceivableTarget(null);
+            loadReceivables();
+          }}
         />
       )}
 
