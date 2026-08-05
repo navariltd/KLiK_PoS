@@ -107,10 +107,39 @@ class TestGroupReceivableRows(FrappeTestCase):
 			)
 		]
 		[acme] = _group_receivable_rows(rows, "2026-08-05")
-		self.assertEqual(acme["bucket_0_30"], 30.0)
+		# range0 is ERPNext's "<0" column: not yet due. It gets its own bucket rather
+		# than inflating 0-30, which is range1 alone.
+		self.assertEqual(acme["bucket_current"], 10.0)
+		self.assertEqual(acme["bucket_0_30"], 20.0)
 		self.assertEqual(acme["bucket_31_60"], 30.0)
 		self.assertEqual(acme["bucket_61_90"], 40.0)
 		self.assertEqual(acme["bucket_90_plus"], 110.0)
+
+	def test_not_yet_due_money_stays_out_of_the_overdue_buckets(self):
+		# A customer whose only invoice is not yet due must not read as 0-30 aged.
+		rows = [
+			_invoice_row(voucher_no="INV-001", invoiced=500.0, outstanding=500.0, range0=500.0, range1=0.0)
+		]
+		[acme] = _group_receivable_rows(rows, "2026-08-05")
+		self.assertEqual(acme["bucket_current"], 500.0)
+		self.assertEqual(acme["bucket_0_30"], 0.0)
+
+	def test_buckets_sum_to_outstanding(self):
+		rows = [
+			_invoice_row(
+				voucher_no="INV-001", invoiced=210.0, outstanding=210.0,
+				range0=10.0, range1=20.0, range2=30.0, range3=40.0, range4=50.0, range5=60.0,
+			)
+		]
+		[acme] = _group_receivable_rows(rows, "2026-08-05")
+		bucket_total = (
+			acme["bucket_current"]
+			+ acme["bucket_0_30"]
+			+ acme["bucket_31_60"]
+			+ acme["bucket_61_90"]
+			+ acme["bucket_90_plus"]
+		)
+		self.assertEqual(bucket_total, acme["outstanding"])
 
 	def test_skips_report_totals_row(self):
 		rows = [_invoice_row(), {"party": None, "outstanding": 1000.0}]

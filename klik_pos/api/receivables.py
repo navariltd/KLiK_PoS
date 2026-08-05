@@ -1,5 +1,4 @@
 import frappe
-from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
@@ -23,6 +22,7 @@ def _new_customer_entry():
 		"total_invoiced": 0.0,
 		"total_paid": 0.0,
 		"outstanding": 0.0,
+		"bucket_current": 0.0,
 		"bucket_0_30": 0.0,
 		"bucket_31_60": 0.0,
 		"bucket_61_90": 0.0,
@@ -61,9 +61,10 @@ def _group_receivable_rows(rows, as_of_date, statuses=None):
 		entry["total_invoiced"] = flt(entry["total_invoiced"] + invoiced, 2)
 		entry["total_paid"] = flt(entry["total_paid"] + flt(row.get("paid") or 0), 2)
 		entry["outstanding"] = flt(entry["outstanding"] + outstanding, 2)
-		entry["bucket_0_30"] = flt(
-			entry["bucket_0_30"] + flt(row.get("range0") or 0) + flt(row.get("range1") or 0), 2
-		)
+		# range0 is ERPNext's "<0" column — not yet due — so it gets its own bucket
+		# instead of inflating 0-30. range1 is the real 0-30.
+		entry["bucket_current"] = flt(entry["bucket_current"] + flt(row.get("range0") or 0), 2)
+		entry["bucket_0_30"] = flt(entry["bucket_0_30"] + flt(row.get("range1") or 0), 2)
 		entry["bucket_31_60"] = flt(entry["bucket_31_60"] + flt(row.get("range2") or 0), 2)
 		entry["bucket_61_90"] = flt(entry["bucket_61_90"] + flt(row.get("range3") or 0), 2)
 		entry["bucket_90_plus"] = flt(
