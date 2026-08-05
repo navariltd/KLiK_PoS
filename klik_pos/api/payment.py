@@ -66,11 +66,19 @@ def _build_allocation_rows(allocations, customer, amount, invoices):
 	"""
 	rows = []
 	total = 0.0
+	seen = set()
 
 	for entry in allocations or []:
 		invoice_name = entry.get("sales_invoice")
 		if not invoice_name:
 			frappe.throw(_("Each allocation must name a Sales Invoice."))
+		# Without this, two rows against the same invoice would each be checked against the
+		# same unchanged outstanding and both pass, over-allocating it. ERPNext's own
+		# validate_allocated_amount_with_latest_data checks reference rows independently and
+		# does not catch it either.
+		if invoice_name in seen:
+			frappe.throw(_("Sales Invoice {0} appears more than once in the allocation.").format(invoice_name))
+		seen.add(invoice_name)
 
 		invoice = invoices.get(invoice_name)
 		if not invoice:

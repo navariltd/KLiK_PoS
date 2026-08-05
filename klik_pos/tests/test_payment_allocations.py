@@ -115,5 +115,33 @@ class TestBuildAllocationRows(FrappeTestCase):
 				[{"sales_invoice": "INV-GHOST", "allocated_amount": 100.0}], "ACME", 100.0, {}
 			)
 
+	def test_rejects_the_same_invoice_twice(self):
+		# Each row would pass a per-row check against the same unchanged outstanding,
+		# and the total would pass too — 1000 allocated against 600 of outstanding.
+		invoices = {"INV-001": _invoice(outstanding_amount=600.0)}
+		with self.assertRaises(frappe.ValidationError):
+			_build_allocation_rows(
+				[
+					{"sales_invoice": "INV-001", "allocated_amount": 500.0},
+					{"sales_invoice": "INV-001", "allocated_amount": 500.0},
+				],
+				"ACME",
+				1000.0,
+				invoices,
+			)
+
+	def test_rejects_the_same_invoice_twice_even_within_outstanding(self):
+		invoices = {"INV-001": _invoice(outstanding_amount=600.0)}
+		with self.assertRaises(frappe.ValidationError):
+			_build_allocation_rows(
+				[
+					{"sales_invoice": "INV-001", "allocated_amount": 400.0},
+					{"sales_invoice": "INV-001", "allocated_amount": 200.0},
+				],
+				"ACME",
+				600.0,
+				invoices,
+			)
+
 	def test_empty_allocation_list_returns_no_rows(self):
 		self.assertEqual(_build_allocation_rows([], "ACME", 100.0, {}), [])
