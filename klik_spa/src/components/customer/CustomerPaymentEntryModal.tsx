@@ -5,8 +5,10 @@ import type { Customer } from "../../types/customer";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { createCustomerPaymentEntry } from "../../services/paymentEntry";
+import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
+import { allocateOldestFirst } from "../../utils/allocateOldestFirst";
 
 interface CustomerPaymentEntryModalProps {
   customer: Customer;
@@ -14,6 +16,7 @@ interface CustomerPaymentEntryModalProps {
   outstandingAmount?: number;
   defaultAmount?: number;
   invoiceCurrency?: string;
+  allocationTargets?: ReceivableInvoice[];
   onClose: () => void;
   onCreated?: (paymentEntryName: string) => void;
 }
@@ -24,6 +27,7 @@ export default function CustomerPaymentEntryModal({
   outstandingAmount,
   defaultAmount,
   invoiceCurrency,
+  allocationTargets,
   onClose,
   onCreated,
 }: CustomerPaymentEntryModalProps) {
@@ -49,6 +53,10 @@ export default function CustomerPaymentEntryModal({
   }, [defaultMode, modeOfPayment]);
 
   const numericAmount = Number(amount);
+  const allocationSplit = useMemo(
+    () => (allocationTargets?.length ? allocateOldestFirst(numericAmount, allocationTargets) : null),
+    [allocationTargets, numericAmount]
+  );
   const exceedsOutstanding = Boolean(
     salesInvoiceName && outstandingAmount !== undefined && numericAmount > Number(outstandingAmount) + 0.00001
   );
@@ -64,8 +72,9 @@ export default function CustomerPaymentEntryModal({
         customer: customer.id,
         amount: numericAmount,
         mode_of_payment: modeOfPayment,
-        sales_invoice: salesInvoiceName,
-        allocated_amount: salesInvoiceName ? numericAmount : undefined,
+        sales_invoice: allocationSplit ? undefined : salesInvoiceName,
+        allocated_amount: !allocationSplit && salesInvoiceName ? numericAmount : undefined,
+        allocations: allocationSplit?.allocations.length ? allocationSplit.allocations : undefined,
         reference_no: referenceNo.trim() || undefined,
         reference_date: referenceDate || undefined,
         remarks: remarks.trim() || undefined,
@@ -120,6 +129,50 @@ export default function CustomerPaymentEntryModal({
           {salesInvoiceName && outstandingAmount !== undefined && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
               Outstanding: {formatCurrencyWithSymbol(outstandingAmount, invoiceCurrency || currencySymbol)}
+            </div>
+          )}
+
+          {allocationSplit && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="border-b border-gray-200 px-3 py-2 text-xs font-medium uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                Allocation
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {allocationSplit.allocations.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                    Enter an amount to allocate.
+                  </div>
+                )}
+                {allocationSplit.allocations.map((allocation) => {
+                  const target = allocationTargets?.find((i) => i.name === allocation.sales_invoice);
+                  return (
+                    <div
+                      key={allocation.sales_invoice}
+                      className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                    >
+                      <span className="min-w-0 truncate text-gray-900 dark:text-white">
+                        {allocation.sales_invoice}
+                        {target?.due_date ? (
+                          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                            due {target.due_date}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-medium text-gray-900 dark:text-white">
+                        {formatCurrencyWithSymbol(allocation.allocated_amount, invoiceCurrency || currencySymbol)}
+                      </span>
+                    </div>
+                  );
+                })}
+                {allocationSplit.unallocated > 0 && (
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">Unallocated (advance)</span>
+                    <span className="shrink-0 font-medium text-green-700 dark:text-green-300">
+                      {formatCurrencyWithSymbol(allocationSplit.unallocated, invoiceCurrency || currencySymbol)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
