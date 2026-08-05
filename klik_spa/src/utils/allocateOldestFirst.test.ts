@@ -35,6 +35,19 @@ describe("allocateOldestFirst", () => {
   it("stops once the amount runs out", () => {
     const result = allocateOldestFirst(300, [invoice("INV-OLD", 600), invoice("INV-NEW", 400)]);
     expect(result.allocations).toEqual([{ sales_invoice: "INV-OLD", allocated_amount: 300 }]);
+    expect(result.unallocated).toBe(0);
+  });
+
+  it("allocates nothing for a non-finite amount", () => {
+    // Callers pass Number(inputValue); an unparseable field must not produce NaN rows.
+    expect(allocateOldestFirst(Number("abc"), [invoice("INV-001", 500)])).toEqual({
+      allocations: [],
+      unallocated: 0,
+    });
+    expect(allocateOldestFirst(Infinity, [invoice("INV-001", 500)])).toEqual({
+      allocations: [],
+      unallocated: 0,
+    });
   });
 
   it("leaves the remainder unallocated when the amount exceeds total outstanding", () => {
