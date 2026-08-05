@@ -19,6 +19,7 @@ import { formatCurrencyWithSymbol } from "../utils/currency";
 import { formatDateTime, toSortableTimestamp } from "../utils/time";
 import { useTableSort } from "../hooks/useTableSort";
 import SortableHeaderButton from "../components/SortableHeaderButton";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 
 const getStatusBadge = (status: string) => {
   const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
@@ -71,6 +72,7 @@ const buildModalCustomer = (id: string, name: string): Customer =>
   }) as Customer;
 
 export default function PaymentEntriesPage() {
+  const { currencySymbol } = usePOSProfileStore();
   const [activeTab, setActiveTab] = useState<PaymentTab>(getCachedPaymentTab);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
@@ -450,7 +452,9 @@ export default function PaymentEntriesPage() {
 
             <CustomerReceivablesTable
               receivables={filteredReceivables}
-              currency={receivablesCurrency}
+              // Company.default_currency can be NULL; fall back to the POS profile's
+              // currency symbol so amounts never render without a currency marker.
+              currency={receivablesCurrency || currencySymbol}
               isLoading={isLoadingReceivables}
               error={receivablesError}
               onReceiveCustomer={(receivable) =>
@@ -669,12 +673,17 @@ export default function PaymentEntriesPage() {
           salesInvoiceName={receivableTarget.salesInvoiceName}
           outstandingAmount={receivableTarget.outstandingAmount}
           defaultAmount={receivableTarget.defaultAmount}
-          invoiceCurrency={receivablesCurrency}
+          invoiceCurrency={receivablesCurrency || currencySymbol}
           allocationTargets={receivableTarget.allocationTargets}
           onClose={() => setReceivableTarget(null)}
           onCreated={() => {
             setReceivableTarget(null);
             loadReceivables();
+            // Also refresh the By Invoice tab's data: a payment made here can settle
+            // an invoice shown there, and that table only refetches on invoiceSearch
+            // changes, not on tab switches. Without this, the stale outstanding figure
+            // leads to a "no outstanding amount" error if the user tries to Receive again.
+            handlePaymentCreated();
           }}
         />
       )}
