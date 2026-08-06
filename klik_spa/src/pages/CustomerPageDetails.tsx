@@ -38,6 +38,7 @@ import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
+import { useCustomerReceivable } from "../hooks/useCustomerReceivable";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 
@@ -69,6 +70,9 @@ export default function CustomerDetailsPage() {
   const { id: customerId } = useParams();
   // @ts-expect-error just ignore
   const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
+  const { receivable: customerReceivable } = useCustomerReceivable(
+    showPaymentModal ? customer?.id || null : null
+  );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
   const { posDetails } = usePOSProfileStore();
 
@@ -692,7 +696,9 @@ export default function CustomerDetailsPage() {
         {showPaymentModal && (
           <CustomerPaymentEntryModal
             customer={customer}
+            allocationTargets={customerReceivable?.invoices}
             onClose={() => setShowPaymentModal(false)}
+            onCreated={handleInvoicePaymentCreated}
           />
         )}
 
@@ -1135,7 +1141,9 @@ export default function CustomerDetailsPage() {
         {showPaymentModal && (
           <CustomerPaymentEntryModal
             customer={customer}
+            allocationTargets={customerReceivable?.invoices}
             onClose={() => setShowPaymentModal(false)}
+            onCreated={handleInvoicePaymentCreated}
           />
         )}
 

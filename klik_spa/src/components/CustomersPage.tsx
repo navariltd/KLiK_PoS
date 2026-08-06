@@ -14,6 +14,7 @@ import {
 
 } from "lucide-react"
 import { useCustomers } from "../hooks/useCustomers" // Import the hook
+import { useCustomerReceivable } from "../hooks/useCustomerReceivable"
 import AddCustomerModal from "./customer/AddCustomerModal"
 import CustomerPaymentEntryModal from "./customer/CustomerPaymentEntryModal"
 import type { Customer } from "../types/customer"
@@ -30,6 +31,7 @@ export default function CustomersPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null)
+  const { receivable: paymentReceivable } = useCustomerReceivable(paymentCustomer?.id || null)
   const [prefilledData, setPrefilledData] = useState<{name?: string, email?: string, phone?: string}>({})
   const [globalTotals, setGlobalTotals] = useState<{ total_customers: number; total_invoices: number } | null>(null)
   const [canManageCustomers, setCanManageCustomers] = useState(false)
@@ -444,7 +446,9 @@ export default function CustomersPage() {
         {paymentCustomer && (
           <CustomerPaymentEntryModal
             customer={paymentCustomer}
+            allocationTargets={paymentReceivable?.invoices}
             onClose={() => setPaymentCustomer(null)}
+            onCreated={() => setPaymentCustomer(null)}
           />
         )}
 
@@ -701,7 +705,9 @@ export default function CustomersPage() {
       {paymentCustomer && (
         <CustomerPaymentEntryModal
           customer={paymentCustomer}
+          allocationTargets={paymentReceivable?.invoices}
           onClose={() => setPaymentCustomer(null)}
+          onCreated={() => setPaymentCustomer(null)}
         />
       )}
     </div>

@@ -229,9 +229,12 @@ export async function reconcilePaymentEntryWithInvoice(
   return result.message;
 }
 
-export async function getCustomerReceivables(asOfDate?: string): Promise<CustomerReceivablesResponse> {
+export async function getCustomerReceivables(
+  options: { asOfDate?: string; customer?: string } = {}
+): Promise<CustomerReceivablesResponse> {
   const params = new URLSearchParams();
-  if (asOfDate) params.set("as_of_date", asOfDate);
+  if (options.asOfDate) params.set("as_of_date", options.asOfDate);
+  if (options.customer) params.set("customer", options.customer);
   const query = params.toString();
 
   const response = await fetch(
