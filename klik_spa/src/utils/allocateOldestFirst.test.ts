@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateOldestFirst } from "./allocateOldestFirst";
+import { allocateOldestFirst, splitSingleInvoice } from "./allocateOldestFirst";
 import type { ReceivableInvoice } from "../services/paymentEntry";
 
 const invoice = (name: string, outstanding: number): ReceivableInvoice => ({
@@ -79,5 +79,31 @@ describe("allocateOldestFirst", () => {
       { sales_invoice: "INV-002", allocated_amount: 0.2 },
     ]);
     expect(result.unallocated).toBe(0);
+  });
+});
+
+describe("splitSingleInvoice", () => {
+  it("settles the invoice and leaves the excess unallocated", () => {
+    expect(splitSingleInvoice(2500, 2000)).toEqual({ allocated: 2000, unallocated: 500 });
+  });
+
+  it("allocates everything when the amount is below the outstanding", () => {
+    expect(splitSingleInvoice(500, 2000)).toEqual({ allocated: 500, unallocated: 0 });
+  });
+
+  it("allocates exactly on an exact payment", () => {
+    expect(splitSingleInvoice(2000, 2000)).toEqual({ allocated: 2000, unallocated: 0 });
+  });
+
+  it("allocates nothing for a non-finite amount", () => {
+    expect(splitSingleInvoice(Number("abc"), 2000)).toEqual({ allocated: 0, unallocated: 0 });
+  });
+
+  it("allocates nothing when the invoice has no outstanding", () => {
+    expect(splitSingleInvoice(500, 0)).toEqual({ allocated: 0, unallocated: 500 });
+  });
+
+  it("rounds to two decimals", () => {
+    expect(splitSingleInvoice(0.3, 0.1)).toEqual({ allocated: 0.1, unallocated: 0.2 });
   });
 });

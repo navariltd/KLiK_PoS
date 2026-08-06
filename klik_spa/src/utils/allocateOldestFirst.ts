@@ -33,3 +33,17 @@ export function allocateOldestFirst(amount: number, invoices: ReceivableInvoice[
 
   return { allocations, unallocated: remaining };
 }
+
+/**
+ * Split a payment against a single invoice. The invoice settles up to its outstanding and
+ * any excess is left unallocated, which the backend records as an advance — the same rule
+ * the customer-level allocation follows.
+ */
+export function splitSingleInvoice(
+  amount: number,
+  outstanding: number
+): { allocated: number; unallocated: number } {
+  const paid = round2(Number.isFinite(amount) ? Math.max(0, amount) : 0);
+  const allocated = round2(Math.min(paid, Math.max(0, outstanding)));
+  return { allocated, unallocated: round2(paid - allocated) };
+}

@@ -8,7 +8,7 @@ import { createCustomerPaymentEntry } from "../../services/paymentEntry";
 import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
-import { allocateOldestFirst } from "../../utils/allocateOldestFirst";
+import { allocateOldestFirst, splitSingleInvoice } from "../../utils/allocateOldestFirst";
 import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
 
 interface CustomerPaymentEntryModalProps {
@@ -61,12 +61,16 @@ export default function CustomerPaymentEntryModal({
     () => (allocationTargets?.length ? allocateOldestFirst(numericAmount, allocationTargets) : null),
     [allocationTargets, numericAmount]
   );
-  const exceedsOutstanding = Boolean(
-    salesInvoiceName && outstandingAmount !== undefined && numericAmount > Number(outstandingAmount) + 0.00001
+  const singleSplit = useMemo(
+    () =>
+      salesInvoiceName && outstandingAmount !== undefined
+        ? splitSingleInvoice(numericAmount, Number(outstandingAmount))
+        : null,
+    [salesInvoiceName, outstandingAmount, numericAmount]
   );
   const missingReference = referenceRequired && !referenceNo.trim();
   const canSubmit =
-    numericAmount > 0 && Boolean(modeOfPayment) && !exceedsOutstanding && !missingReference && !isSubmitting;
+    numericAmount > 0 && Boolean(modeOfPayment) && !missingReference && !isSubmitting;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -79,7 +83,7 @@ export default function CustomerPaymentEntryModal({
         amount: numericAmount,
         mode_of_payment: modeOfPayment,
         sales_invoice: allocationSplit ? undefined : salesInvoiceName,
-        allocated_amount: !allocationSplit && salesInvoiceName ? numericAmount : undefined,
+        allocated_amount: !allocationSplit && salesInvoiceName ? singleSplit?.allocated : undefined,
         allocations: allocationSplit?.allocations.length ? allocationSplit.allocations : undefined,
         reference_no: referenceNo.trim() || undefined,
         reference_date: referenceDate || undefined,
@@ -200,9 +204,14 @@ export default function CustomerPaymentEntryModal({
                 {formatCurrencyWithSymbol(numericAmount, invoiceCurrency || currencySymbol)}
               </p>
             )}
-            {exceedsOutstanding && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                Amount cannot exceed the invoice outstanding balance.
+            {singleSplit && singleSplit.unallocated > 0 && (
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                {formatCurrencyWithSymbol(singleSplit.allocated, invoiceCurrency || currencySymbol)}{" "}
+                settles this invoice;{" "}
+                <span className="font-medium text-green-700 dark:text-green-300">
+                  {formatCurrencyWithSymbol(singleSplit.unallocated, invoiceCurrency || currencySymbol)}
+                </span>{" "}
+                will be left as an unallocated advance.
               </p>
             )}
           </div>
