@@ -47,3 +47,8 @@ export function splitSingleInvoice(
   const allocated = round2(Math.min(paid, Math.max(0, outstanding)));
   return { allocated, unallocated: round2(paid - allocated) };
 }
+
+/** Total outstanding across the given invoices, rounded once at the end. */
+export function sumOutstanding(invoices: ReceivableInvoice[]): number {
+  return round2((invoices || []).reduce((total, invoice) => total + Math.max(0, invoice.outstanding), 0));
+}

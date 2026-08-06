@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateOldestFirst, splitSingleInvoice } from "./allocateOldestFirst";
+import { allocateOldestFirst, splitSingleInvoice, sumOutstanding } from "./allocateOldestFirst";
 import type { ReceivableInvoice } from "../services/paymentEntry";
 
 const invoice = (name: string, outstanding: number): ReceivableInvoice => ({
@@ -105,5 +105,23 @@ describe("splitSingleInvoice", () => {
 
   it("rounds to two decimals", () => {
     expect(splitSingleInvoice(0.3, 0.1)).toEqual({ allocated: 0.1, unallocated: 0.2 });
+  });
+});
+
+describe("sumOutstanding", () => {
+  it("adds up the outstanding of the invoices given", () => {
+    expect(sumOutstanding([invoice("A", 8100), invoice("B", 2000)])).toBe(10100);
+  });
+
+  it("is zero for an empty list", () => {
+    expect(sumOutstanding([])).toBe(0);
+  });
+
+  it("rounds to two decimals rather than accumulating float drift", () => {
+    expect(sumOutstanding([invoice("A", 0.1), invoice("B", 0.2)])).toBe(0.3);
+  });
+
+  it("ignores invoices with no outstanding", () => {
+    expect(sumOutstanding([invoice("A", 0), invoice("B", 500)])).toBe(500);
   });
 });

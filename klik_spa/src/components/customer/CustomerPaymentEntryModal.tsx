@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Loader2, X } from "lucide-react";
+import { Banknote, Check, Loader2, X } from "lucide-react";
 import { toast } from "react-toastify";
 import type { Customer } from "../../types/customer";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
@@ -8,7 +8,7 @@ import { createCustomerPaymentEntry } from "../../services/paymentEntry";
 import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
-import { allocateOldestFirst, splitSingleInvoice } from "../../utils/allocateOldestFirst";
+import { allocateOldestFirst, splitSingleInvoice, sumOutstanding } from "../../utils/allocateOldestFirst";
 import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
 
 interface CustomerPaymentEntryModalProps {
@@ -42,6 +42,7 @@ export default function CustomerPaymentEntryModal({
   const [referenceDate, setReferenceDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
 
   const selectableModes = useMemo(() => selectableReceiveModes(modes), [modes]);
   const defaultMode = useMemo(() => defaultReceiveMode(modes), [modes]);
@@ -56,11 +57,37 @@ export default function CustomerPaymentEntryModal({
     }
   }, [defaultMode, modeOfPayment]);
 
-  const numericAmount = Number(amount);
-  const allocationSplit = useMemo(
-    () => (allocationTargets?.length ? allocateOldestFirst(numericAmount, allocationTargets) : null),
-    [allocationTargets, numericAmount]
+  // Identity-independent key: a parent that rebuilds the array each render would otherwise
+  // retrigger the effects below forever.
+  const allocationKey = useMemo(
+    () => (allocationTargets || []).map((invoice) => invoice.name).join("|"),
+    [allocationTargets]
   );
+
+  // Every invoice starts selected, so the modal opens the way it always has: amount
+  // pre-filled with the total and everything allocated oldest-first.
+  useEffect(() => {
+    setSelectedInvoices(new Set((allocationTargets || []).map((invoice) => invoice.name)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allocationKey]);
+
+  // Selection drives the amount. Typing over it is allowed — the excess simply becomes an
+  // advance — but the next selection change resyncs, so there is no hidden edited state.
+  useEffect(() => {
+    if (!allocationTargets?.length) return;
+    const total = sumOutstanding(
+      allocationTargets.filter((invoice) => selectedInvoices.has(invoice.name))
+    );
+    setAmount(total ? String(total) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInvoices, allocationKey]);
+
+  const numericAmount = Number(amount);
+  const allocationSplit = useMemo(() => {
+    if (!allocationTargets?.length) return null;
+    const chosen = allocationTargets.filter((invoice) => selectedInvoices.has(invoice.name));
+    return allocateOldestFirst(numericAmount, chosen);
+  }, [allocationTargets, selectedInvoices, numericAmount]);
   const singleSplit = useMemo(
     () =>
       salesInvoiceName && outstandingAmount !== undefined
@@ -148,38 +175,70 @@ export default function CustomerPaymentEntryModal({
                 Allocation
               </div>
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {allocationSplit.allocations.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                    Enter an amount to allocate.
-                  </div>
-                )}
-                {allocationSplit.allocations.map((allocation) => {
-                  const target = allocationTargets?.find((i) => i.name === allocation.sales_invoice);
+                {allocationTargets?.map((target) => {
+                  const isSelected = selectedInvoices.has(target.name);
+                  const allocated = allocationSplit?.allocations.find(
+                    (allocation) => allocation.sales_invoice === target.name
+                  )?.allocated_amount;
                   return (
-                    <div
-                      key={allocation.sales_invoice}
-                      className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                    <button
+                      key={target.name}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() =>
+                        setSelectedInvoices((current) => {
+                          const next = new Set(current);
+                          if (next.has(target.name)) next.delete(target.name);
+                          else next.add(target.name);
+                          return next;
+                        })
+                      }
+                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${
+                        isSelected
+                          ? "bg-beveren-50 dark:bg-beveren-950/30"
+                          : "opacity-60 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      }`}
                     >
-                      <span className="min-w-0 truncate text-gray-900 dark:text-white">
-                        {allocation.sales_invoice}
-                        {target?.due_date ? (
-                          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                            due {target.due_date}
-                          </span>
-                        ) : null}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            isSelected
+                              ? "border-beveren-600 bg-beveren-600 text-white"
+                              : "border-gray-300 dark:border-gray-600"
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {isSelected ? <Check size={12} /> : null}
+                        </span>
+                        <span className="min-w-0 truncate text-gray-900 dark:text-white">
+                          {target.name}
+                          {target.due_date ? (
+                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                              due {target.due_date}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
                       <span className="shrink-0 font-medium text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(allocation.allocated_amount, invoiceCurrency || currencySymbol)}
+                        {formatCurrencyWithSymbol(
+                          allocated ?? target.outstanding,
+                          invoiceCurrency || currencySymbol
+                        )}
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
-                {allocationSplit.unallocated > 0 && (
+                {allocationSplit && allocationSplit.unallocated > 0 && (
                   <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                     <span className="text-gray-500 dark:text-gray-400">Unallocated (advance)</span>
                     <span className="shrink-0 font-medium text-green-700 dark:text-green-300">
                       {formatCurrencyWithSymbol(allocationSplit.unallocated, invoiceCurrency || currencySymbol)}
                     </span>
+                  </div>
+                )}
+                {selectedInvoices.size === 0 && (
+                  <div className="px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    No invoice selected — the whole amount will be received as an advance.
                   </div>
                 )}
               </div>
