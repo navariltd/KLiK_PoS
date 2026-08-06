@@ -557,7 +557,15 @@ def get_payment_modes():
 			# The Receive modal keys its reference-number requirement off the ACCOUNT type,
 			# not the mode type: an M-Pesa mode is type Phone but usually lands in a Bank
 			# account, and it is the account that drives ERPNext's mandatory-reference rule.
-			account = _get_mode_of_payment_account(mode["mode_of_payment"], company)
+			# One broken mode must not take down the whole dropdown. This endpoint also
+			# feeds cart checkout and the opening entry dialog, and
+			# _get_mode_of_payment_account uses get_doc, which raises on an orphaned
+			# Mode of Payment link. Before these two fields existed, such a row degraded
+			# to type "Default" and the loop carried on; keep that behaviour.
+			try:
+				account = _get_mode_of_payment_account(mode["mode_of_payment"], company)
+			except Exception:
+				account = None
 			mode["account"] = account
 			mode["account_type"] = (
 				frappe.db.get_value("Account", account, "account_type") if account else None
