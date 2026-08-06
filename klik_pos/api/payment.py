@@ -549,9 +549,19 @@ def get_payment_modes():
 			order_by="idx asc",
 		)
 
+		company = pos_doc.company
 		for mode in payment_modes:
 			payment_type = frappe.get_value("Mode of Payment", mode["mode_of_payment"], "type")
 			mode["type"] = payment_type or "Default"
+
+			# The Receive modal keys its reference-number requirement off the ACCOUNT type,
+			# not the mode type: an M-Pesa mode is type Phone but usually lands in a Bank
+			# account, and it is the account that drives ERPNext's mandatory-reference rule.
+			account = _get_mode_of_payment_account(mode["mode_of_payment"], company)
+			mode["account"] = account
+			mode["account_type"] = (
+				frappe.db.get_value("Account", account, "account_type") if account else None
+			)
 
 		return {"success": True, "pos_profile": pos_doc.name, "data": payment_modes}
 
