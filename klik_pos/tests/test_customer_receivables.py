@@ -184,3 +184,16 @@ class TestGroupReceivableRows(FrappeTestCase):
 		[prepaid] = _group_receivable_rows(rows, "2026-08-05")
 		self.assertEqual(prepaid["unallocated_advance"], 300.0)
 		self.assertEqual(prepaid["invoices"], [])
+
+
+class TestGetCustomerReceivablesSignature(FrappeTestCase):
+	"""The Customers pages fetch one customer, not the whole company's AR."""
+
+	def test_accepts_a_customer_argument(self):
+		import inspect
+
+		from klik_pos.api.receivables import get_customer_receivables
+
+		params = inspect.signature(get_customer_receivables).parameters
+		self.assertIn("customer", params)
+		self.assertIsNone(params["customer"].default)

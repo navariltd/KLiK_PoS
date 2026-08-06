@@ -107,8 +107,11 @@ def _group_receivable_rows(rows, as_of_date, statuses=None):
 
 
 @frappe.whitelist()
-def get_customer_receivables(as_of_date=None):
+def get_customer_receivables(as_of_date=None, customer=None):
 	"""One row per customer with a receivable balance, with their open invoices nested.
+
+	Pass `customer` to narrow the report to a single party — the Receive modal on the
+	Customers pages needs one customer's invoices, not the whole company's AR.
 
 	Delegates to ERPNext's Accounts Receivable report engine (Payment Ledger Entry based)
 	rather than a bespoke Sales Invoice query, so credit notes, returns and journal
@@ -121,13 +124,17 @@ def get_customer_receivables(as_of_date=None):
 		pos_profile = get_current_pos_profile()
 		as_of_date = getdate(as_of_date or nowdate())
 
-		_columns, data, *_rest = _get_ar_execute()(
-			{
-				"company": pos_profile.company,
-				"report_date": as_of_date,
-				"party_type": "Customer",
-			}
-		)
+		filters = {
+			"company": pos_profile.company,
+			"report_date": as_of_date,
+			"party_type": "Customer",
+		}
+		if customer:
+			# The AR report takes party as a list. Filtering here rather than post-hoc keeps
+			# the engine from building the whole company's ledger for a single-customer modal.
+			filters["party"] = [customer]
+
+		_columns, data, *_rest = _get_ar_execute()(filters)
 
 		voucher_nos = [
 			row["voucher_no"]
