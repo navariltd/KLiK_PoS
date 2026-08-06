@@ -8,7 +8,12 @@ import { createCustomerPaymentEntry } from "../../services/paymentEntry";
 import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
-import { allocateOldestFirst, splitSingleInvoice, sumOutstanding } from "../../utils/allocateOldestFirst";
+import {
+  allocateOldestFirst,
+  allocatedAmountFor,
+  splitSingleInvoice,
+  sumOutstanding,
+} from "../../utils/allocateOldestFirst";
 import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
 
 interface CustomerPaymentEntryModalProps {
@@ -177,9 +182,11 @@ export default function CustomerPaymentEntryModal({
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {allocationTargets?.map((target) => {
                   const isSelected = selectedInvoices.has(target.name);
-                  const allocated = allocationSplit?.allocations.find(
-                    (allocation) => allocation.sales_invoice === target.name
-                  )?.allocated_amount;
+                  // A selected row shows what it will actually receive — which is zero when
+                  // the amount ran out before reaching it. An unselected row shows what the
+                  // invoice owes, as a reference figure. Never show an outstanding balance
+                  // in a selected row: it reads as "this will be paid" when it will not.
+                  const allocated = allocatedAmountFor(allocationSplit, target.name);
                   return (
                     <button
                       key={target.name}
@@ -193,7 +200,7 @@ export default function CustomerPaymentEntryModal({
                           return next;
                         })
                       }
-                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${
+                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-beveren-500 ${
                         isSelected
                           ? "bg-beveren-50 dark:bg-beveren-950/30"
                           : "opacity-60 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -219,9 +226,15 @@ export default function CustomerPaymentEntryModal({
                           ) : null}
                         </span>
                       </span>
-                      <span className="shrink-0 font-medium text-gray-900 dark:text-white">
+                      <span
+                        className={`shrink-0 font-medium ${
+                          isSelected && allocated === 0
+                            ? "text-gray-400 dark:text-gray-500"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
                         {formatCurrencyWithSymbol(
-                          allocated ?? target.outstanding,
+                          isSelected ? allocated : target.outstanding,
                           invoiceCurrency || currencySymbol
                         )}
                       </span>

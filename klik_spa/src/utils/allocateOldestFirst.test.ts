@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateOldestFirst, splitSingleInvoice, sumOutstanding } from "./allocateOldestFirst";
+import { allocateOldestFirst, allocatedAmountFor, splitSingleInvoice, sumOutstanding } from "./allocateOldestFirst";
 import type { ReceivableInvoice } from "../services/paymentEntry";
 
 const invoice = (name: string, outstanding: number): ReceivableInvoice => ({
@@ -123,5 +123,35 @@ describe("sumOutstanding", () => {
 
   it("ignores invoices with no outstanding", () => {
     expect(sumOutstanding([invoice("A", 0), invoice("B", 500)])).toBe(500);
+  });
+});
+
+describe("allocatedAmountFor", () => {
+  const targets = [invoice("A", 8100), invoice("B", 2000)];
+
+  it("reports zero for an invoice the amount never reached", () => {
+    // The exact defect this guards: 5,000 across 8,100 + 2,000 funds only A.
+    // B must read 0, not its 2,000 outstanding — it will receive nothing.
+    const split = allocateOldestFirst(5000, targets);
+    expect(allocatedAmountFor(split, "A")).toBe(5000);
+    expect(allocatedAmountFor(split, "B")).toBe(0);
+  });
+
+  it("reports what each invoice actually gets when all are funded", () => {
+    const split = allocateOldestFirst(10100, targets);
+    expect(allocatedAmountFor(split, "A")).toBe(8100);
+    expect(allocatedAmountFor(split, "B")).toBe(2000);
+  });
+
+  it("makes the displayed rows reconcile with the amount entered", () => {
+    // The panel is only trustworthy if what it shows adds up to what posts.
+    const split = allocateOldestFirst(5000, targets);
+    const shown = targets.reduce((total, target) => total + allocatedAmountFor(split, target.name), 0);
+    expect(shown + split.unallocated).toBe(5000);
+  });
+
+  it("reports zero for an unknown invoice or a null split", () => {
+    expect(allocatedAmountFor(allocateOldestFirst(5000, targets), "GHOST")).toBe(0);
+    expect(allocatedAmountFor(null, "A")).toBe(0);
   });
 });

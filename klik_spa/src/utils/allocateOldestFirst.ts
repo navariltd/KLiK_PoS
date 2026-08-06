@@ -52,3 +52,18 @@ export function splitSingleInvoice(
 export function sumOutstanding(invoices: ReceivableInvoice[]): number {
   return round2((invoices || []).reduce((total, invoice) => total + Math.max(0, invoice.outstanding), 0));
 }
+
+/**
+ * What a split actually allocates to one invoice — zero when it allocates nothing.
+ *
+ * `allocateOldestFirst` omits invoices it cannot fund (it breaks once the amount runs out),
+ * so "absent from the allocations array" means "receives nothing". A row that reads the
+ * array directly and falls back to the invoice's outstanding would display money that will
+ * not be paid.
+ */
+export function allocatedAmountFor(split: AllocationSplit | null, invoiceName: string): number {
+  return (
+    split?.allocations.find((allocation) => allocation.sales_invoice === invoiceName)
+      ?.allocated_amount ?? 0
+  );
+}
