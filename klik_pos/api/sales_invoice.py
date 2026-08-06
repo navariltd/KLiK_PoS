@@ -157,6 +157,88 @@ def _ensure_return_allowed():
 	if not _is_return_allowed_for_current_profile():
 		frappe.throw(_("Returns are disabled for the current POS Profile."))
 
+
+def _compute_net_cash_held(grand_total, outstanding_amount, credit_already_applied, cash_already_refunded):
+	"""Cash the customer actually handed over and we are still holding.
+
+	This is the ceiling for a refund. It is NOT ``paid_amount``: that field is 0 for invoices
+	settled by a Payment Entry, and it takes no account of earlier returns.
+
+	``grand_total - outstanding`` covers both POS payment rows and Payment Entries, but it
+	double-counts outstanding that earlier credit notes knocked off (``credit_already_applied``)
+	and ignores cash handed back by earlier returns (``cash_already_refunded``).
+	"""
+	held = (
+		flt(grand_total) - flt(outstanding_amount) - flt(credit_already_applied) - flt(cash_already_refunded)
+	)
+	return max(0.0, held)
+
+
+def _get_prior_return_adjustments(invoice_name):
+	"""(credit_already_applied, cash_already_refunded) from submitted returns against an invoice."""
+	prior_returns = frappe.get_all(
+		"Sales Invoice",
+		filters={"return_against": invoice_name, "is_return": 1, "docstatus": 1},
+		fields=["grand_total", "paid_amount", "update_outstanding_for_self"],
+	)
+
+	credit_already_applied = 0.0
+	cash_already_refunded = 0.0
+	for row in prior_returns:
+		# Only returns that pushed their credit onto the original reduced its outstanding.
+		if not cint(row.update_outstanding_for_self):
+			credit_already_applied += abs(flt(row.grand_total))
+		cash_already_refunded += abs(flt(row.paid_amount))
+
+	return credit_already_applied, cash_already_refunded
+
+
+def _get_refundable_cash(original_invoice, return_doc=None):
+	"""Maximum cash that may be paid back for a return against ``original_invoice``.
+
+	A credit sale returns 0 here, so its return carries no payment rows at all and the credit
+	note keeps a real outstanding balance that can be allocated against the invoice.
+
+	Non-POS returns also return 0: ERPNext's ``set_paid_amount`` unconditionally clears
+	``payments`` on a non-POS return, so a payment row there would be silently dropped and we
+	would report a refund that never happened. Refunding a non-POS credit note is a separate
+	Payment Entry against the credit note.
+	"""
+	if return_doc is not None and not cint(return_doc.is_pos):
+		return 0.0
+
+	credit_already_applied, cash_already_refunded = _get_prior_return_adjustments(original_invoice.name)
+	return _compute_net_cash_held(
+		original_invoice.grand_total,
+		original_invoice.outstanding_amount,
+		credit_already_applied,
+		cash_already_refunded,
+	)
+
+
+def _allocate_return_against_original(return_doc, original_invoice, refunded_cash):
+	"""Point the credit note's leftover balance at the original invoice where it fits.
+
+	ERPNext will not do this for us: ``validate_against_voucher_outstanding`` early-returns for
+	POS documents, so it neither warns nor caps ``update_outstanding_for_self`` on POS returns.
+	"""
+	precision = return_doc.precision("grand_total") or 2
+	return_total = abs(flt(return_doc.rounded_total or return_doc.grand_total, precision))
+	remainder = flt(return_total - flt(refunded_cash), precision)
+
+	if remainder <= 0:
+		# Fully refunded in cash - nothing left to allocate.
+		return
+
+	original_outstanding = flt(original_invoice.outstanding_amount, precision)
+	if remainder <= original_outstanding:
+		# Knock the credit straight off the original invoice.
+		return_doc.update_outstanding_for_self = 0
+	else:
+		# Would drive the original negative; leave the credit on the note itself so it shows up
+		# in Payment Reconciliation instead.
+		return_doc.update_outstanding_for_self = 1
+
 def _coerce_queue_status(status):
 	if not status:
 		return QUEUE_STATUSES["queued"]
@@ -940,6 +1022,14 @@ def get_invoice_details(invoice_id):
 			"User", invoice_data.get("owner"), "full_name"
 		) or invoice_data.get("owner")
 		invoice_data["cashier_name"] = cashier_name
+
+		# Ceiling for a cash refund on this invoice. 0 for a credit sale, so the return dialog can
+		# show a credit note instead of offering money back. Derived here so the UI never has to
+		# re-implement the rule.
+		# The return inherits is_pos from this invoice, so it doubles as the return_doc probe.
+		invoice_data["refundable_cash"] = (
+			_get_refundable_cash(invoice, invoice) if not invoice.is_return else 0.0
+		)
 
 		return {
 			"success": True,
@@ -3096,16 +3186,33 @@ def return_sales_invoice(invoice_name):
 		for item in return_doc.items:
 			item.qty = -abs(item.qty)
 
+		# Cash back is capped at what the customer actually handed over, so a credit sale refunds
+		# nothing and its credit note keeps an outstanding balance to allocate.
+		refundable_cash = _get_refundable_cash(original_invoice, return_doc)
+		refunded_cash = 0.0
+
 		return_doc.payments = []
 		for p in original_invoice.payments:
+			remaining = refundable_cash - refunded_cash
+			if remaining <= 0:
+				break
+			amount = min(abs(flt(p.amount)), remaining)
+			if amount <= 0:
+				continue
 			return_doc.append(
 				"payments",
 				{
 					"mode_of_payment": p.mode_of_payment,
-					"amount": -abs(p.amount),
+					"amount": -abs(amount),
 					"account": p.account,
 				},
 			)
+			refunded_cash += amount
+
+		return_doc.calculate_taxes_and_totals()
+
+		# Whatever was not refunded in cash is credit; allocate it against the original invoice.
+		_allocate_return_against_original(return_doc, original_invoice, refunded_cash)
 
 		return_doc.save(ignore_permissions=True)
 		_enforce_submit_permission(return_doc)
@@ -3681,6 +3788,14 @@ def create_partial_return(
 
 		final_payment_method = payment_method if payment_method else "Cash"
 
+		# Cash back is capped at what the customer actually handed over. A credit sale refunds
+		# nothing: the return then carries no payment rows, so the credit note keeps a real
+		# outstanding balance instead of silently netting itself to zero.
+		refundable_cash = _get_refundable_cash(original_invoice, return_doc)
+		refunded_cash = min(flt(final_return_amount), refundable_cash)
+		if refunded_cash < 0:
+			refunded_cash = 0.0
+
 		# Optionally persist the auto-calculated expected refund if a custom field exists
 		try:
 			_si_meta = frappe.get_meta("Sales Invoice")
@@ -3691,29 +3806,53 @@ def create_partial_return(
 		except Exception:
 			pass
 
-		if final_return_amount > 0:
+		if refunded_cash > 0:
 			return_doc.append(
 				"payments",
 				{
 					"mode_of_payment": final_payment_method,
-					"amount": -abs(final_return_amount),
+					"amount": -abs(refunded_cash),
 				},
 			)
-		print("Mko 3", -abs(final_return_amount))
+
 		# Recalculate totals (payment amount stays as user entered)
 		try:
 			return_doc.calculate_taxes_and_totals()
 		except Exception:
 			pass
 
+		# Whatever was not refunded in cash is credit; allocate it against the original invoice.
+		_allocate_return_against_original(return_doc, original_invoice, refunded_cash)
+
 		return_doc.save(ignore_permissions=True)
 		_enforce_submit_permission(return_doc)
 		return_doc.submit()
 
+		precision = return_doc.precision("grand_total") or 2
+		credited_amount = flt(
+			abs(flt(return_doc.rounded_total or return_doc.grand_total)) - flt(refunded_cash), precision
+		)
+
+		if refunded_cash > 0 and credited_amount > 0:
+			message = _("Return created: {0} (refunded {1} via {2}, {3} credited to the invoice)").format(
+				return_doc.name, flt(refunded_cash, precision), final_payment_method, credited_amount
+			)
+		elif refunded_cash > 0:
+			message = _("Return created: {0} (refunded {1} via {2})").format(
+				return_doc.name, flt(refunded_cash, precision), final_payment_method
+			)
+		else:
+			message = _("Return created: {0} ({1} credited to the invoice, no cash refunded)").format(
+				return_doc.name, credited_amount
+			)
+
 		return {
 			"success": True,
 			"return_invoice": return_doc.name,
-			"message": f"Return created successfully: {return_doc.name} (Payment: {final_payment_method})",
+			"refunded_amount": flt(refunded_cash, precision),
+			"credited_amount": credited_amount,
+			"payment_method": final_payment_method if refunded_cash > 0 else None,
+			"message": message,
 		}
 
 	except Exception as e:

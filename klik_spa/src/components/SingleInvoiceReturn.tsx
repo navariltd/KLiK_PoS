@@ -47,6 +47,9 @@ export default function SingleInvoiceReturn({
   // Payment method states
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [returnAmount, setReturnAmount] = useState<number>(0);
+  // Cash ceiling from the backend: how much the customer actually handed over and we still hold.
+  // 0 for a credit sale, in which case the whole return becomes a credit note.
+  const [refundableCash, setRefundableCash] = useState<number>(0);
 
   useEffect(() => {
     if (isOpen && invoice) {
@@ -120,7 +123,11 @@ export default function SingleInvoiceReturn({
         invoiceWithItems = invoiceDetails.data.data || invoiceDetails.data;
         // Store the original invoice grand total and paid amount for return calculations
         setOriginalInvoiceGrandTotal(invoiceWithItems.grand_total || 0);
-        setOriginalInvoicePaidAmount(invoiceWithItems.paid_amount || invoiceWithItems.grand_total || 0);
+        // Do NOT fall back to grand_total when paid_amount is 0: a credit sale genuinely has 0
+        // paid, and coercing it to grand_total made the dialog offer a cash refund to a customer
+        // who had paid nothing.
+        setOriginalInvoicePaidAmount(Number(invoiceWithItems.refundable_cash ?? invoiceWithItems.paid_amount ?? 0));
+        setRefundableCash(Number(invoiceWithItems.refundable_cash ?? 0));
       } else {
         console.error('Failed to fetch invoice details:', invoiceDetails.error);
         throw new Error(invoiceDetails.error || 'Failed to fetch invoice details from backend');
@@ -224,7 +231,9 @@ export default function SingleInvoiceReturn({
       const result = await createPartialReturn(invoiceName, itemsToReturn, selectedPaymentMethod, returnAmount);
 
       if (result.success) {
-        toast.success(`Return created successfully (${selectedPaymentMethod})`);
+        // Report what the backend actually did, not what was requested: a credit sale refunds
+        // nothing regardless of the payment method that was picked.
+        toast.success(result.message || 'Return created successfully');
         onSuccess(result.returnInvoice!);
         onClose();
       } else {
@@ -244,6 +253,11 @@ export default function SingleInvoiceReturn({
   );
 
   const hasItemsToReturn = returnItems.some(item => (item.return_qty || 0) > 0);
+
+  // Mirror of the backend rule: cash back is capped at what the customer actually handed over,
+  // and whatever is left of the return becomes credit against the invoice.
+  const cashRefundAmount = Math.min(returnAmount, refundableCash);
+  const creditNoteAmount = Math.round((totalReturnAmount - cashRefundAmount) * 100) / 100;
 
   if (!isOpen) return null;
 
@@ -470,11 +484,35 @@ export default function SingleInvoiceReturn({
         {/* Fixed Footer with Payment Methods and Return Button */}
         {hasItemsToReturn && (
           <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 flex-shrink-0">
-            {/* Payment Method Selection */}
+            {/* Payment Method Selection - only when there is cash to hand back */}
+            {refundableCash <= 0 ? (
+              <div className="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                  Credit note - no refund
+                </h3>
+                <p className="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                  This sale was on credit, so there is no payment to hand back.{" "}
+                  {formatCurrencyWithSymbol(totalReturnAmount, currency)} will be credited against the
+                  invoice, reducing the customer's outstanding balance.
+                </p>
+              </div>
+            ) : (
             <div className="mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
                 Payment Method for Return
               </h3>
+              {creditNoteAmount > 0 && (
+                <div className="mb-3 text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Refund to customer:</span>
+                    <span className="font-semibold">{formatCurrencyWithSymbol(cashRefundAmount, currency)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Credited against invoice:</span>
+                    <span className="font-semibold">{formatCurrencyWithSymbol(creditNoteAmount, currency)}</span>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Payment Method Selection */}
                 <div>
@@ -525,6 +563,7 @@ export default function SingleInvoiceReturn({
                 </div>
               </div>
             </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between">
