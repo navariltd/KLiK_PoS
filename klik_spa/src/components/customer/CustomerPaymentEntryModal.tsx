@@ -9,6 +9,7 @@ import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { allocateOldestFirst } from "../../utils/allocateOldestFirst";
+import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
 
 interface CustomerPaymentEntryModalProps {
   customer: Customer;
@@ -34,10 +35,6 @@ export default function CustomerPaymentEntryModal({
   const { posDetails, currencySymbol } = usePOSProfileStore();
   const posProfileName = posDetails?.name || "";
   const { modes, isLoading, error } = usePaymentModes(posProfileName);
-  const defaultMode = useMemo(
-    () => modes.find((mode) => mode.default === 1)?.mode_of_payment || modes[0]?.mode_of_payment || "",
-    [modes]
-  );
 
   const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : "");
   const [modeOfPayment, setModeOfPayment] = useState("");
@@ -45,6 +42,13 @@ export default function CustomerPaymentEntryModal({
   const [referenceDate, setReferenceDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectableModes = useMemo(() => selectableReceiveModes(modes), [modes]);
+  const defaultMode = useMemo(() => defaultReceiveMode(modes), [modes]);
+  const referenceRequired = useMemo(
+    () => requiresReference(modes, modeOfPayment),
+    [modes, modeOfPayment]
+  );
 
   useEffect(() => {
     if (!modeOfPayment && defaultMode) {
@@ -60,7 +64,9 @@ export default function CustomerPaymentEntryModal({
   const exceedsOutstanding = Boolean(
     salesInvoiceName && outstandingAmount !== undefined && numericAmount > Number(outstandingAmount) + 0.00001
   );
-  const canSubmit = numericAmount > 0 && Boolean(modeOfPayment) && !exceedsOutstanding && !isSubmitting;
+  const missingReference = referenceRequired && !referenceNo.trim();
+  const canSubmit =
+    numericAmount > 0 && Boolean(modeOfPayment) && !exceedsOutstanding && !missingReference && !isSubmitting;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -208,11 +214,11 @@ export default function CustomerPaymentEntryModal({
             <select
               value={modeOfPayment}
               onChange={(event) => setModeOfPayment(event.target.value)}
-              disabled={isLoading || modes.length === 0}
+              disabled={isLoading || selectableModes.length === 0}
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:bg-gray-800/60"
             >
               <option value="">Select payment mode</option>
-              {modes.map((mode) => (
+              {selectableModes.map((mode) => (
                 <option key={mode.mode_of_payment} value={mode.mode_of_payment}>
                   {mode.mode_of_payment}
                 </option>
@@ -223,7 +229,7 @@ export default function CustomerPaymentEntryModal({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Reference No.
+                Reference No.{referenceRequired ? " *" : ""}
               </label>
               <input
                 type="text"
@@ -231,6 +237,11 @@ export default function CustomerPaymentEntryModal({
                 onChange={(event) => setReferenceNo(event.target.value)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               />
+              {referenceRequired && !referenceNo.trim() && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                  {modeOfPayment} is a bank account — a reference number is required.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
