@@ -70,7 +70,7 @@ export default function CustomerDetailsPage() {
   const { id: customerId } = useParams();
   // @ts-expect-error just ignore
   const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
-  const { receivable: customerReceivable } = useCustomerReceivable(
+  const { receivable: customerReceivable, isLoading: isLoadingReceivable } = useCustomerReceivable(
     showPaymentModal ? customer?.id || null : null
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
@@ -693,7 +693,7 @@ export default function CustomerDetailsPage() {
           />
         )}
 
-        {showPaymentModal && (
+        {showPaymentModal && !isLoadingReceivable && (
           <CustomerPaymentEntryModal
             customer={customer}
             allocationTargets={customerReceivable?.invoices}
@@ -1138,7 +1138,7 @@ export default function CustomerDetailsPage() {
           />
         )}
 
-        {showPaymentModal && (
+        {showPaymentModal && !isLoadingReceivable && (
           <CustomerPaymentEntryModal
             customer={customer}
             allocationTargets={customerReceivable?.invoices}

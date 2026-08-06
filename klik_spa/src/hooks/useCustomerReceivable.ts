@@ -13,6 +13,7 @@ export function useCustomerReceivable(customer: string | null) {
   useEffect(() => {
     if (!customer) {
       setReceivable(null);
+      setIsLoading(false);
       return;
     }
     let isCurrent = true;

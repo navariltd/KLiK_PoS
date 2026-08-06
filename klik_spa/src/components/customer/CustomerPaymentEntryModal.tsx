@@ -112,7 +112,7 @@ export default function CustomerPaymentEntryModal({
     try {
       const result = await createCustomerPaymentEntry({
         customer: customer.id,
-        amount: numericAmount,
+        amount: Math.round(numericAmount * 100) / 100,
         mode_of_payment: modeOfPayment,
         sales_invoice: allocationSplit ? undefined : salesInvoiceName,
         allocated_amount: !allocationSplit && salesInvoiceName ? singleSplit?.allocated : undefined,
@@ -252,6 +252,11 @@ export default function CustomerPaymentEntryModal({
                 {selectedInvoices.size === 0 && (
                   <div className="px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
                     No invoice selected — the whole amount will be received as an advance.
+                  </div>
+                )}
+                {selectedInvoices.size > 0 && numericAmount <= 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                    Enter an amount to allocate.
                   </div>
                 )}
               </div>
