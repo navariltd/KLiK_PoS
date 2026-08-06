@@ -233,12 +233,19 @@ export default function CustomerPaymentEntryModal({
                 </option>
               ))}
             </select>
+            {!isLoading && !error && selectableModes.length === 0 && (
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                No payment mode on this POS Profile can be used to receive a payment. M-Pesa
+                modes are excluded until the receive integration is built.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Reference No.{referenceRequired ? " *" : ""}
+                Reference No.
+                {referenceRequired && <span className="ml-1 text-red-500">*</span>}
               </label>
               <input
                 type="text"
