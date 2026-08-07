@@ -52,10 +52,23 @@ class TestStatementDelegation(FrappeTestCase):
 		self.assertEqual(captured["some_new_upstream_arg"], 42)
 
 	def test_missing_app_throws_a_readable_message_not_an_import_error(self):
-		with patch.object(soa, "_upstream", side_effect=ImportError("no module")):
+		# frappe.get_attr raises AppNotInstalledError for an app absent from the site, NOT
+		# ImportError — mocking ImportError here passed while the real path went untested.
+		with patch.object(soa, "_upstream", side_effect=frappe.AppNotInstalledError("not installed")):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
-		self.assertIn("Cecypo Frappe Reports", str(ctx.exception))
+		self.assertIn("cecypo_frappe_reports", str(ctx.exception))
+
+	def test_a_moved_module_still_throws_readably(self):
+		with patch.object(soa, "_upstream", side_effect=ImportError("no module")):
+			with self.assertRaises(frappe.ValidationError):
+				soa._delegate("render_statement_html", customer="ACME")
+
+	def test_is_available_false_without_statement_permission(self):
+		# Resolution is not capability. A user who cannot read the PSOA doctype must not be
+		# shown a button that opens onto a permission error.
+		with patch.object(frappe, "has_permission", return_value=False):
+			self.assertEqual(soa.is_available(), {"available": False})
 
 	def test_missing_attribute_is_treated_as_missing_app(self):
 		with patch.object(soa, "_upstream", side_effect=AttributeError("gone")):

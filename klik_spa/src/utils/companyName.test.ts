@@ -20,6 +20,7 @@ describe("resolveCompanyName", () => {
 
   it("returns an empty string for undefined, null or an empty object", () => {
     expect(resolveCompanyName(undefined)).toBe("");
+    expect(resolveCompanyName(null)).toBe("");
     expect(resolveCompanyName({})).toBe("");
   });
 

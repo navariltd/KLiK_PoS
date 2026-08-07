@@ -29,9 +29,9 @@ def _delegate(method, **kwargs):
 	"""
 	try:
 		fn = _upstream(method)
-	except (ImportError, AttributeError):
+	except (ImportError, AttributeError, frappe.AppNotInstalledError):
 		frappe.throw(
-			_("Statements need the Cecypo Frappe Reports app, which is not installed on this site.")
+			_("Statements need the {0} app, which is not installed on this site.").format(UPSTREAM_APP)
 		)
 
 	# Deliberately NOT wrapped in try/except. Upstream throws carry the reason a user needs —
@@ -42,15 +42,24 @@ def _delegate(method, **kwargs):
 
 @frappe.whitelist()
 def is_available():
-	"""Whether the statement feature can be used on this site.
+	"""Whether the statement feature can be used BY THIS USER on this site.
 
 	Never raises: the frontend calls this to decide whether to render a button at all.
+
+	Resolution is not capability. The upstream endpoints gate on Process Statement Of
+	Accounts read permission, and a site with a Custom DocPerm on that doctype can grant it
+	to a small minority of users. Checking only that the module imports would show the button
+	to everyone and open it onto a permission error.
 	"""
 	try:
 		_upstream("render_statement_html")
-		return {"available": True}
 	except Exception:
 		return {"available": False}
+
+	if not frappe.has_permission("Process Statement Of Accounts", "read"):
+		return {"available": False}
+
+	return {"available": True}
 
 
 @frappe.whitelist()
