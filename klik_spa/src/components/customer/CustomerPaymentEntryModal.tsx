@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Loader2, X } from "lucide-react";
+import { Banknote, Check, Loader2, X } from "lucide-react";
 import { toast } from "react-toastify";
 import type { Customer } from "../../types/customer";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { createCustomerPaymentEntry } from "../../services/paymentEntry";
+import type { ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { extractErrorFromException } from "../../utils/errorExtraction";
+import {
+  allocateOldestFirst,
+  allocatedAmountFor,
+  splitSingleInvoice,
+  sumOutstanding,
+} from "../../utils/allocateOldestFirst";
+import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
 
 interface CustomerPaymentEntryModalProps {
   customer: Customer;
@@ -14,6 +22,7 @@ interface CustomerPaymentEntryModalProps {
   outstandingAmount?: number;
   defaultAmount?: number;
   invoiceCurrency?: string;
+  allocationTargets?: ReceivableInvoice[];
   onClose: () => void;
   onCreated?: (paymentEntryName: string) => void;
 }
@@ -24,16 +33,13 @@ export default function CustomerPaymentEntryModal({
   outstandingAmount,
   defaultAmount,
   invoiceCurrency,
+  allocationTargets,
   onClose,
   onCreated,
 }: CustomerPaymentEntryModalProps) {
   const { posDetails, currencySymbol } = usePOSProfileStore();
   const posProfileName = posDetails?.name || "";
   const { modes, isLoading, error } = usePaymentModes(posProfileName);
-  const defaultMode = useMemo(
-    () => modes.find((mode) => mode.default === 1)?.mode_of_payment || modes[0]?.mode_of_payment || "",
-    [modes]
-  );
 
   const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : "");
   const [modeOfPayment, setModeOfPayment] = useState("");
@@ -41,6 +47,14 @@ export default function CustomerPaymentEntryModal({
   const [referenceDate, setReferenceDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
+
+  const selectableModes = useMemo(() => selectableReceiveModes(modes), [modes]);
+  const defaultMode = useMemo(() => defaultReceiveMode(modes), [modes]);
+  const referenceRequired = useMemo(
+    () => requiresReference(modes, modeOfPayment),
+    [modes, modeOfPayment]
+  );
 
   useEffect(() => {
     if (!modeOfPayment && defaultMode) {
@@ -48,11 +62,47 @@ export default function CustomerPaymentEntryModal({
     }
   }, [defaultMode, modeOfPayment]);
 
-  const numericAmount = Number(amount);
-  const exceedsOutstanding = Boolean(
-    salesInvoiceName && outstandingAmount !== undefined && numericAmount > Number(outstandingAmount) + 0.00001
+  // Identity-independent key: a parent that rebuilds the array each render would otherwise
+  // retrigger the effects below forever.
+  const allocationKey = useMemo(
+    () => (allocationTargets || []).map((invoice) => invoice.name).join("|"),
+    [allocationTargets]
   );
-  const canSubmit = numericAmount > 0 && Boolean(modeOfPayment) && !exceedsOutstanding && !isSubmitting;
+
+  // Every invoice starts selected, so the modal opens the way it always has: amount
+  // pre-filled with the total and everything allocated oldest-first.
+  useEffect(() => {
+    setSelectedInvoices(new Set((allocationTargets || []).map((invoice) => invoice.name)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allocationKey]);
+
+  // Selection drives the amount. Typing over it is allowed — the excess simply becomes an
+  // advance — but the next selection change resyncs, so there is no hidden edited state.
+  useEffect(() => {
+    if (!allocationTargets?.length) return;
+    const total = sumOutstanding(
+      allocationTargets.filter((invoice) => selectedInvoices.has(invoice.name))
+    );
+    setAmount(total ? String(total) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInvoices, allocationKey]);
+
+  const numericAmount = Number(amount);
+  const allocationSplit = useMemo(() => {
+    if (!allocationTargets?.length) return null;
+    const chosen = allocationTargets.filter((invoice) => selectedInvoices.has(invoice.name));
+    return allocateOldestFirst(numericAmount, chosen);
+  }, [allocationTargets, selectedInvoices, numericAmount]);
+  const singleSplit = useMemo(
+    () =>
+      salesInvoiceName && outstandingAmount !== undefined
+        ? splitSingleInvoice(numericAmount, Number(outstandingAmount))
+        : null,
+    [salesInvoiceName, outstandingAmount, numericAmount]
+  );
+  const missingReference = referenceRequired && !referenceNo.trim();
+  const canSubmit =
+    numericAmount > 0 && Boolean(modeOfPayment) && !missingReference && !isSubmitting;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,10 +112,11 @@ export default function CustomerPaymentEntryModal({
     try {
       const result = await createCustomerPaymentEntry({
         customer: customer.id,
-        amount: numericAmount,
+        amount: Math.round(numericAmount * 100) / 100,
         mode_of_payment: modeOfPayment,
-        sales_invoice: salesInvoiceName,
-        allocated_amount: salesInvoiceName ? numericAmount : undefined,
+        sales_invoice: allocationSplit ? undefined : salesInvoiceName,
+        allocated_amount: !allocationSplit && salesInvoiceName ? singleSplit?.allocated : undefined,
+        allocations: allocationSplit?.allocations.length ? allocationSplit.allocations : undefined,
         reference_no: referenceNo.trim() || undefined,
         reference_date: referenceDate || undefined,
         remarks: remarks.trim() || undefined,
@@ -123,6 +174,95 @@ export default function CustomerPaymentEntryModal({
             </div>
           )}
 
+          {allocationSplit && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="border-b border-gray-200 px-3 py-2 text-xs font-medium uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                Allocation
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {allocationTargets?.map((target) => {
+                  const isSelected = selectedInvoices.has(target.name);
+                  // A selected row shows what it will actually receive — which is zero when
+                  // the amount ran out before reaching it. An unselected row shows what the
+                  // invoice owes, as a reference figure. Never show an outstanding balance
+                  // in a selected row: it reads as "this will be paid" when it will not.
+                  const allocated = allocatedAmountFor(allocationSplit, target.name);
+                  return (
+                    <button
+                      key={target.name}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() =>
+                        setSelectedInvoices((current) => {
+                          const next = new Set(current);
+                          if (next.has(target.name)) next.delete(target.name);
+                          else next.add(target.name);
+                          return next;
+                        })
+                      }
+                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-beveren-500 ${
+                        isSelected
+                          ? "bg-beveren-50 dark:bg-beveren-950/30"
+                          : "opacity-60 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      }`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            isSelected
+                              ? "border-beveren-600 bg-beveren-600 text-white"
+                              : "border-gray-300 dark:border-gray-600"
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {isSelected ? <Check size={12} /> : null}
+                        </span>
+                        <span className="min-w-0 truncate text-gray-900 dark:text-white">
+                          {target.name}
+                          {target.due_date ? (
+                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                              due {target.due_date}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span
+                        className={`shrink-0 font-medium ${
+                          isSelected && allocated === 0
+                            ? "text-gray-400 dark:text-gray-500"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {formatCurrencyWithSymbol(
+                          isSelected ? allocated : target.outstanding,
+                          invoiceCurrency || currencySymbol
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+                {allocationSplit && allocationSplit.unallocated > 0 && (
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">Unallocated (advance)</span>
+                    <span className="shrink-0 font-medium text-green-700 dark:text-green-300">
+                      {formatCurrencyWithSymbol(allocationSplit.unallocated, invoiceCurrency || currencySymbol)}
+                    </span>
+                  </div>
+                )}
+                {selectedInvoices.size === 0 && (
+                  <div className="px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    No invoice selected — the whole amount will be received as an advance.
+                  </div>
+                )}
+                {selectedInvoices.size > 0 && numericAmount <= 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                    Enter an amount to allocate.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Amount
@@ -141,9 +281,14 @@ export default function CustomerPaymentEntryModal({
                 {formatCurrencyWithSymbol(numericAmount, invoiceCurrency || currencySymbol)}
               </p>
             )}
-            {exceedsOutstanding && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                Amount cannot exceed the invoice outstanding balance.
+            {singleSplit && singleSplit.unallocated > 0 && (
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                {formatCurrencyWithSymbol(singleSplit.allocated, invoiceCurrency || currencySymbol)}{" "}
+                settles this invoice;{" "}
+                <span className="font-medium text-green-700 dark:text-green-300">
+                  {formatCurrencyWithSymbol(singleSplit.unallocated, invoiceCurrency || currencySymbol)}
+                </span>{" "}
+                will be left as an unallocated advance.
               </p>
             )}
           </div>
@@ -155,22 +300,29 @@ export default function CustomerPaymentEntryModal({
             <select
               value={modeOfPayment}
               onChange={(event) => setModeOfPayment(event.target.value)}
-              disabled={isLoading || modes.length === 0}
+              disabled={isLoading || selectableModes.length === 0}
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:bg-gray-800/60"
             >
               <option value="">Select payment mode</option>
-              {modes.map((mode) => (
+              {selectableModes.map((mode) => (
                 <option key={mode.mode_of_payment} value={mode.mode_of_payment}>
                   {mode.mode_of_payment}
                 </option>
               ))}
             </select>
+            {!isLoading && !error && selectableModes.length === 0 && (
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                No payment mode on this POS Profile can be used to receive a payment. M-Pesa
+                modes are excluded until the receive integration is built.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Reference No.
+                {referenceRequired && <span className="ml-1 text-red-500">*</span>}
               </label>
               <input
                 type="text"
@@ -178,6 +330,11 @@ export default function CustomerPaymentEntryModal({
                 onChange={(event) => setReferenceNo(event.target.value)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               />
+              {referenceRequired && !referenceNo.trim() && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                  {modeOfPayment} is a bank account — a reference number is required.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">

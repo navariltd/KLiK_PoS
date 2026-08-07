@@ -1,3 +1,5 @@
+import json
+
 import frappe
 from frappe import _
 from frappe.utils import flt, nowdate
@@ -54,6 +56,73 @@ def _validate_pos_payment_mode(pos_profile, mode_of_payment):
 		)
 
 
+def _build_allocation_rows(allocations, customer, amount, invoices):
+	"""Validate a multi-invoice allocation and return Payment Entry reference rows.
+
+	`invoices` maps invoice name -> a Sales Invoice doc (or any object exposing customer,
+	docstatus, grand_total and outstanding_amount). Anything the caller does not allocate
+	is deliberately left unreferenced, so ERPNext records it as unallocated_amount — that
+	is how an advance gets created.
+	"""
+	rows = []
+	total = 0.0
+	seen = set()
+
+	for entry in allocations or []:
+		invoice_name = entry.get("sales_invoice")
+		if not invoice_name:
+			frappe.throw(_("Each allocation must name a Sales Invoice."))
+		# Without this, two rows against the same invoice would each be checked against the
+		# same unchanged outstanding and both pass, over-allocating it. ERPNext's own
+		# validate_allocated_amount_with_latest_data checks reference rows independently and
+		# does not catch it either.
+		if invoice_name in seen:
+			frappe.throw(_("Sales Invoice {0} appears more than once in the allocation.").format(invoice_name))
+		seen.add(invoice_name)
+
+		invoice = invoices.get(invoice_name)
+		if not invoice:
+			frappe.throw(_("Sales Invoice {0} was not found.").format(frappe.bold(invoice_name)))
+		if invoice.docstatus != 1:
+			frappe.throw(_("Only submitted Sales Invoices can receive payments."))
+		if invoice.customer != customer:
+			frappe.throw(
+				_("Sales Invoice {0} does not belong to customer {1}.").format(invoice_name, customer)
+			)
+
+		outstanding = flt(invoice.outstanding_amount)
+		if outstanding <= 0:
+			frappe.throw(_("Sales Invoice {0} has no outstanding amount.").format(invoice_name))
+
+		allocated = flt(entry.get("allocated_amount"))
+		if allocated <= 0:
+			frappe.throw(_("Allocated amount must be greater than zero."))
+		if allocated > outstanding + 0.00001:
+			frappe.throw(
+				_("Allocated amount cannot exceed outstanding amount {0}.").format(frappe.bold(outstanding))
+			)
+
+		total = flt(total + allocated, 2)
+		rows.append(
+			{
+				"reference_doctype": "Sales Invoice",
+				"reference_name": invoice_name,
+				"total_amount": invoice.grand_total,
+				"outstanding_amount": outstanding,
+				"allocated_amount": allocated,
+			}
+		)
+
+	if total > flt(amount) + 0.00001:
+		frappe.throw(
+			_("Total allocated {0} cannot exceed the payment amount {1}.").format(
+				frappe.bold(total), frappe.bold(flt(amount))
+			)
+		)
+
+	return rows
+
+
 @frappe.whitelist()
 def create_customer_payment_entry(
 	customer,
@@ -64,6 +133,7 @@ def create_customer_payment_entry(
 	reference_no=None,
 	reference_date=None,
 	remarks=None,
+	allocations=None,
 ):
 	"""Receive a standalone customer payment from Klik POS."""
 	try:
@@ -87,6 +157,21 @@ def create_customer_payment_entry(
 				frappe.throw(_("Sales Invoice {0} does not belong to customer {1}.").format(sales_invoice, customer))
 			if flt(invoice_doc.outstanding_amount) <= 0:
 				frappe.throw(_("Sales Invoice {0} has no outstanding amount.").format(sales_invoice))
+
+		if allocations and sales_invoice:
+			frappe.throw(_("Pass either a single Sales Invoice or an allocation list, not both."))
+
+		allocation_rows = []
+		if allocations:
+			if isinstance(allocations, str):
+				allocations = json.loads(allocations)
+			invoice_names = [a.get("sales_invoice") for a in allocations if a.get("sales_invoice")]
+			allocation_invoices = {
+				name: frappe.get_doc("Sales Invoice", name)
+				for name in invoice_names
+				if frappe.db.exists("Sales Invoice", name)
+			}
+			allocation_rows = _build_allocation_rows(allocations, customer, amount, allocation_invoices)
 
 		opening_entry = get_current_pos_opening_entry()
 		if not opening_entry:
@@ -150,15 +235,25 @@ def create_customer_payment_entry(
 				},
 			)
 
+		for row in allocation_rows:
+			payment_entry.append("references", row)
+
 		if reference_no:
 			payment_entry.reference_no = reference_no
 			payment_entry.reference_date = reference_date or nowdate()
 
-		payment_entry.remarks = remarks or (
-			_("Customer payment received from Klik POS for invoice {0}.").format(invoice_doc.name)
-			if invoice_doc
-			else _("Customer payment received from Klik POS.")
-		)
+		if remarks:
+			payment_entry.remarks = remarks
+		elif invoice_doc:
+			payment_entry.remarks = _("Customer payment received from Klik POS for invoice {0}.").format(
+				invoice_doc.name
+			)
+		elif allocation_rows:
+			payment_entry.remarks = _("Customer payment received from Klik POS for invoices {0}.").format(
+				", ".join(row["reference_name"] for row in allocation_rows)
+			)
+		else:
+			payment_entry.remarks = _("Customer payment received from Klik POS.")
 
 		if _doctype_has_field("Payment Entry", "custom_pos_opening_entry"):
 			payment_entry.custom_pos_opening_entry = opening_entry
@@ -176,6 +271,7 @@ def create_customer_payment_entry(
 			"mode_of_payment": mode_of_payment,
 			"sales_invoice": invoice_doc.name if invoice_doc else None,
 			"allocated_amount": allocated_amount if invoice_doc else None,
+			"allocations": allocation_rows or None,
 			"opening_entry": opening_entry,
 			"posting_date": payment_entry.posting_date,
 		}
@@ -453,9 +549,27 @@ def get_payment_modes():
 			order_by="idx asc",
 		)
 
+		company = pos_doc.company
 		for mode in payment_modes:
 			payment_type = frappe.get_value("Mode of Payment", mode["mode_of_payment"], "type")
 			mode["type"] = payment_type or "Default"
+
+			# The Receive modal keys its reference-number requirement off the ACCOUNT type,
+			# not the mode type: an M-Pesa mode is type Phone but usually lands in a Bank
+			# account, and it is the account that drives ERPNext's mandatory-reference rule.
+			# One broken mode must not take down the whole dropdown. This endpoint also
+			# feeds cart checkout and the opening entry dialog, and
+			# _get_mode_of_payment_account uses get_doc, which raises on an orphaned
+			# Mode of Payment link. Before these two fields existed, such a row degraded
+			# to type "Default" and the loop carried on; keep that behaviour.
+			try:
+				account = _get_mode_of_payment_account(mode["mode_of_payment"], company)
+			except Exception:
+				account = None
+			mode["account"] = account
+			mode["account_type"] = (
+				frappe.db.get_value("Account", account, "account_type") if account else None
+			)
 
 		return {"success": True, "pos_profile": pos_doc.name, "data": payment_modes}
 

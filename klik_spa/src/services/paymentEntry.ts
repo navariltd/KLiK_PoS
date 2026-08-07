@@ -9,6 +9,7 @@ export interface CustomerPaymentEntryRequest {
   reference_no?: string;
   reference_date?: string;
   remarks?: string;
+  allocations?: PaymentAllocation[];
 }
 
 export interface CustomerPaymentEntryResponse {
@@ -67,6 +68,46 @@ export interface UnallocatedCustomerPaymentEntriesResponse {
   total_count: number;
   start: number;
   limit: number;
+}
+
+export interface ReceivableInvoice {
+  name: string;
+  posting_date: string;
+  grand_total: number;
+  paid: number;
+  outstanding: number;
+  due_date?: string | null;
+  days_overdue: number;
+  status?: string | null;
+}
+
+export interface CustomerReceivable {
+  customer: string;
+  customer_name: string;
+  customer_group: string;
+  total_invoiced: number;
+  total_paid: number;
+  outstanding: number;
+  bucket_current: number;
+  bucket_0_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_90_plus: number;
+  unallocated_advance: number;
+  last_payment?: string | null;
+  invoices: ReceivableInvoice[];
+}
+
+export interface CustomerReceivablesResponse {
+  success: boolean;
+  as_of_date: string;
+  currency: string;
+  data: CustomerReceivable[];
+}
+
+export interface PaymentAllocation {
+  sales_invoice: string;
+  allocated_amount: number;
 }
 
 export async function createCustomerPaymentEntry(
@@ -183,6 +224,34 @@ export async function reconcilePaymentEntryWithInvoice(
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, "Failed to reconcile payment"));
+  }
+
+  return result.message;
+}
+
+export async function getCustomerReceivables(
+  options: { asOfDate?: string; customer?: string } = {}
+): Promise<CustomerReceivablesResponse> {
+  const params = new URLSearchParams();
+  if (options.asOfDate) params.set("as_of_date", options.asOfDate);
+  if (options.customer) params.set("customer", options.customer);
+  const query = params.toString();
+
+  const response = await fetch(
+    `/api/method/klik_pos.api.receivables.get_customer_receivables${query ? `?${query}` : ""}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    throw new Error(extractErrorMessage(result, "Failed to fetch customer receivables"));
   }
 
   return result.message;

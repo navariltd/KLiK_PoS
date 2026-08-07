@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 
-interface PaymentMode {
+export interface PaymentMode {
   mode_of_payment: string;
   default: number;
   amount?: number;
   type?: string;
   account?: string;
+  account_type?: string | null;
   custom_currency?: string;
   name?: string;
   openingAmount?: number;
