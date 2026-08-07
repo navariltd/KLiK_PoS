@@ -73,6 +73,49 @@ class TestStatementDelegation(FrappeTestCase):
 				soa._delegate("render_statement_html", customer="ACME")
 		self.assertIn("No transactions", str(ctx.exception))
 
+	def test_forwarded_kwargs_are_accepted_by_the_real_upstream_signatures(self):
+		"""Guard against upstream signature drift — the predictable failure of delegating.
+
+		Every other test here uses a **kwargs fake, which accepts any keyword name and so
+		cannot catch klik_pos sending `party` where upstream wants `customer`. The live probe
+		only exercises three of the five endpoints and never calls download or email. This
+		binds each forwarded argument set against the REAL upstream signature without
+		invoking it, so a rename upstream fails here instead of in the browser.
+		"""
+		import inspect
+
+		forwarded = {
+			"get_statement_templates": {"company": "Dev Co"},
+			"get_default_recipient": {"party_type": "customer", "party": "ACME"},
+			"render_statement_html": {
+				"customer": "ACME",
+				"company": "Dev Co",
+				"template": "AR",
+				"as_of_date": None,
+			},
+			"download_statement": {
+				"customer": "ACME",
+				"company": "Dev Co",
+				"template": "AR",
+				"as_of_date": None,
+			},
+			"email_statement": {
+				"customer": "ACME",
+				"company": "Dev Co",
+				"template": "AR",
+				"as_of_date": None,
+				"recipient": None,
+				"cc": "",
+				"bcc": "",
+			},
+		}
+
+		for method, kwargs in forwarded.items():
+			with self.subTest(method=method):
+				signature = inspect.signature(soa._upstream(method))
+				# Raises TypeError if a name klik_pos forwards is not accepted upstream.
+				signature.bind(**kwargs)
+
 	def test_endpoints_delegate_to_their_matching_upstream_name(self):
 		seen = []
 
