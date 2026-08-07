@@ -50,6 +50,9 @@ export default function StatementOfAccountsModal({
   useEffect(() => {
     let isCurrent = true;
     setIsLoadingTemplates(true);
+    // Clear first: `error` is shared with the preview flow, and a stale preview failure left
+    // on screen through a company switch would describe the wrong problem.
+    setError(null);
     getStatementTemplates(company)
       .then((rows) => {
         if (!isCurrent) return;
@@ -62,6 +65,10 @@ export default function StatementOfAccountsModal({
       .catch((err) => {
         if (!isCurrent) return;
         setTemplates([]);
+        // Clear the selection too. Leaving the previous company's template name behind keeps
+        // canAct true, so Download and Email stay clickable and fire against a template that
+        // does not belong to the company on screen.
+        setTemplate("");
         setError(err instanceof Error ? err.message : "Failed to load statement templates");
       })
       .finally(() => {
@@ -94,7 +101,14 @@ export default function StatementOfAccountsModal({
   // Debounced, sequence-numbered preview (invariant 1).
   useEffect(() => {
     if (!template || !company || !customer) {
+      // Bump the sequence so any render still in flight cannot write its result over this
+      // cleared state, and drop the loading flag — a debounce timer cancelled before it fired
+      // never runs its `finally`, so without this the "Rendering preview" overlay sticks on
+      // forever. Deliberately does NOT clear `error`: when there is no template, the message
+      // the templates effect just set is the one the user needs to see.
+      previewSequence.current += 1;
       setHtml("");
+      setIsPreviewing(false);
       return;
     }
 
