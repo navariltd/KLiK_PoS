@@ -57,7 +57,7 @@ class TestStatementDelegation(FrappeTestCase):
 		with patch.object(soa, "_upstream", side_effect=frappe.AppNotInstalledError("not installed")):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
-		self.assertIn("cecypo_frappe_reports", str(ctx.exception))
+		self.assertIn("Cecypo Frappe Reports", str(ctx.exception))
 
 	def test_a_moved_module_still_throws_readably(self):
 		with patch.object(soa, "_upstream", side_effect=ImportError("no module")):
@@ -156,3 +156,22 @@ class TestStatementDelegation(FrappeTestCase):
 				"email_statement",
 			],
 		)
+
+	def test_is_available_never_raises_even_if_the_permission_check_explodes(self):
+		"""The never-raise contract must be structural, not incidental.
+
+		frappe.has_permission calls get_meta internally, which raises DoesNotExistError when the
+		doctype is absent — on a site without ERPNext, say. The frontend calls this to decide
+		whether to render a button, so it has to answer rather than 500.
+		"""
+		with patch.object(frappe, "has_permission", side_effect=frappe.DoesNotExistError("no doctype")):
+			self.assertEqual(soa.is_available(), {"available": False})
+
+	def test_missing_app_message_names_the_app_readably(self):
+		# The message is user-facing; it must not leak the snake_case module id.
+		with patch.object(soa, "_upstream", side_effect=frappe.AppNotInstalledError("not installed")):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				soa._delegate("render_statement_html", customer="ACME")
+		message = str(ctx.exception)
+		self.assertIn("Cecypo Frappe Reports", message)
+		self.assertNotIn("cecypo_frappe_reports", message)

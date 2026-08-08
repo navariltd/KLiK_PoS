@@ -13,6 +13,7 @@ import frappe
 from frappe import _
 
 UPSTREAM_APP = "cecypo_frappe_reports"
+UPSTREAM_APP_LABEL = "Cecypo Frappe Reports"
 UPSTREAM_MODULE = "cecypo_frappe_reports.cecypo_frappe_reports.statement_of_accounts"
 
 
@@ -31,7 +32,9 @@ def _delegate(method, **kwargs):
 		fn = _upstream(method)
 	except (ImportError, AttributeError, frappe.AppNotInstalledError):
 		frappe.throw(
-			_("Statements need the {0} app, which is not installed on this site.").format(UPSTREAM_APP)
+			_("Statements need the {0} app, which is not installed on this site.").format(
+				UPSTREAM_APP_LABEL
+			)
 		)
 
 	# Deliberately NOT wrapped in try/except. Upstream throws carry the reason a user needs —
@@ -53,10 +56,13 @@ def is_available():
 	"""
 	try:
 		_upstream("render_statement_html")
+		# Resolution is not capability. The upstream endpoints gate on Process Statement Of
+		# Accounts read permission, and a site with a Custom DocPerm on that doctype can grant
+		# it to a small minority. Inside the try because has_permission calls get_meta, which
+		# raises if the doctype is absent — and this function must always answer.
+		if not frappe.has_permission("Process Statement Of Accounts", "read"):
+			return {"available": False}
 	except Exception:
-		return {"available": False}
-
-	if not frappe.has_permission("Process Statement Of Accounts", "read"):
 		return {"available": False}
 
 	return {"available": True}
