@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Loader2, Mail, X } from "lucide-react";
 import { toast } from "react-toastify";
 import {
@@ -31,6 +31,13 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   const [preview, setPreview] = useState<BulkStatementPreview | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // Clearing `preview` on a filter change is necessary but not sufficient: a preview request for
+  // D1 already in flight when the user switches to D2 can still land afterwards and call
+  // setPreview, silently re-enabling Send while the visible filters read D2. The sequence counter
+  // closes that gap — bumped whenever a filter changes AND when a new preview starts, with the
+  // result applied only if the captured sequence is still current when the response arrives.
+  const previewSequence = useRef(0);
 
   // Templates, once per company. Mirrors StatementOfAccountsModal's loading/error handling
   // rather than inventing a second pattern.
@@ -66,12 +73,16 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   // (template, as_of_date) pair. Changing either invalidates it immediately, so Send can never
   // fire against a combination nobody reviewed.
   const handleDateChange = (value: string) => {
+    // Bump first: any in-flight preview response is now stale and must not be allowed to write
+    // over this clear when it lands.
+    previewSequence.current += 1;
     setAsOfDate(value);
     setPreview(null);
   };
 
   const rememberTemplate = useCallback(
     (name: string) => {
+      previewSequence.current += 1;
       setTemplate(name);
       setPreview(null);
       window.localStorage.setItem(TEMPLATE_CACHE_KEY(company), name);
@@ -82,16 +93,21 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   const canPreview = Boolean(template) && !isLoadingTemplates && !isPreviewing;
 
   const handlePreview = async () => {
+    const sequence = ++previewSequence.current;
     setIsPreviewing(true);
     setError(null);
     try {
       const result = await previewBulkStatements(company, template, asOfDate);
+      // A filter change (or another Preview click) since this request started has already bumped
+      // the sequence — this response describes a population nobody is looking at anymore.
+      if (sequence !== previewSequence.current) return;
       setPreview(result);
     } catch (err) {
+      if (sequence !== previewSequence.current) return;
       setPreview(null);
       setError(err instanceof Error ? err.message : "Failed to preview statements");
     } finally {
-      setIsPreviewing(false);
+      if (sequence === previewSequence.current) setIsPreviewing(false);
     }
   };
 
@@ -100,6 +116,10 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   const canSend = Boolean(preview) && preview!.will_send.length > 0 && !isSending;
 
   const handleSend = async () => {
+    // Synchronous guard: `disabled` on the button is not enough to stop a second click that lands
+    // before React re-renders it disabled, and a double-send here means every customer in the
+    // preview gets two statements.
+    if (isSending) return;
     if (!preview) return;
     setIsSending(true);
     try {
