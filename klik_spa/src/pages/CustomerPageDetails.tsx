@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSProfileStore } from "../stores/posProfileStore";
@@ -38,9 +38,12 @@ import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
+import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
 import { useCustomerReceivable } from "../hooks/useCustomerReceivable";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { isStatementAvailable } from "../services/statementOfAccounts";
+import { resolveCompanyName } from "../utils/companyName";
 
 export default function CustomerDetailsPage() {
   const navigate = useNavigate();
@@ -59,6 +62,8 @@ export default function CustomerDetailsPage() {
   // Customer edit modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [canStatement, setCanStatement] = useState(false);
   //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
@@ -74,7 +79,17 @@ export default function CustomerDetailsPage() {
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
   const { posDetails } = usePOSProfileStore();
+  const companyName = resolveCompanyName(posDetails?.company);
 
+  useEffect(() => {
+    let isCurrent = true;
+    isStatementAvailable().then((available) => {
+      if (isCurrent) setCanStatement(available);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
     if (dateFilter === "all") return true;
@@ -373,6 +388,16 @@ export default function CustomerDetailsPage() {
                   <Banknote className="w-4 h-4" />
                   <span>Pay</span>
                 </button>
+                {canStatement && companyName && (
+                  <button
+                    onClick={() => setShowStatementModal(true)}
+                    className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
+                    type="button"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Statement</span>
+                  </button>
+                )}
                 {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                   <button
                     onClick={() => {
@@ -701,6 +726,15 @@ export default function CustomerDetailsPage() {
           />
         )}
 
+        {showStatementModal && customer && (
+          <StatementOfAccountsModal
+            customer={customer.id}
+            customerName={customer.name}
+            company={companyName}
+            onClose={() => setShowStatementModal(false)}
+          />
+        )}
+
         {selectedInvoiceForPayment && (
           <CustomerPaymentEntryModal
             customer={customer}
@@ -758,6 +792,16 @@ export default function CustomerDetailsPage() {
                   <Banknote className="w-4 h-4" />
                   <span>Receive Payment</span>
                 </button>
+                {canStatement && companyName && (
+                  <button
+                    onClick={() => setShowStatementModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    type="button"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Statement</span>
+                  </button>
+                )}
                 {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                   <button
                     onClick={() => {
@@ -1143,6 +1187,15 @@ export default function CustomerDetailsPage() {
             allocationTargets={customerReceivable?.invoices}
             onClose={() => setShowPaymentModal(false)}
             onCreated={handleInvoicePaymentCreated}
+          />
+        )}
+
+        {showStatementModal && customer && (
+          <StatementOfAccountsModal
+            customer={customer.id}
+            customerName={customer.name}
+            company={companyName}
+            onClose={() => setShowStatementModal(false)}
           />
         )}
 
