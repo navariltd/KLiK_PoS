@@ -454,7 +454,9 @@ export function useCustomers(searchQuery?: string) {
 
 export function useCustomerDetails(customerId: string | null) {
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  // Start loading when there is an id to fetch. Initialising to false makes the first render
+  // report "not loading, no customer", which reads as not-found until the effect runs.
+  const [isLoading, setIsLoading] = useState(Boolean(customerId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
