@@ -74,10 +74,15 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   // fire against a combination nobody reviewed.
   const handleDateChange = (value: string) => {
     // Bump first: any in-flight preview response is now stale and must not be allowed to write
-    // over this clear when it lands.
+    // over this clear when it lands. Also clear isPreviewing here, not just in handlePreview's
+    // finally: that finally is itself sequence-guarded now, so a superseded request's finally
+    // will find its sequence stale and skip resetting the flag. Changing a filter supersedes the
+    // in-flight request, so nothing is "previewing" any more — this is the only place that reset
+    // happens for a request abandoned mid-flight, and without it canPreview stays false forever.
     previewSequence.current += 1;
     setAsOfDate(value);
     setPreview(null);
+    setIsPreviewing(false);
   };
 
   const rememberTemplate = useCallback(
@@ -85,6 +90,7 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
       previewSequence.current += 1;
       setTemplate(name);
       setPreview(null);
+      setIsPreviewing(false);
       window.localStorage.setItem(TEMPLATE_CACHE_KEY(company), name);
     },
     [company]
