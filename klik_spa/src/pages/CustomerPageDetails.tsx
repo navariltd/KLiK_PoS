@@ -68,7 +68,7 @@ export default function CustomerDetailsPage() {
   const [draftInvoiceToEdit, setDraftInvoiceToEdit] = useState<SalesInvoice | null>(null);
 
   const { id: customerId } = useParams();
-  const { customer, isLoading: isLoadingC, error: errorC } = useCustomerDetails(customerId);
+  const { customer, isLoading: isLoadingC, error: errorC } = useCustomerDetails(customerId ?? null);
   const { receivable: customerReceivable, isLoading: isLoadingReceivable } = useCustomerReceivable(
     showPaymentModal ? customer?.id || null : null
   );
@@ -306,7 +306,7 @@ export default function CustomerDetailsPage() {
         <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-lg max-w-md">
           <h3 className="text-lg font-medium text-red-800 dark:text-red-200">Error loading customer</h3>
           <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-            {errorC?.message || "Failed to load customer details"}
+            {errorC || "Failed to load customer details"}
           </p>
           <button
             onClick={() => navigate(-1)}
