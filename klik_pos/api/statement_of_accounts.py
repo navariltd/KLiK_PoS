@@ -90,6 +90,20 @@ def render_statement_html(customer, company, template, as_of_date=None):
 
 
 @frappe.whitelist()
+def preview_bulk_statements(company, template, as_of_date=None):
+	return _delegate(
+		"preview_bulk_statements", company=company, template=template, as_of_date=as_of_date
+	)
+
+
+@frappe.whitelist()
+def email_bulk_statements(company, template, as_of_date=None):
+	return _delegate(
+		"email_bulk_statements", company=company, template=template, as_of_date=as_of_date
+	)
+
+
+@frappe.whitelist()
 def download_statement(customer, company, template, as_of_date=None):
 	# Upstream sets frappe.local.response (filename/filecontent/type="download"). That is
 	# request-scoped, so setting it from inside a delegated call works exactly as if the

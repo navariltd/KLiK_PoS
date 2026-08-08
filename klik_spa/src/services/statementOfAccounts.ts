@@ -68,6 +68,36 @@ export async function emailStatement(
   return Boolean(await post("email_statement", args));
 }
 
+export interface BulkStatementRow {
+  customer: string;
+  customer_name: string;
+  recipient?: string;
+}
+
+export interface BulkStatementPreview {
+  will_send: BulkStatementRow[];
+  no_email: BulkStatementRow[];
+  not_permitted: number;
+  no_transactions: number;
+  total_customers: number;
+}
+
+export async function previewBulkStatements(
+  company: string,
+  template: string,
+  asOfDate: string
+): Promise<BulkStatementPreview> {
+  return post("preview_bulk_statements", { company, template, as_of_date: asOfDate });
+}
+
+export async function emailBulkStatements(
+  company: string,
+  template: string,
+  asOfDate: string
+): Promise<{ queued: number }> {
+  return post("email_bulk_statements", { company, template, as_of_date: asOfDate });
+}
+
 /**
  * Download the PDF.
  *

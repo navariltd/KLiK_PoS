@@ -112,6 +112,16 @@ class TestStatementDelegation(FrappeTestCase):
 				"template": "AR",
 				"as_of_date": None,
 			},
+			"preview_bulk_statements": {
+				"company": "Dev Co",
+				"template": "AR",
+				"as_of_date": None,
+			},
+			"email_bulk_statements": {
+				"company": "Dev Co",
+				"template": "AR",
+				"as_of_date": None,
+			},
 			"email_statement": {
 				"customer": "ACME",
 				"company": "Dev Co",
@@ -144,6 +154,8 @@ class TestStatementDelegation(FrappeTestCase):
 			soa.get_default_recipient(party_type="customer", party="ACME")
 			soa.render_statement_html(customer="ACME", company="Dev Co", template="AR")
 			soa.download_statement(customer="ACME", company="Dev Co", template="AR")
+			soa.preview_bulk_statements(company="Dev Co", template="AR")
+			soa.email_bulk_statements(company="Dev Co", template="AR")
 			soa.email_statement(customer="ACME", company="Dev Co", template="AR")
 
 		self.assertEqual(
@@ -153,6 +165,8 @@ class TestStatementDelegation(FrappeTestCase):
 				"get_default_recipient",
 				"render_statement_html",
 				"download_statement",
+				"preview_bulk_statements",
+				"email_bulk_statements",
 				"email_statement",
 			],
 		)
