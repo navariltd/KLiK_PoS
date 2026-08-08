@@ -369,12 +369,12 @@ export default function CustomerDetailsPage() {
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <div>
-                  <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                <div className="min-w-0">
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">
                                           {/* @ts-expect-error just ignore */}
                     {customer.customer_name || customer.name}
                   </h1>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                     Customer ID: {customer.name}
                   </p>
                 </div>
@@ -382,7 +382,7 @@ export default function CustomerDetailsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowPaymentModal(true)}
-                  className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shrink-0"
                   type="button"
                 >
                   <Banknote className="w-4 h-4" />
@@ -391,11 +391,11 @@ export default function CustomerDetailsPage() {
                 {canStatement && companyName && (
                   <button
                     onClick={() => setShowStatementModal(true)}
-                    className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
+                    className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm shrink-0"
                     type="button"
                   >
                     <FileText className="w-4 h-4" />
-                    <span>Statement</span>
+                    <span className="hidden sm:inline">Statement</span>
                   </button>
                 )}
                 {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
@@ -404,7 +404,7 @@ export default function CustomerDetailsPage() {
                       setSelectedCustomer(customer);
                       setShowAddModal(true);
                     }}
-                    className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+                    className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm shrink-0"
                     type="button"
                   >
                     <Edit className="w-4 h-4" />
