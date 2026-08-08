@@ -68,8 +68,7 @@ export default function CustomerDetailsPage() {
   const [draftInvoiceToEdit, setDraftInvoiceToEdit] = useState<SalesInvoice | null>(null);
 
   const { id: customerId } = useParams();
-  // @ts-expect-error just ignore
-  const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
+  const { customer, isLoading: isLoadingC, error: errorC } = useCustomerDetails(customerId);
   const { receivable: customerReceivable, isLoading: isLoadingReceivable } = useCustomerReceivable(
     showPaymentModal ? customer?.id || null : null
   );
