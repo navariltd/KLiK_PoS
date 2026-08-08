@@ -483,7 +483,11 @@ export default function CustomersPage() {
         )}
 
         {showBulkStatementModal && (
-          <BulkStatementModal company={companyName} onClose={() => setShowBulkStatementModal(false)} />
+          <BulkStatementModal
+            key={companyName}
+            company={companyName}
+            onClose={() => setShowBulkStatementModal(false)}
+          />
         )}
 
         {/* Bottom Navigation */}
@@ -757,7 +761,11 @@ export default function CustomersPage() {
       )}
 
       {showBulkStatementModal && (
-        <BulkStatementModal company={companyName} onClose={() => setShowBulkStatementModal(false)} />
+        <BulkStatementModal
+          key={companyName}
+          company={companyName}
+          onClose={() => setShowBulkStatementModal(false)}
+        />
       )}
     </div>
   )
