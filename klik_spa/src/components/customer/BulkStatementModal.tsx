@@ -5,7 +5,7 @@ import {
   emailBulkStatements,
   getStatementTemplates,
   previewBulkStatements,
-  type BulkStatementPreview,
+  type BulkStatementManifest,
   type StatementTemplate,
 } from "../../services/statementOfAccounts";
 
@@ -28,7 +28,7 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [preview, setPreview] = useState<BulkStatementPreview | null>(null);
+  const [preview, setPreview] = useState<BulkStatementManifest | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
@@ -117,9 +117,11 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
     }
   };
 
-  // Preview-then-send: Send only ever fires against a preview that is still on screen, and only
-  // when that preview actually found someone to send to.
-  const canSend = Boolean(preview) && preview!.will_send.length > 0 && !isSending;
+  // Preview-then-send: Send only ever fires against a manifest that is still on screen, and only
+  // when that manifest found someone who could plausibly receive one. A manifest with zero
+  // `with_email` is a guaranteed no-op — every customer in scope lacks an address — so there is
+  // no honest reason to let Send fire against it.
+  const canSend = Boolean(preview) && preview!.with_email > 0 && !isSending;
 
   const handleSend = async () => {
     // Synchronous guard: `disabled` on the button is not enough to stop a second click that lands
@@ -127,10 +129,16 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
     // preview gets two statements.
     if (isSending) return;
     if (!preview) return;
+    // Captured before the await: the manifest describes what could be sent, which the toast must
+    // still be honest about even if state moves on while the request is in flight.
+    const withEmail = preview.with_email;
     setIsSending(true);
     try {
       const result = await emailBulkStatements(company, template, asOfDate);
-      toast.success(`Statements queued for ${result.queued} customers`);
+      toast.success(
+        `Statements queued for up to ${withEmail} customer${withEmail === 1 ? "" : "s"} with an address ` +
+          `(${result.batches} batch${result.batches === 1 ? "" : "es"})`
+      );
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send statements");
@@ -199,40 +207,18 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
           {preview ? (
             <div className="space-y-4">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {preview.total_customers} customer{preview.total_customers === 1 ? "" : "s"} considered.
+                {preview.in_scope} customer{preview.in_scope === 1 ? "" : "s"} in scope, {preview.with_email} with
+                an email address on file.
               </p>
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-                  Will receive ({preview.will_send.length})
-                </h3>
-                {preview.will_send.length > 0 ? (
-                  <ul className="max-h-40 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
-                    {preview.will_send.map((row) => (
-                      <li
-                        key={row.customer}
-                        className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                      >
-                        <span className="text-gray-900 dark:text-white">{row.customer_name}</span>
-                        <span className="truncate text-gray-500 dark:text-gray-400">{row.recipient}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    No customers will receive a statement.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-                  No email on file ({preview.no_email.length})
+                  No email on file — will be skipped ({preview.without_email.length})
                 </h3>
                 {/* Rendered even when empty: its absence is informative, not ambiguous. */}
-                {preview.no_email.length > 0 ? (
+                {preview.without_email.length > 0 ? (
                   <ul className="max-h-40 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
-                    {preview.no_email.map((row) => (
+                    {preview.without_email.map((row) => (
                       <li key={row.customer} className="px-3 py-2 text-sm text-gray-900 dark:text-white">
                         {row.customer_name}
                       </li>
@@ -240,25 +226,25 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
                   </ul>
                 ) : (
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Every customer with transactions has an email on file.
+                    Every customer in scope has an email on file.
                   </p>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="block text-sm text-gray-500 dark:text-gray-400">No transactions</span>
-                  <span className="text-base font-semibold text-gray-900 dark:text-white">
-                    {preview.no_transactions}
-                  </span>
-                </div>
+              {preview.not_permitted > 0 && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
                   <span className="block text-sm text-gray-500 dark:text-gray-400">Not permitted</span>
                   <span className="text-base font-semibold text-gray-900 dark:text-white">
                     {preview.not_permitted}
                   </span>
                 </div>
-              </div>
+              )}
+
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Only who has an address is known ahead of time — whether a customer had transactions in the
+                period is decided when statements are sent, so some customers with an address may still be
+                skipped.
+              </p>
             </div>
           ) : (
             <div className="flex h-32 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
@@ -298,7 +284,7 @@ export default function BulkStatementModal({ company, onClose }: BulkStatementMo
             className="inline-flex items-center gap-2 rounded-lg bg-beveren-600 px-4 py-2 text-sm font-medium text-white hover:bg-beveren-700 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
             {isSending ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
-            <span>Send statements{preview ? ` (${preview.will_send.length})` : ""}</span>
+            <span>Send statements{preview ? ` (up to ${preview.with_email})` : ""}</span>
           </button>
         </div>
       </div>

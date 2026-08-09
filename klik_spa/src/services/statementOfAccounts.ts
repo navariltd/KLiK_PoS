@@ -68,25 +68,26 @@ export async function emailStatement(
   return Boolean(await post("email_statement", args));
 }
 
-export interface BulkStatementRow {
-  customer: string;
-  customer_name: string;
-  recipient?: string;
-}
-
-export interface BulkStatementPreview {
-  will_send: BulkStatementRow[];
-  no_email: BulkStatementRow[];
+/**
+ * What a bulk send would do, without rendering anything. Deliberately does NOT know who has
+ * transactions — the send decides that per batch, and pre-computing it here would cost a full
+ * report render per customer for no benefit. This only answers what protects against a mis-click:
+ * how many customers are in scope, how many have nowhere to send, and which.
+ */
+export interface BulkStatementManifest {
+  in_scope: number;
+  with_email: number;
+  without_email: { customer: string; customer_name: string }[];
   not_permitted: number;
-  no_transactions: number;
-  total_customers: number;
+  template: string;
+  as_of_date: string | null;
 }
 
 export async function previewBulkStatements(
   company: string,
   template: string,
   asOfDate: string
-): Promise<BulkStatementPreview> {
+): Promise<BulkStatementManifest> {
   return post("preview_bulk_statements", { company, template, as_of_date: asOfDate });
 }
 
@@ -94,7 +95,7 @@ export async function emailBulkStatements(
   company: string,
   template: string,
   asOfDate: string
-): Promise<{ queued: number }> {
+): Promise<{ batches: number }> {
   return post("email_bulk_statements", { company, template, as_of_date: asOfDate });
 }
 
