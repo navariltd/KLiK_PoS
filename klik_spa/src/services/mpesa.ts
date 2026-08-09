@@ -74,7 +74,7 @@ export async function initiateKlikPosStkPush(payload: {
 }) {
   const csrfToken = window.csrf_token;
   const response = await fetch(
-    "/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.sales_invoice.initiate_klik_pos_stk_push",
+    "/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.stk_push.create_stk_push_request",
     {
       method: "POST",
       headers: {
@@ -160,7 +160,7 @@ export async function processKlikPosMpesaPayments(payload: {
 
 export async function fetchKlikPosStkStatus(requestName: string) {
   const response = await fetch(
-    `/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.sales_invoice.get_klik_pos_stk_status?request_name=${encodeURIComponent(requestName)}`,
+    `/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.stk_push.get_stk_push_status?request_name=${encodeURIComponent(requestName)}`,
     {
       method: "GET",
       headers: { "Content-Type": "application/json" },
@@ -179,12 +179,12 @@ export async function fetchKlikPosStkStatus(requestName: string) {
 
 export async function linkKlikPosRequestToInvoice(payload: {
   request_name: string;
-  invoice_name: string;
-  invoice_doctype?: string;
+  reference_name: string;
+  reference_doctype?: string;
 }) {
   const csrfToken = window.csrf_token;
   const response = await fetch(
-    "/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.sales_invoice.link_klik_pos_request_to_invoice",
+    "/api/method/frappe_mpsa_payments.frappe_mpsa_payments.api.stk_push.link_stk_push_to_document",
     {
       method: "POST",
       headers: {
