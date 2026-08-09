@@ -181,6 +181,16 @@ class TestStatementDelegation(FrappeTestCase):
 		with patch.object(frappe, "has_permission", side_effect=frappe.DoesNotExistError("no doctype")):
 			self.assertEqual(soa.is_available(), {"available": False})
 
+	def test_email_bulk_statements_is_post_only(self):
+		"""@frappe.whitelist() with no methods accepts GET, and Frappe only validates CSRF for
+		unsafe methods — an <img src="...?company=X&template=Y"> on any page a logged-in user
+		visits would otherwise fire a customer-wide mail blast through this delegating endpoint.
+		The SPA service already calls this via POST, so restricting to POST changes nothing for
+		the real caller."""
+		self.assertEqual(
+			frappe.allowed_http_methods_for_whitelisted_func[soa.email_bulk_statements], ["POST"]
+		)
+
 	def test_missing_app_message_names_the_app_readably(self):
 		# The message is user-facing; it must not leak the snake_case module id.
 		with patch.object(soa, "_upstream", side_effect=frappe.AppNotInstalledError("not installed")):

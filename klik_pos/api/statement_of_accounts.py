@@ -96,8 +96,13 @@ def preview_bulk_statements(company, template, as_of_date=None):
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def email_bulk_statements(company, template, as_of_date=None):
+	# POST only: @frappe.whitelist() with no methods accepts GET, and Frappe only validates CSRF
+	# for unsafe methods — an <img src="...?company=X&template=Y"> on any page a logged-in user
+	# visits would otherwise fire a customer-wide mail blast through this delegating endpoint.
+	# The SPA service already calls this via POST (see statementOfAccounts.ts), so this changes
+	# nothing for the real caller.
 	return _delegate(
 		"email_bulk_statements", company=company, template=template, as_of_date=as_of_date
 	)
