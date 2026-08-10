@@ -15,6 +15,7 @@ import {
   sumOutstanding,
 } from "../../utils/allocateOldestFirst";
 import { defaultReceiveMode, requiresReference, selectableReceiveModes } from "../../utils/receiveModes";
+import { formatAmountInput, stripAmountInput } from "../../utils/amountInput";
 
 interface CustomerPaymentEntryModalProps {
   customer: Customer;
@@ -267,20 +268,16 @@ export default function CustomerPaymentEntryModal({
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Amount
             </label>
+            {/* type="text", not "number": a number input cannot render thousand separators.
+                State stays raw — Number("349,903") is NaN — and only the display is grouped. */}
             <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              type="text"
+              inputMode="decimal"
+              value={formatAmountInput(amount)}
+              onChange={(event) => setAmount(stripAmountInput(event.target.value))}
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               autoFocus
             />
-            {numericAmount > 0 && (
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {formatCurrencyWithSymbol(numericAmount, invoiceCurrency || currencySymbol)}
-              </p>
-            )}
             {singleSplit && singleSplit.unallocated > 0 && (
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 {formatCurrencyWithSymbol(singleSplit.allocated, invoiceCurrency || currencySymbol)}{" "}
