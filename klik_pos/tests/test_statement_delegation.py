@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -35,12 +35,12 @@ class TestStatementDelegation(FrappeTestCase):
 			captured.update(kwargs)
 			return "rendered"
 
-		# _upstream_capability is bypassed here: this test is about _delegate's forwarding, not
-		# about capability resolution (covered separately), and a bare **kwargs stub returned for
-		# every dotted path — including STATEMENT_API_VERSION — is not a real int to check.
-		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
-			with patch.object(soa, "_upstream", return_value=fake):
-				result = soa._delegate("render_statement_html", customer="ACME", company="Dev Co")
+		# The real _upstream_capability() runs here rather than being bypassed: a **kwargs stub
+		# returned for every dotted path is not a real int for STATEMENT_API_VERSION, so the
+		# lookup is special-cased to a passing version, and forwarding is exercised through the
+		# real gate instead of a canned (True, None, None).
+		with patch.object(soa, "_upstream", side_effect=lambda m: 2 if m == "STATEMENT_API_VERSION" else fake):
+			result = soa._delegate("render_statement_html", customer="ACME", company="Dev Co")
 
 		self.assertEqual(result, "rendered")
 		self.assertEqual(captured, {"customer": "ACME", "company": "Dev Co"})
@@ -53,9 +53,8 @@ class TestStatementDelegation(FrappeTestCase):
 			captured.update(kwargs)
 			return True
 
-		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
-			with patch.object(soa, "_upstream", return_value=fake):
-				soa._delegate("email_statement", customer="ACME", some_new_upstream_arg=42)
+		with patch.object(soa, "_upstream", side_effect=lambda m: 2 if m == "STATEMENT_API_VERSION" else fake):
+			soa._delegate("email_statement", customer="ACME", some_new_upstream_arg=42)
 
 		self.assertEqual(captured["some_new_upstream_arg"], 42)
 
@@ -91,10 +90,9 @@ class TestStatementDelegation(FrappeTestCase):
 		def fake(**kwargs):
 			frappe.throw("No transactions for ACME in the selected period.")
 
-		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
-			with patch.object(soa, "_upstream", return_value=fake):
-				with self.assertRaises(frappe.ValidationError) as ctx:
-					soa._delegate("render_statement_html", customer="ACME")
+		with patch.object(soa, "_upstream", side_effect=lambda m: 2 if m == "STATEMENT_API_VERSION" else fake):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				soa._delegate("render_statement_html", customer="ACME")
 		self.assertIn("No transactions", str(ctx.exception))
 
 	def test_forwarded_kwargs_are_accepted_by_the_real_upstream_signatures(self):
@@ -164,7 +162,7 @@ class TestStatementDelegation(FrappeTestCase):
 		# forwards to, not about capability resolution (covered separately) — without this, the
 		# capability probe's own resolutions of all seven names plus the version constant would
 		# land in `seen` too, ahead of each real forwarding call.
-		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
+		with patch.object(soa, "_upstream_capability", return_value=(True, None, None)):
 			with patch.object(soa, "_upstream", side_effect=spy):
 				soa.get_statement_templates(company="Dev Co")
 				soa.get_default_recipient(party_type="customer", party="ACME")
@@ -243,6 +241,26 @@ class TestStatementDelegation(FrappeTestCase):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
 		self.assertIn("Cecypo Frappe Reports", str(ctx.exception))
+
+	def test_is_available_logs_a_repeated_reason_once_but_a_new_reason_again(self):
+		"""is_available() is called from several unthrottled page-mount effects. A permanent
+		"not installed" site must not write the same warning on every mount forever — but a
+		genuinely different reason (e.g. a later version regression) must still get through.
+		"""
+		soa._LOGGED_UNAVAILABLE_REASONS.clear()
+		self.addCleanup(soa._LOGGED_UNAVAILABLE_REASONS.clear)
+
+		logger = MagicMock()
+		with patch.object(frappe, "logger", return_value=logger):
+			with patch.object(soa, "_upstream", side_effect=ImportError("no module")):
+				soa.is_available()
+				soa.is_available()
+			self.assertEqual(logger.info.call_count, 1)
+			self.assertEqual(logger.warning.call_count, 0)
+
+			with patch.object(soa, "_upstream_api_version", return_value=1):
+				soa.is_available()
+			self.assertEqual(logger.warning.call_count, 1)
 
 	def test_email_bulk_statements_is_post_only(self):
 		"""@frappe.whitelist() with no methods accepts GET, and Frappe only validates CSRF for

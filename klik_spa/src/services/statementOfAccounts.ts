@@ -35,6 +35,11 @@ async function post(method: string, body: object) {
   return result.message;
 }
 
+// Reasons already logged this session. isStatementAvailable() is called from several
+// independent page mounts (CustomersPage, PaymentEntriesPage, CustomerPageDetails), and without
+// this a single unavailable reason would print once per mount instead of once.
+const loggedUnavailableReasons = new Set<string>();
+
 /** Whether this site has the app that provides statements. Never throws — a failure means no. */
 export async function isStatementAvailable(): Promise<boolean> {
   try {
@@ -45,10 +50,12 @@ export async function isStatementAvailable(): Promise<boolean> {
     });
     const result = await response.json();
     const available = Boolean(result?.message?.available);
-    if (!available && result?.message?.reason) {
+    const reason = result?.message?.reason;
+    if (!available && reason && !loggedUnavailableReasons.has(reason)) {
+      loggedUnavailableReasons.add(reason);
       // Not a toast: a cashier cannot act on "update the reports app". This is for whoever
       // is asking why the button is missing.
-      console.info("Statement feature unavailable:", result.message.reason);
+      console.info("Statement feature unavailable:", reason);
     }
     return available;
   } catch {

@@ -50,25 +50,48 @@ def _upstream_api_version():
 		return 1
 
 
+# Log levels for a capability failure. "Not installed" is a permanent, unactionable
+# configuration fact — the module's own docstring calls it a supported soft dependency, not an
+# error — so it logs at info. "Too old" is a regression: someone upgraded one app and not the
+# other, which is exactly the failure this whole check exists to catch, so it stays a warning.
+_LEVEL_INFO = "info"
+_LEVEL_WARNING = "warning"
+
+# Reasons already logged by is_available() in this worker process. Keyed on the reason string
+# itself, so distinct reasons (missing, then later too-old) still each log once, while repeats of
+# the same reason across the many unthrottled page-mount callers do not.
+_LOGGED_UNAVAILABLE_REASONS = set()
+
+
 def _upstream_capability():
-	"""(ok, reason). Never raises — callers use it to decide whether to offer a feature."""
+	"""(ok, reason, level). Never raises — callers use it to decide whether to offer a feature.
+
+	`level` is only meaningful when `ok` is False: "info" for the permanent not-installed case,
+	"warning" for a regression (installed but too old, or an unexpected resolution failure).
+	"""
 	try:
 		for method in REQUIRED_UPSTREAM_METHODS:
 			_upstream(method)
 	except (ImportError, AttributeError, frappe.AppNotInstalledError) as exc:
-		return False, _("{0} is not installed, or is missing {1}.").format(
-			UPSTREAM_APP_LABEL, exc
+		return (
+			False,
+			_("{0} is not installed, or is missing {1}.").format(UPSTREAM_APP_LABEL, exc),
+			_LEVEL_INFO,
 		)
 	except Exception as exc:
-		return False, str(exc)
+		return False, str(exc), _LEVEL_WARNING
 
 	found = _upstream_api_version()
 	if found < REQUIRED_UPSTREAM_API:
-		return False, _(
-			"{0} provides statement API version {1}, but {2} is required. Update that app."
-		).format(UPSTREAM_APP_LABEL, found, REQUIRED_UPSTREAM_API)
+		return (
+			False,
+			_("{0} provides statement API version {1}, but {2} is required. Update that app.").format(
+				UPSTREAM_APP_LABEL, found, REQUIRED_UPSTREAM_API
+			),
+			_LEVEL_WARNING,
+		)
 
-	return True, None
+	return True, None, None
 
 
 def _delegate(method, **kwargs):
@@ -77,7 +100,7 @@ def _delegate(method, **kwargs):
 	kwargs are passed through untouched rather than re-declared, so a parameter added upstream
 	flows through without a change here.
 	"""
-	ok, reason = _upstream_capability()
+	ok, reason, _level = _upstream_capability()
 	if not ok:
 		# Refuse at the endpoint, not only in the UI. is_available hides a button; a direct API
 		# call or a stale SPA bundle never consults it, and half-working against an old
@@ -99,11 +122,17 @@ def is_available():
 	"you lack permission" without reading code.
 	"""
 	try:
-		ok, reason = _upstream_capability()
+		ok, reason, level = _upstream_capability()
 		if not ok:
 			# Logged, not thrown: a cashier cannot act on this, but whoever is wondering why
-			# the button vanished needs it to be findable.
-			frappe.logger("klik_pos").warning(f"Statement feature unavailable: {reason}")
+			# the button vanished needs it to be findable. Throttled to once per distinct reason
+			# per worker process — is_available() is called from several unthrottled page-mount
+			# effects, and a permanent "not installed" site would otherwise write the same line
+			# forever and bury the regressions (a "too old" reason appearing later) that are
+			# actually actionable.
+			if reason not in _LOGGED_UNAVAILABLE_REASONS:
+				_LOGGED_UNAVAILABLE_REASONS.add(reason)
+				getattr(frappe.logger("klik_pos"), level)(f"Statement feature unavailable: {reason}")
 			return {"available": False, "reason": reason}
 
 		# Resolution is not capability. The upstream endpoints gate on Process Statement Of
