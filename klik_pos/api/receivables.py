@@ -107,11 +107,15 @@ def _group_receivable_rows(rows, as_of_date, statuses=None):
 
 
 def _bucket_key(due_date, posting_date, as_of):
-	"""Same boundaries ERPNext's AR report uses (30/60/90/120 days), age measured against
-	`as_of` since the fallback has no separate "age as on" concept.
+	"""Same boundaries ERPNext's AR report uses (30/60/90/120 days), aged by due_date
+	(falling back to posting_date) against `as_of`.
 
-	Mirrors `_group_receivable_rows`: not-yet-due gets its own bucket rather than inflating
-	0-30.
+	This only actually mirrors `_group_receivable_rows`/the healthy path because
+	`get_customer_receivables` pins `ageing_based_on: "Due Date"` and
+	`calculate_ageing_with: "Report Date"` on the AR filters — without those, ERPNext's
+	own report ages by posting_date as of today, not due_date as of `as_of`, and the two
+	paths would disagree. Not-yet-due gets its own bucket rather than inflating 0-30, same
+	as the healthy path's range0.
 	"""
 	entry_date = getdate(due_date) if due_date else getdate(posting_date)
 	if entry_date > as_of:
@@ -158,7 +162,6 @@ def _degraded_receivables_fallback(company, as_of_date, customer, error):
 			"outstanding_amount",
 			"grand_total",
 			"status",
-			"currency",
 		],
 	)
 
@@ -257,6 +260,15 @@ def get_customer_receivables(as_of_date=None, customer=None):
 			"company": pos_profile.company,
 			"report_date": as_of_date,
 			"party_type": "Customer",
+			# Explicit rather than left to ERPNext's own defaults: with these unset the AR
+			# report ages by posting_date as of today (frappe/erpnext accounts_receivable.py
+			# ReceivablePayableReport.__init__ and .set_ageing), silently ignoring as_of_date
+			# for ageing even though it's honoured for the outstanding figures themselves —
+			# and disagreeing with the degraded fallback below, which ages by due_date as of
+			# as_of_date. Pinning both here makes the healthy and fallback paths agree, and
+			# fixes as_of_date being ignored for ageing on the healthy path too.
+			"ageing_based_on": "Due Date",
+			"calculate_ageing_with": "Report Date",
 		}
 		if customer:
 			# The AR report takes party as a list. Filtering here rather than post-hoc keeps
