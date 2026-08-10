@@ -8,6 +8,11 @@ import { getCustomerReceivables, type CustomerReceivable } from "../services/pay
  */
 export function useCustomerReceivable(customer: string | null) {
   const [receivable, setReceivable] = useState<CustomerReceivable | null>(null);
+  // True only when the backend explicitly said `degraded: true` — figures came from the
+  // Sales-Invoice-only fallback (gross of advances, no journal entries). Never derived from
+  // truthiness of a possibly-undefined field.
+  const [degraded, setDegraded] = useState(false);
+  const [degradedReason, setDegradedReason] = useState<string | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   // Derived, not stored: a stored flag is false for one render after the customer changes,
   // and that single frame is enough for a gated modal to mount and unmount again.
@@ -16,6 +21,8 @@ export function useCustomerReceivable(customer: string | null) {
   useEffect(() => {
     if (!customer) {
       setReceivable(null);
+      setDegraded(false);
+      setDegradedReason(null);
       setLoadedFor(null);
       return;
     }
@@ -24,10 +31,17 @@ export function useCustomerReceivable(customer: string | null) {
       .then((response) => {
         if (!isCurrent) return;
         setReceivable(response.data?.[0] || null);
+        const isDegraded = response.degraded === true;
+        setDegraded(isDegraded);
+        setDegradedReason(isDegraded ? response.degraded_reason ?? null : null);
       })
       .catch(() => {
         // A failed lookup must not block taking the payment — fall back to on-account.
-        if (isCurrent) setReceivable(null);
+        if (isCurrent) {
+          setReceivable(null);
+          setDegraded(false);
+          setDegradedReason(null);
+        }
       })
       .finally(() => {
         if (isCurrent) setLoadedFor(customer);
@@ -38,5 +52,5 @@ export function useCustomerReceivable(customer: string | null) {
     };
   }, [customer]);
 
-  return { receivable, isLoading };
+  return { receivable, isLoading, degraded, degradedReason };
 }

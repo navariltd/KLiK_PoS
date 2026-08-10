@@ -24,6 +24,11 @@ interface CustomerPaymentEntryModalProps {
   defaultAmount?: number;
   invoiceCurrency?: string;
   allocationTargets?: ReceivableInvoice[];
+  // True only when the backend explicitly returned `degraded: true` for the receivables
+  // fetch that produced `allocationTargets`/`outstandingAmount` — those figures are
+  // Sales-Invoice-only (gross of advances, no journal entries).
+  degraded?: boolean;
+  degradedReason?: string | null;
   onClose: () => void;
   onCreated?: (paymentEntryName: string) => void;
 }
@@ -35,6 +40,8 @@ export default function CustomerPaymentEntryModal({
   defaultAmount,
   invoiceCurrency,
   allocationTargets,
+  degraded,
+  degradedReason,
   onClose,
   onCreated,
 }: CustomerPaymentEntryModalProps) {
@@ -163,6 +170,13 @@ export default function CustomerPaymentEntryModal({
         </div>
 
         <div className="space-y-4 px-5 py-5">
+          {degraded && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              {degradedReason ||
+                "Figures exclude advances and journal entries. Totals may be understated if this customer has an unallocated advance."}
+            </div>
+          )}
+
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
               {error}

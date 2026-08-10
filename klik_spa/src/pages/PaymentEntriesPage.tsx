@@ -88,6 +88,8 @@ export default function PaymentEntriesPage() {
   const [receivablesCurrency, setReceivablesCurrency] = useState("");
   const [isLoadingReceivables, setIsLoadingReceivables] = useState(false);
   const [receivablesError, setReceivablesError] = useState<string | null>(null);
+  const [receivablesDegraded, setReceivablesDegraded] = useState(false);
+  const [receivablesDegradedReason, setReceivablesDegradedReason] = useState<string | null>(null);
   const [receivableTarget, setReceivableTarget] = useState<{
     customer: Customer;
     salesInvoiceName?: string;
@@ -204,9 +206,16 @@ export default function PaymentEntriesPage() {
       const response = await getCustomerReceivables();
       setReceivables(response.data || []);
       setReceivablesCurrency(response.currency || "");
+      // Only an explicit `true` counts as degraded — an older backend or an error path
+      // must not flip this on.
+      const isDegraded = response.degraded === true;
+      setReceivablesDegraded(isDegraded);
+      setReceivablesDegradedReason(isDegraded ? response.degraded_reason ?? null : null);
     } catch (err) {
       setReceivablesError(err instanceof Error ? err.message : "Failed to fetch customer receivables");
       setReceivables([]);
+      setReceivablesDegraded(false);
+      setReceivablesDegradedReason(null);
     } finally {
       setIsLoadingReceivables(false);
     }
@@ -473,6 +482,8 @@ export default function PaymentEntriesPage() {
               currency={receivablesCurrency || currencySymbol}
               isLoading={isLoadingReceivables}
               error={receivablesError}
+              degraded={receivablesDegraded}
+              degradedReason={receivablesDegradedReason}
               onReceiveCustomer={(receivable) =>
                 setReceivableTarget({
                   customer: buildModalCustomer(receivable.customer, receivable.customer_name),
@@ -692,6 +703,8 @@ export default function PaymentEntriesPage() {
           defaultAmount={receivableTarget.defaultAmount}
           invoiceCurrency={receivablesCurrency || currencySymbol}
           allocationTargets={receivableTarget.allocationTargets}
+          degraded={receivablesDegraded}
+          degradedReason={receivablesDegradedReason}
           onClose={() => setReceivableTarget(null)}
           onCreated={() => {
             setReceivableTarget(null);
