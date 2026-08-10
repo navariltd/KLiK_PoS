@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import BottomNavigation from "../components/BottomNavigation";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 import CustomerReceivablesTable from "../components/customer/CustomerReceivablesTable";
+import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
 import type { Customer } from "../types/customer";
 import {
   getCustomerReceivables,
@@ -15,7 +16,9 @@ import {
   type ReceivableInvoice,
   type UnallocatedCustomerPaymentEntry,
 } from "../services/paymentEntry";
+import { isStatementAvailable } from "../services/statementOfAccounts";
 import { formatCurrencyWithSymbol } from "../utils/currency";
+import { resolveCompanyName } from "../utils/companyName";
 import { formatDateTime, toSortableTimestamp } from "../utils/time";
 import { useTableSort } from "../hooks/useTableSort";
 import SortableHeaderButton from "../components/SortableHeaderButton";
@@ -72,7 +75,7 @@ const buildModalCustomer = (id: string, name: string): Customer =>
   }) as Customer;
 
 export default function PaymentEntriesPage() {
-  const { currencySymbol } = usePOSProfileStore();
+  const { currencySymbol, posDetails } = usePOSProfileStore();
   const [activeTab, setActiveTab] = useState<PaymentTab>(getCachedPaymentTab);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
@@ -101,6 +104,19 @@ export default function PaymentEntriesPage() {
   const [selectedReconcileInvoice, setSelectedReconcileInvoice] = useState<OutstandingSalesInvoice | null>(null);
   const [reconcileAmount, setReconcileAmount] = useState("");
   const [isReconciling, setIsReconciling] = useState(false);
+  const [statementTarget, setStatementTarget] = useState<CustomerReceivable | null>(null);
+  const [canStatement, setCanStatement] = useState(false);
+  const companyName = resolveCompanyName(posDetails?.company);
+
+  useEffect(() => {
+    let isCurrent = true;
+    isStatementAvailable().then((available) => {
+      if (isCurrent) setCanStatement(available);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   const handleTabChange = (tab: PaymentTab) => {
     setActiveTab(tab);
@@ -472,6 +488,7 @@ export default function PaymentEntriesPage() {
                   defaultAmount: invoice.outstanding,
                 })
               }
+              onStatement={canStatement && companyName ? setStatementTarget : undefined}
             />
           </section>
         ) : (
@@ -685,6 +702,15 @@ export default function PaymentEntriesPage() {
             // leads to a "no outstanding amount" error if the user tries to Receive again.
             handlePaymentCreated();
           }}
+        />
+      )}
+
+      {statementTarget && (
+        <StatementOfAccountsModal
+          customer={statementTarget.customer}
+          customerName={statementTarget.customer_name}
+          company={companyName}
+          onClose={() => setStatementTarget(null)}
         />
       )}
 

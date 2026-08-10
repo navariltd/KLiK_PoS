@@ -8,16 +8,18 @@ import { getCustomerReceivables, type CustomerReceivable } from "../services/pay
  */
 export function useCustomerReceivable(customer: string | null) {
   const [receivable, setReceivable] = useState<CustomerReceivable | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  // Derived, not stored: a stored flag is false for one render after the customer changes,
+  // and that single frame is enough for a gated modal to mount and unmount again.
+  const isLoading = Boolean(customer) && loadedFor !== customer;
 
   useEffect(() => {
     if (!customer) {
       setReceivable(null);
-      setIsLoading(false);
+      setLoadedFor(null);
       return;
     }
     let isCurrent = true;
-    setIsLoading(true);
     getCustomerReceivables({ customer })
       .then((response) => {
         if (!isCurrent) return;
@@ -28,7 +30,7 @@ export function useCustomerReceivable(customer: string | null) {
         if (isCurrent) setReceivable(null);
       })
       .finally(() => {
-        if (isCurrent) setIsLoading(false);
+        if (isCurrent) setLoadedFor(customer);
       });
 
     return () => {

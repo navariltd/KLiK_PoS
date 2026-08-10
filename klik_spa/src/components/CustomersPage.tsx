@@ -11,18 +11,22 @@ import {
   Eye,
   Edit,
   Banknote,
+  FileText,
 
 } from "lucide-react"
 import { useCustomers } from "../hooks/useCustomers" // Import the hook
 import { useCustomerReceivable } from "../hooks/useCustomerReceivable"
 import AddCustomerModal from "./customer/AddCustomerModal"
 import CustomerPaymentEntryModal from "./customer/CustomerPaymentEntryModal"
+import BulkStatementModal from "./customer/BulkStatementModal"
 import type { Customer } from "../types/customer"
 
 import BottomNavigation from "./BottomNavigation"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { formatCurrencyWithSymbol } from "../utils/currency"
+import { isStatementAvailable } from "../services/statementOfAccounts"
+import { resolveCompanyName } from "../utils/companyName"
 
 export default function CustomersPage() {
   const navigate = useNavigate()
@@ -37,7 +41,10 @@ export default function CustomersPage() {
   const [prefilledData, setPrefilledData] = useState<{name?: string, email?: string, phone?: string}>({})
   const [globalTotals, setGlobalTotals] = useState<{ total_customers: number; total_invoices: number } | null>(null)
   const [canManageCustomers, setCanManageCustomers] = useState(false)
+  const [canStatement, setCanStatement] = useState(false)
+  const [showBulkStatementModal, setShowBulkStatementModal] = useState(false)
   const { posDetails } = usePOSProfileStore()
+  const companyName = resolveCompanyName(posDetails?.company)
 
   useEffect(() => {
     if (posDetails && posDetails?.custom_allow_to_create_and_edit_customers !== 1) {
@@ -47,6 +54,16 @@ export default function CustomersPage() {
     }
     setCanManageCustomers(posDetails?.custom_allow_to_create_and_edit_customers === 1)
   }, [posDetails])
+
+  useEffect(() => {
+    let isCurrent = true;
+    isStatementAvailable().then((available) => {
+      if (isCurrent) setCanStatement(available);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [])
 
 
   // Use the customers hook with search to fetch from server when searching
@@ -196,15 +213,26 @@ export default function CustomersPage() {
           <div className="px-4 py-3">
             <div className="flex items-center justify-between">
               <h1 className="text-lg font-bold text-gray-900 dark:text-white">Customers</h1>
-              {canManageCustomers && (
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="bg-beveren-600 text-white px-4 py-2 rounded-lg hover:bg-beveren-700 transition-colors flex items-center space-x-2 text-sm"
-                >
-                  <Plus size={16} />
-                  <span>Add</span>
-                </button>
-              )}
+              <div className="flex items-center space-x-2">
+                {canStatement && companyName && (
+                  <button
+                    onClick={() => setShowBulkStatementModal(true)}
+                    className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2 text-sm dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <FileText size={16} />
+                    <span>Statements</span>
+                  </button>
+                )}
+                {canManageCustomers && (
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-beveren-600 text-white px-4 py-2 rounded-lg hover:bg-beveren-700 transition-colors flex items-center space-x-2 text-sm"
+                  >
+                    <Plus size={16} />
+                    <span>Add</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -454,6 +482,14 @@ export default function CustomersPage() {
           />
         )}
 
+        {showBulkStatementModal && (
+          <BulkStatementModal
+            key={companyName}
+            company={companyName}
+            onClose={() => setShowBulkStatementModal(false)}
+          />
+        )}
+
         {/* Bottom Navigation */}
         <BottomNavigation />
       </div>
@@ -467,15 +503,26 @@ export default function CustomersPage() {
         <div className="px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Customers</h1>
-            {canManageCustomers && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="bg-beveren-600 text-white px-6 py-3 rounded-lg hover:bg-beveren-700 transition-colors flex items-center space-x-2"
-              >
-                <Plus size={20} />
-                <span>Add Customer</span>
-              </button>
-            )}
+            <div className="flex items-center space-x-3">
+              {canStatement && companyName && (
+                <button
+                  onClick={() => setShowBulkStatementModal(true)}
+                  className="border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  <FileText size={20} />
+                  <span>Send Statements</span>
+                </button>
+              )}
+              {canManageCustomers && (
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="bg-beveren-600 text-white px-6 py-3 rounded-lg hover:bg-beveren-700 transition-colors flex items-center space-x-2"
+                >
+                  <Plus size={20} />
+                  <span>Add Customer</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -710,6 +757,14 @@ export default function CustomersPage() {
           allocationTargets={paymentReceivable?.invoices}
           onClose={() => setPaymentCustomer(null)}
           onCreated={() => setPaymentCustomer(null)}
+        />
+      )}
+
+      {showBulkStatementModal && (
+        <BulkStatementModal
+          key={companyName}
+          company={companyName}
+          onClose={() => setShowBulkStatementModal(false)}
         />
       )}
     </div>

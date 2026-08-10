@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { Banknote, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { Banknote, ChevronDown, ChevronRight, FileText, Loader2 } from "lucide-react";
 import type { CustomerReceivable, ReceivableInvoice } from "../../services/paymentEntry";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 
@@ -10,6 +10,7 @@ interface CustomerReceivablesTableProps {
   error: string | null;
   onReceiveCustomer: (receivable: CustomerReceivable) => void;
   onReceiveInvoice: (receivable: CustomerReceivable, invoice: ReceivableInvoice) => void;
+  onStatement?: (receivable: CustomerReceivable) => void;
 }
 
 const statusBadge = (status?: string | null) => {
@@ -38,6 +39,7 @@ export default function CustomerReceivablesTable({
   error,
   onReceiveCustomer,
   onReceiveInvoice,
+  onStatement,
 }: CustomerReceivablesTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -228,6 +230,19 @@ export default function CustomerReceivablesTable({
                           <Banknote size={16} />
                           <span>Receive</span>
                         </button>
+                        {onStatement && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onStatement(receivable);
+                            }}
+                            className="ml-2 inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                          >
+                            <FileText size={16} />
+                            <span>Statement</span>
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {isOpen && (
@@ -286,6 +301,16 @@ export default function CustomerReceivablesTable({
                   <Banknote size={16} />
                   <span>Receive</span>
                 </button>
+                {onStatement && (
+                  <button
+                    type="button"
+                    onClick={() => onStatement(receivable)}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <FileText size={16} />
+                    <span>Statement</span>
+                  </button>
+                )}
               </div>
               {isOpen && renderInvoices(receivable)}
             </div>

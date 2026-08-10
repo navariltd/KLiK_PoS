@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSProfileStore } from "../stores/posProfileStore";
@@ -38,9 +38,12 @@ import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
+import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
 import { useCustomerReceivable } from "../hooks/useCustomerReceivable";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { isStatementAvailable } from "../services/statementOfAccounts";
+import { resolveCompanyName } from "../utils/companyName";
 
 export default function CustomerDetailsPage() {
   const navigate = useNavigate();
@@ -59,6 +62,8 @@ export default function CustomerDetailsPage() {
   // Customer edit modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [canStatement, setCanStatement] = useState(false);
   //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
@@ -68,14 +73,23 @@ export default function CustomerDetailsPage() {
   const [draftInvoiceToEdit, setDraftInvoiceToEdit] = useState<SalesInvoice | null>(null);
 
   const { id: customerId } = useParams();
-  // @ts-expect-error just ignore
-  const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
+  const { customer, isLoading: isLoadingC, error: errorC } = useCustomerDetails(customerId ?? null);
   const { receivable: customerReceivable, isLoading: isLoadingReceivable } = useCustomerReceivable(
     showPaymentModal ? customer?.id || null : null
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
   const { posDetails } = usePOSProfileStore();
+  const companyName = resolveCompanyName(posDetails?.company);
 
+  useEffect(() => {
+    let isCurrent = true;
+    isStatementAvailable().then((available) => {
+      if (isCurrent) setCanStatement(available);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
     if (dateFilter === "all") return true;
@@ -307,7 +321,7 @@ export default function CustomerDetailsPage() {
         <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-lg max-w-md">
           <h3 className="text-lg font-medium text-red-800 dark:text-red-200">Error loading customer</h3>
           <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-            {errorC?.message || "Failed to load customer details"}
+            {errorC || "Failed to load customer details"}
           </p>
           <button
             onClick={() => navigate(-1)}
@@ -355,12 +369,12 @@ export default function CustomerDetailsPage() {
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <div>
-                  <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                <div className="min-w-0">
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">
                                           {/* @ts-expect-error just ignore */}
                     {customer.customer_name || customer.name}
                   </h1>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                     Customer ID: {customer.name}
                   </p>
                 </div>
@@ -368,19 +382,29 @@ export default function CustomerDetailsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowPaymentModal(true)}
-                  className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shrink-0"
                   type="button"
                 >
                   <Banknote className="w-4 h-4" />
                   <span>Pay</span>
                 </button>
+                {canStatement && companyName && (
+                  <button
+                    onClick={() => setShowStatementModal(true)}
+                    className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm shrink-0"
+                    type="button"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span className="hidden sm:inline">Statement</span>
+                  </button>
+                )}
                 {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                   <button
                     onClick={() => {
                       setSelectedCustomer(customer);
                       setShowAddModal(true);
                     }}
-                    className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+                    className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm shrink-0"
                     type="button"
                   >
                     <Edit className="w-4 h-4" />
@@ -702,6 +726,15 @@ export default function CustomerDetailsPage() {
           />
         )}
 
+        {showStatementModal && customer && (
+          <StatementOfAccountsModal
+            customer={customer.id}
+            customerName={customer.name}
+            company={companyName}
+            onClose={() => setShowStatementModal(false)}
+          />
+        )}
+
         {selectedInvoiceForPayment && (
           <CustomerPaymentEntryModal
             customer={customer}
@@ -759,6 +792,16 @@ export default function CustomerDetailsPage() {
                   <Banknote className="w-4 h-4" />
                   <span>Receive Payment</span>
                 </button>
+                {canStatement && companyName && (
+                  <button
+                    onClick={() => setShowStatementModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    type="button"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Statement</span>
+                  </button>
+                )}
                 {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                   <button
                     onClick={() => {
@@ -1144,6 +1187,15 @@ export default function CustomerDetailsPage() {
             allocationTargets={customerReceivable?.invoices}
             onClose={() => setShowPaymentModal(false)}
             onCreated={handleInvoicePaymentCreated}
+          />
+        )}
+
+        {showStatementModal && customer && (
+          <StatementOfAccountsModal
+            customer={customer.id}
+            customerName={customer.name}
+            company={companyName}
+            onClose={() => setShowStatementModal(false)}
           />
         )}
 
