@@ -40,6 +40,7 @@ import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
 import { useCustomerReceivable } from "../hooks/useCustomerReceivable";
+import { useCustomerSummary } from "../hooks/useCustomerSummary";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { isStatementAvailable } from "../services/statementOfAccounts";
@@ -78,6 +79,7 @@ export default function CustomerDetailsPage() {
     showPaymentModal ? customer?.id || null : null
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
+  const { summary } = useCustomerSummary(customer?.id || null);
   const { posDetails } = usePOSProfileStore();
   const companyName = resolveCompanyName(posDetails?.company);
 
@@ -285,23 +287,6 @@ export default function CustomerDetailsPage() {
     setSelectedCustomer(null);
   };
 
-  // Calculate customer metrics
-  const customerMetrics = useMemo(() => {
-    const totalInvoices = customerInvoices.length;
-    const totalRevenue = customerInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-    const outstandingAmount = customerInvoices
-      .filter(inv => inv.status === "Unpaid" || inv.status === "Overdue")
-      .reduce((sum, inv) => sum + inv.totalAmount, 0);
-    const avgOrderValue = totalInvoices > 0 ? totalRevenue / totalInvoices : 0;
-
-    return {
-      totalInvoices,
-      totalRevenue,
-      outstandingAmount,
-      avgOrderValue
-    };
-  }, [customerInvoices]);
-
   // Loading state
   if (isLoadingC) {
     return (
@@ -469,7 +454,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {customerMetrics.totalInvoices}
+                    {summary ? summary.invoice_count : "—"}
                   </p>
                 </div>
                 <FileText className="w-6 h-6 text-beveren-600" />
@@ -481,7 +466,9 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
+                    {summary
+                      ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
                   </p>
                 </div>
                 <DollarSign className="w-6 h-6 text-green-600" />
@@ -493,10 +480,12 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                    {summary && summary.outstanding != null
+                      ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
                   </p>
                 </div>
-                <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                <AlertCircle className={`w-6 h-6 ${summary && summary.outstanding && summary.outstanding > 0 ? 'text-red-600' : 'text-gray-400'}`} />
               </div>
             </div>
 
@@ -505,7 +494,9 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
+                    {summary
+                      ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
                   </p>
                 </div>
                 <TrendingUp className="w-6 h-6 text-blue-600" />
@@ -901,7 +892,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Invoices</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {customerMetrics.totalInvoices}
+                      {summary ? summary.invoice_count : "—"}
                     </p>
                   </div>
                   <FileText className="w-8 h-8 text-beveren-600" />
@@ -913,7 +904,9 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
+                      {summary
+                        ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                        : "—"}
                     </p>
                   </div>
                   <DollarSign className="w-8 h-8 text-green-600" />
@@ -925,10 +918,12 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                      {summary && summary.outstanding != null
+                        ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                        : "—"}
                     </p>
                   </div>
-                  <AlertCircle className={`w-8 h-8 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                  <AlertCircle className={`w-8 h-8 ${summary && summary.outstanding && summary.outstanding > 0 ? 'text-red-600' : 'text-gray-400'}`} />
                 </div>
               </div>
 
@@ -937,7 +932,9 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
+                      {summary
+                        ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                        : "—"}
                     </p>
                   </div>
                   <TrendingUp className="w-8 h-8 text-blue-600" />
