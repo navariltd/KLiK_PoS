@@ -91,7 +91,7 @@ export default function OrderSummary({
   const [itemSerials, setItemSerials] = useState<Record<string, string[]>>({});
 
   const currency_symbol = posDetails?.currency_symbol;
-  const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
+  const autoFetchBatch = posDetails?.custom_autofetch_batchserial_ === 1;
   const isTaxIncludedInBasicRate =
     posDetails?.is_tax_included_in_basic_rate === 1
     || posDetails?.is_tax_included_in_basic_rate === "1"
@@ -194,27 +194,43 @@ export default function OrderSummary({
   }, []);
 
   useEffect(() => {
+    if (!autoFetchBatch) return;
+
     const fetchData = async () => {
       const newBatches = { ...itemBatches };
       const newSerials = { ...itemSerials };
       for (const item of cartItems) {
         const key = item.item_code || item.id;
         if (key && key !== "undefined") {
-          if (!newBatches[key]) {
-            const batches = await getBatches(item.id);
-            if (Array.isArray(batches)) newBatches[key] = batches;
+          if (!newBatches[key] && item.has_batch_no) {
+            try {
+              const batches = await getBatches(item.id);
+              newBatches[key] = Array.isArray(batches) ? batches : [];
+            } catch (err) {
+              console.warn(`Failed to fetch batches for item ${key}:`, err);
+              newBatches[key] = [];
+            }
           }
-          if (!newSerials[key]) {
-            const serials = await getSerials(key);
-            if (Array.isArray(serials)) newSerials[key] = serials;
+          if (!newSerials[key] && item.has_serial_no) {
+            try {
+              const serials = await getSerials(key);
+              newSerials[key] = Array.isArray(serials) ? serials : [];
+            } catch (err) {
+              console.warn(`Failed to fetch serials for item ${key}:`, err);
+              newSerials[key] = [];
+            }
           }
         }
       }
       setItemBatches(newBatches);
       setItemSerials(newSerials);
     };
-    if (cartItems.length) fetchData();
-  }, [cartItems]);
+    if (cartItems.length) {
+      fetchData().catch((err) => {
+        console.warn("Failed to fetch batch/serial data for cart:", err);
+      });
+    }
+  }, [autoFetchBatch, cartItems]);
 
   const getDiscountedPrice = (item: CartItem) => {
     return roundCurrency(getEffectiveItemRate(item, {
