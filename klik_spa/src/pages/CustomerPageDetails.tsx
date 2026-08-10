@@ -821,139 +821,142 @@ export default function CustomerDetailsPage() {
 
         <div className="flex-1 overflow-auto pt-20 ml-20">
           <div className="px-6 py-8 max-w-none">
-            {/* Customer Info Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-beveren-600 rounded-full flex items-center justify-center">
-                    <User className="w-8 h-8 text-white" />
-                  </div>
-                  <div className="space-y-1">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                            {/* @ts-expect-error just ignore */}
-                      {customer.customer_name || customer.name}
-                    </h2>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Mail className="w-4 h-4" />
-                        <span>{customer.email || "No email provided"}</span>
+            {/* Customer Info + Metrics Cards */}
+            <div className="flex flex-col lg:flex-row gap-6 mb-6">
+              {/* Customer Info Card */}
+              <div className="flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-16 h-16 bg-beveren-600 rounded-full flex items-center justify-center">
+                      <User className="w-8 h-8 text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                              {/* @ts-expect-error just ignore */}
+                        {customer.customer_name || customer.name}
+                      </h2>
+                      <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Mail className="w-4 h-4" />
+                          <span>{customer.email || "No email provided"}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Phone className="w-4 h-4" />
+                          <span>{customer.phone || "No phone provided"}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <Phone className="w-4 h-4" />
-                        <span>{customer.phone || "No phone provided"}</span>
+                      <div className="flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
+                        <MapPin className="w-4 h-4" />
+                        <span>{customer.territory || "No territory specified"}</span>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
-                      <MapPin className="w-4 h-4" />
-                      <span>{customer.territory || "No territory specified"}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Customer Group: {customer.customer_group}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Type: {customer.type}</span>
-                    </div>
-                    {customer.is_walkin == 1 && (
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        <span>Walk-in Customer</span>
+                        <span>Customer Group: {customer.customer_group}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Type: {customer.type}</span>
+                      </div>
+                      {customer.is_walkin == 1 && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          <span>Walk-in Customer</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                        Active
+                      </span>
+                    </div>
+                                          {/* @ts-expect-error just ignore */}
+                    {customer.creation && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                                                {/* @ts-expect-error just ignore */}
+                          <span>Created: {new Date(customer.creation).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    )}
+                                          {/* @ts-expect-error just ignore */}
+                    {customer.modified && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Clock className="w-4 h-4" />
+                                              {/* @ts-expect-error just ignore */}
+                          <span>Updated: {new Date(customer.modified).toLocaleDateString()}</span>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="text-right space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-                      Active
-                    </span>
-                  </div>
-                                        {/* @ts-expect-error just ignore */}
-                  {customer.creation && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
-                                              {/* @ts-expect-error just ignore */}
-                        <span>Created: {new Date(customer.creation).toLocaleDateString()}</span>
-                      </div>
+              </div>
+
+              {/* Metrics Cards */}
+              <div className="grid grid-cols-2 gap-3 lg:w-[420px] lg:shrink-0">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {!isLoadingSummary && summary ? summary.invoice_count : "—"}
+                      </p>
                     </div>
-                  )}
-                                        {/* @ts-expect-error just ignore */}
-                  {customer.modified && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-4 h-4" />
-                                            {/* @ts-expect-error just ignore */}
-                        <span>Updated: {new Date(customer.modified).toLocaleDateString()}</span>
-                      </div>
+                    <FileText className="w-5 h-5 text-beveren-600" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {!isLoadingSummary && summary
+                          ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                          : "—"}
+                      </p>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Metrics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Invoices</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {!isLoadingSummary && summary ? summary.invoice_count : "—"}
-                    </p>
+                    <DollarSign className="w-5 h-5 text-green-600" />
                   </div>
-                  <FileText className="w-8 h-8 text-beveren-600" />
                 </div>
-              </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {!isLoadingSummary && summary
-                        ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
-                        : "—"}
-                    </p>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {!isLoadingSummary && summary && summary.outstanding != null
+                          ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                          : "—"}
+                      </p>
+                    </div>
+                    <AlertCircle
+                      className={`w-5 h-5 ${
+                        !isLoadingSummary && summary && summary.outstanding != null
+                          ? summary.outstanding > 0
+                            ? "text-red-600" // real debt
+                            : "text-gray-400" // real zero — genuinely nothing owed
+                          : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
+                      }`}
+                    />
                   </div>
-                  <DollarSign className="w-8 h-8 text-green-600" />
                 </div>
-              </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {!isLoadingSummary && summary && summary.outstanding != null
-                        ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
-                        : "—"}
-                    </p>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        {!isLoadingSummary && summary
+                          ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                          : "—"}
+                      </p>
+                    </div>
+                    <TrendingUp className="w-5 h-5 text-blue-600" />
                   </div>
-                  <AlertCircle
-                    className={`w-8 h-8 ${
-                      !isLoadingSummary && summary && summary.outstanding != null
-                        ? summary.outstanding > 0
-                          ? "text-red-600" // real debt
-                          : "text-gray-400" // real zero — genuinely nothing owed
-                        : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {!isLoadingSummary && summary
-                        ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
-                        : "—"}
-                    </p>
-                  </div>
-                  <TrendingUp className="w-8 h-8 text-blue-600" />
                 </div>
               </div>
             </div>
