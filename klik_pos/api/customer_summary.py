@@ -34,11 +34,16 @@ def _default_company():
 def _outstanding_for(customer):
 	"""Delegate to the AR path so this always agrees with the Statement and the By Customer tab.
 
-	get_customer_receivables never raises (it catches internally and returns
-	{"success": False, "error": ...}), and its "data" list is empty for a customer who owes
-	nothing — never assume a row exists.
+	Returns None, not 0.0, when the figure could not be determined — get_customer_receivables
+	never raises (it catches internally and returns {"success": False, "error": ...}, with no
+	"data" key at all), and a permission failure or a broken AR report must not be reported as
+	a confident "customer owes nothing". 0.0 is reserved for the case the AR path actually
+	resolved and genuinely found no outstanding balance and no unallocated advance — its "data"
+	list is empty then, and that emptiness is itself the answer, never assume a row exists.
 	"""
 	response = get_customer_receivables(customer=customer) or {}
+	if not response.get("success"):
+		return None
 	data = response.get("data") or []
 	if not data:
 		return 0.0
@@ -51,6 +56,11 @@ def get_customer_account_summary(customer):
 
 	All four come from one call so they cannot disagree with each other, and none of them
 	depend on whatever filter the user has applied to the invoice table below.
+
+	`outstanding` is `float | None`: None means the AR path could not determine it (a
+	permission failure or a broken report), not that the customer owes nothing — the caller
+	should render that as unknown, not as zero. `currency` is `str | None` for the same
+	reason: no company resolved for the session.
 	"""
 	if not customer:
 		frappe.throw(_("Customer is required."))
