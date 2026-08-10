@@ -79,7 +79,7 @@ export default function CustomerDetailsPage() {
     showPaymentModal ? customer?.id || null : null
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
-  const { summary } = useCustomerSummary(customer?.id || null);
+  const { summary, isLoading: isLoadingSummary } = useCustomerSummary(customer?.id || null);
   const { posDetails } = usePOSProfileStore();
   const companyName = resolveCompanyName(posDetails?.company);
 
@@ -454,7 +454,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {summary ? summary.invoice_count : "—"}
+                    {!isLoadingSummary && summary ? summary.invoice_count : "—"}
                   </p>
                 </div>
                 <FileText className="w-6 h-6 text-beveren-600" />
@@ -466,7 +466,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {summary
+                    {!isLoadingSummary && summary
                       ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
                       : "—"}
                   </p>
@@ -480,12 +480,20 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {summary && summary.outstanding != null
+                    {!isLoadingSummary && summary && summary.outstanding != null
                       ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
                       : "—"}
                   </p>
                 </div>
-                <AlertCircle className={`w-6 h-6 ${summary && summary.outstanding && summary.outstanding > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                <AlertCircle
+                  className={`w-6 h-6 ${
+                    !isLoadingSummary && summary && summary.outstanding != null
+                      ? summary.outstanding > 0
+                        ? "text-red-600" // real debt
+                        : "text-gray-400" // real zero — genuinely nothing owed
+                      : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
+                  }`}
+                />
               </div>
             </div>
 
@@ -494,7 +502,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {summary
+                    {!isLoadingSummary && summary
                       ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
                       : "—"}
                   </p>
@@ -892,7 +900,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Invoices</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {summary ? summary.invoice_count : "—"}
+                      {!isLoadingSummary && summary ? summary.invoice_count : "—"}
                     </p>
                   </div>
                   <FileText className="w-8 h-8 text-beveren-600" />
@@ -904,7 +912,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {summary
+                      {!isLoadingSummary && summary
                         ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
                         : "—"}
                     </p>
@@ -918,12 +926,20 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {summary && summary.outstanding != null
+                      {!isLoadingSummary && summary && summary.outstanding != null
                         ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
                         : "—"}
                     </p>
                   </div>
-                  <AlertCircle className={`w-8 h-8 ${summary && summary.outstanding && summary.outstanding > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                  <AlertCircle
+                    className={`w-8 h-8 ${
+                      !isLoadingSummary && summary && summary.outstanding != null
+                        ? summary.outstanding > 0
+                          ? "text-red-600" // real debt
+                          : "text-gray-400" // real zero — genuinely nothing owed
+                        : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
+                    }`}
+                  />
                 </div>
               </div>
 
@@ -932,7 +948,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {summary
+                      {!isLoadingSummary && summary
                         ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
                         : "—"}
                     </p>

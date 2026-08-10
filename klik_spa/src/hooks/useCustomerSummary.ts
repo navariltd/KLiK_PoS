@@ -19,9 +19,14 @@ export function useCustomerSummary(customer: string | null) {
   const isLoading = Boolean(customer) && loadedFor !== customer;
 
   useEffect(() => {
+    // Clear on every customer change, not only when it goes falsy — otherwise a truthy id
+    // swapped for a different truthy id leaves the previous customer's figures on screen
+    // until the new fetch resolves, which is exactly the stale-figure this hook exists to
+    // prevent.
+    setSummary(null);
+    setLoadedFor(null);
+
     if (!customer) {
-      setSummary(null);
-      setLoadedFor(null);
       return;
     }
     let isCurrent = true;
