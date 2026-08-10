@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { getBatches } from "../../utils/batch";
 import { getSerials } from "../../utils/serial";
+import { isExplicitlyNotTracked } from "../../utils/trackingFlags";
 import type { CartItem } from "../../../types";
 import type { Customer } from "../../types/customer";
 import PaymentDialog from "../dialog/PaymentDialog";
@@ -202,7 +203,12 @@ export default function OrderSummary({
       for (const item of cartItems) {
         const key = item.item_code || item.id;
         if (key && key !== "undefined") {
-          if (!newBatches[key] && item.has_batch_no) {
+          // has_batch_no/has_serial_no are only populated on cart items added via the
+          // product-tile flow. Items added by scanning a barcode never get them set, so
+          // `undefined` here means "unknown", not "not tracked" — do NOT treat it as a
+          // plain falsy check, or scanned batch/serial items silently lose their fetch.
+          // Only skip when the backend has explicitly told us there is nothing to fetch.
+          if (!newBatches[key] && !isExplicitlyNotTracked(item.has_batch_no)) {
             try {
               const batches = await getBatches(item.id);
               newBatches[key] = Array.isArray(batches) ? batches : [];
@@ -211,7 +217,7 @@ export default function OrderSummary({
               newBatches[key] = [];
             }
           }
-          if (!newSerials[key] && item.has_serial_no) {
+          if (!newSerials[key] && !isExplicitlyNotTracked(item.has_serial_no)) {
             try {
               const serials = await getSerials(key);
               newSerials[key] = Array.isArray(serials) ? serials : [];
