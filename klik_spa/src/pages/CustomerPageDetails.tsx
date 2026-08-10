@@ -897,44 +897,35 @@ export default function CustomerDetailsPage() {
 
               {/* Metrics Cards */}
               <div className="grid grid-cols-2 gap-3 lg:w-[420px] lg:shrink-0">
+                {/* Icon sits beside the LABEL, not the value: sharing a flex row with the value
+                    squeezed it into ~145px, which wrapped "KES 400,335.24" onto two lines. */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        {!isLoadingSummary && summary ? summary.invoice_count : "—"}
-                      </p>
-                    </div>
-                    <FileText className="w-5 h-5 text-beveren-600" />
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
+                    <FileText className="w-5 h-5 shrink-0 text-beveren-600" />
                   </div>
+                  <p className="mt-1 truncate text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary ? summary.invoice_count : "—"}
+                  </p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        {!isLoadingSummary && summary
-                          ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
-                          : "—"}
-                      </p>
-                    </div>
-                    <DollarSign className="w-5 h-5 text-green-600" />
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
+                    <DollarSign className="w-5 h-5 shrink-0 text-green-600" />
                   </div>
+                  <p className="mt-1 truncate text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary
+                      ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        {!isLoadingSummary && summary && summary.outstanding != null
-                          ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
-                          : "—"}
-                      </p>
-                    </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
                     <AlertCircle
-                      className={`w-5 h-5 ${
+                      className={`w-5 h-5 shrink-0 ${
                         !isLoadingSummary && summary && summary.outstanding != null
                           ? summary.outstanding > 0
                             ? "text-red-600" // real debt
@@ -943,20 +934,23 @@ export default function CustomerDetailsPage() {
                       }`}
                     />
                   </div>
+                  <p className="mt-1 truncate text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary && summary.outstanding != null
+                      ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white">
-                        {!isLoadingSummary && summary
-                          ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
-                          : "—"}
-                      </p>
-                    </div>
-                    <TrendingUp className="w-5 h-5 text-blue-600" />
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
+                    <TrendingUp className="w-5 h-5 shrink-0 text-blue-600" />
                   </div>
+                  <p className="mt-1 truncate text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary
+                      ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
                 </div>
               </div>
             </div>
