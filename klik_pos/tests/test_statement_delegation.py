@@ -79,10 +79,16 @@ class TestStatementDelegation(FrappeTestCase):
 		self.assertFalse(result["available"])
 		self.assertIn("permission", result["reason"].lower())
 
-	def test_missing_attribute_is_treated_as_missing_app(self):
+	def test_missing_attribute_is_treated_as_a_missing_method_regression(self):
+		# AttributeError means the app resolved but one of the required methods didn't — the app
+		# IS installed, so this must read differently from "not installed" (it names the missing
+		# method and does not claim the app is absent).
 		with patch.object(soa, "_upstream", side_effect=AttributeError("gone")):
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
+		message = str(ctx.exception)
+		self.assertIn("get_statement_templates", message)
+		self.assertNotIn("not installed", message)
 
 	def test_upstream_errors_propagate_unchanged(self):
 		# A "no transactions in the period" throw must reach the user as itself, not be
@@ -162,7 +168,7 @@ class TestStatementDelegation(FrappeTestCase):
 		# forwards to, not about capability resolution (covered separately) — without this, the
 		# capability probe's own resolutions of all seven names plus the version constant would
 		# land in `seen` too, ahead of each real forwarding call.
-		with patch.object(soa, "_upstream_capability", return_value=(True, None, None)):
+		with patch.object(soa, "_upstream_capability", return_value=(True, None, None, None)):
 			with patch.object(soa, "_upstream", side_effect=spy):
 				soa.get_statement_templates(company="Dev Co")
 				soa.get_default_recipient(party_type="customer", party="ACME")
@@ -218,6 +224,20 @@ class TestStatementDelegation(FrappeTestCase):
 		self.assertIn("1", result["reason"])
 		self.assertIn(str(soa.REQUIRED_UPSTREAM_API), result["reason"])
 
+	def test_is_available_false_when_upstream_api_version_is_too_new(self):
+		# A newer upstream is not "newer and better" — its own version comment defines a bump as
+		# "anything written against the old version could break" (a removed/renamed function, a
+		# new required parameter, or a changed return shape). A resolvable name proves nothing
+		# about the shape behind it, so `!=`, not `<`, is what must gate this — and the message
+		# must point at klik_pos, never suggest downgrading the reports app.
+		with patch.object(soa, "_upstream_api_version", return_value=3):
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("3", result["reason"])
+		self.assertIn(str(soa.REQUIRED_UPSTREAM_API), result["reason"])
+		self.assertIn("klik_pos", result["reason"])
+		self.assertNotIn("downgrade", result["reason"].lower())
+
 	def test_absent_version_constant_reads_as_the_pre_contract_version(self):
 		# An upstream predating the constant must read as 1, not raise and not pass.
 		with patch.object(soa, "_upstream", side_effect=AttributeError("STATEMENT_API_VERSION")):
@@ -241,6 +261,17 @@ class TestStatementDelegation(FrappeTestCase):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
 		self.assertIn("Cecypo Frappe Reports", str(ctx.exception))
+
+	def test_delegate_refuses_when_upstream_is_too_new(self):
+		# This is the likely real-world direction: the reports app is the one under active
+		# development, so it is more likely to be upgraded first, ahead of klik_pos. A resolvable
+		# name proves nothing about a changed return shape (the incident that motivated this
+		# whole check), so this must refuse rather than forward into a shape klik_pos doesn't
+		# expect.
+		with patch.object(soa, "_upstream_api_version", return_value=3):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				soa._delegate("render_statement_html", customer="ACME")
+		self.assertIn("klik_pos", str(ctx.exception))
 
 	def test_is_available_logs_a_repeated_reason_once_but_a_new_reason_again(self):
 		"""is_available() is called from several unthrottled page-mount effects. A permanent
@@ -273,8 +304,16 @@ class TestStatementDelegation(FrappeTestCase):
 		)
 
 	def test_missing_app_message_names_the_app_readably(self):
-		# The message is user-facing; it must not leak the snake_case module id.
-		with patch.object(soa, "_upstream", side_effect=frappe.AppNotInstalledError("not installed")):
+		# The message is user-facing; it must not leak the snake_case module id. Raises the REAL
+		# text frappe.get_attr produces for an app absent from the site (frappe/__init__.py's
+		# get_attr: `throw(_("App {0} is not installed").format(app_name), AppNotInstalledError)`)
+		# rather than a fixture string that merely happens not to contain the module id — a mock
+		# unrepresentative enough to make this assertion pass regardless of what production code did.
+		with patch.object(
+			soa,
+			"_upstream",
+			side_effect=frappe.AppNotInstalledError("App cecypo_frappe_reports is not installed"),
+		):
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				soa._delegate("render_statement_html", customer="ACME")
 		message = str(ctx.exception)

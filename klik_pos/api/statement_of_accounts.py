@@ -12,7 +12,6 @@ frontend asks is_available() so it can hide the feature rather than offer one th
 import frappe
 from frappe import _
 
-UPSTREAM_APP = "cecypo_frappe_reports"
 UPSTREAM_APP_LABEL = "Cecypo Frappe Reports"
 UPSTREAM_MODULE = "cecypo_frappe_reports.cecypo_frappe_reports.statement_of_accounts"
 
@@ -52,8 +51,9 @@ def _upstream_api_version():
 
 # Log levels for a capability failure. "Not installed" is a permanent, unactionable
 # configuration fact — the module's own docstring calls it a supported soft dependency, not an
-# error — so it logs at info. "Too old" is a regression: someone upgraded one app and not the
-# other, which is exactly the failure this whole check exists to catch, so it stays a warning.
+# error — so it logs at info. Everything else is a regression someone can act on: a required
+# method gone even though the app resolved, or a version mismatch in either direction — so those
+# stay a warning.
 _LEVEL_INFO = "info"
 _LEVEL_WARNING = "warning"
 
@@ -64,34 +64,78 @@ _LOGGED_UNAVAILABLE_REASONS = set()
 
 
 def _upstream_capability():
-	"""(ok, reason, level). Never raises — callers use it to decide whether to offer a feature.
+	"""(ok, reason, level, detail). Never raises — callers use it to decide whether to offer a
+	feature.
 
-	`level` is only meaningful when `ok` is False: "info" for the permanent not-installed case,
-	"warning" for a regression (installed but too old, or an unexpected resolution failure).
+	`reason` is a FIXED, user-facing sentence: readable, and free of any raw exception text or
+	the snake_case module id. It is shown to a cashier, and "is not installed, or is missing App
+	cecypo_frappe_reports is not installed" is not something anyone can act on. `level` and
+	`detail` are only meaningful when `ok` is False. `level` is "info" for the permanent
+	not-installed case and "warning" for a regression: a required method gone, a version
+	mismatch in EITHER direction, or an unexpected resolution failure. `detail`, when set, is the
+	raw technical text — worth keeping in a log line even though it does not belong in `reason`.
 	"""
-	try:
-		for method in REQUIRED_UPSTREAM_METHODS:
+	for method in REQUIRED_UPSTREAM_METHODS:
+		try:
 			_upstream(method)
-	except (ImportError, AttributeError, frappe.AppNotInstalledError) as exc:
-		return (
-			False,
-			_("{0} is not installed, or is missing {1}.").format(UPSTREAM_APP_LABEL, exc),
-			_LEVEL_INFO,
-		)
-	except Exception as exc:
-		return False, str(exc), _LEVEL_WARNING
+		except AttributeError as exc:
+			# The app resolved — an absent app raises AppNotInstalledError below, before this can
+			# fire — so this is the app being installed but missing something klik_pos calls: the
+			# exact regression REQUIRED_UPSTREAM_METHODS exists to catch, not a permanent
+			# configuration fact, so it is a warning rather than an info.
+			return (
+				False,
+				_("{0} is installed, but is missing {1}. Update that app.").format(
+					UPSTREAM_APP_LABEL, method
+				),
+				_LEVEL_WARNING,
+				str(exc),
+			)
+		except (ImportError, frappe.AppNotInstalledError) as exc:
+			return (
+				False,
+				_("{0} is not installed on this site.").format(UPSTREAM_APP_LABEL),
+				_LEVEL_INFO,
+				str(exc),
+			)
+		except Exception as exc:
+			return (
+				False,
+				str(exc) or _("{0} could not be checked.").format(UPSTREAM_APP_LABEL),
+				_LEVEL_WARNING,
+				None,
+			)
 
 	found = _upstream_api_version()
 	if found < REQUIRED_UPSTREAM_API:
+		# Behind: the required functions and shapes klik_pos calls may not exist yet upstream.
+		# The reports app is the one to update.
 		return (
 			False,
-			_("{0} provides statement API version {1}, but {2} is required. Update that app.").format(
+			_("{0} provides statement API version {1}, but {2} is required. Update {0}.").format(
 				UPSTREAM_APP_LABEL, found, REQUIRED_UPSTREAM_API
 			),
 			_LEVEL_WARNING,
+			None,
+		)
+	if found > REQUIRED_UPSTREAM_API:
+		# Ahead: upstream's own version comment defines a bump as "anything written against the
+		# old version could break" — a whitelisted function removed/renamed, a required parameter
+		# added, or a RETURN SHAPE changed (the incident that motivated this whole check:
+		# preview_bulk_statements's will_send/no_email becoming in_scope/with_email). A resolvable
+		# name proves nothing about the shape behind it, so klik_pos — written against the OLD
+		# version — is the one that needs to change here, never "downgrade the reports app".
+		return (
+			False,
+			_(
+				"{0} provides statement API version {1}, newer than the {2} klik_pos is written "
+				"against. Update klik_pos."
+			).format(UPSTREAM_APP_LABEL, found, REQUIRED_UPSTREAM_API),
+			_LEVEL_WARNING,
+			None,
 		)
 
-	return True, None, None
+	return True, None, None, None
 
 
 def _delegate(method, **kwargs):
@@ -100,7 +144,7 @@ def _delegate(method, **kwargs):
 	kwargs are passed through untouched rather than re-declared, so a parameter added upstream
 	flows through without a change here.
 	"""
-	ok, reason, _level = _upstream_capability()
+	ok, reason, _level, _detail = _upstream_capability()
 	if not ok:
 		# Refuse at the endpoint, not only in the UI. is_available hides a button; a direct API
 		# call or a stale SPA bundle never consults it, and half-working against an old
@@ -122,17 +166,21 @@ def is_available():
 	"you lack permission" without reading code.
 	"""
 	try:
-		ok, reason, level = _upstream_capability()
+		ok, reason, level, detail = _upstream_capability()
 		if not ok:
 			# Logged, not thrown: a cashier cannot act on this, but whoever is wondering why
 			# the button vanished needs it to be findable. Throttled to once per distinct reason
 			# per worker process — is_available() is called from several unthrottled page-mount
 			# effects, and a permanent "not installed" site would otherwise write the same line
 			# forever and bury the regressions (a "too old" reason appearing later) that are
-			# actually actionable.
+			# actually actionable. `detail`, when present, carries the raw exception text that
+			# `reason` deliberately leaves out of the user-facing sentence.
 			if reason not in _LOGGED_UNAVAILABLE_REASONS:
 				_LOGGED_UNAVAILABLE_REASONS.add(reason)
-				getattr(frappe.logger("klik_pos"), level)(f"Statement feature unavailable: {reason}")
+				message = f"Statement feature unavailable: {reason}"
+				if detail:
+					message += f" ({detail})"
+				getattr(frappe.logger("klik_pos"), level)(message)
 			return {"available": False, "reason": reason}
 
 		# Resolution is not capability. The upstream endpoints gate on Process Statement Of
@@ -145,7 +193,10 @@ def is_available():
 				"reason": _("You do not have permission to read Process Statement Of Accounts."),
 			}
 	except Exception as exc:
-		return {"available": False, "reason": str(exc)}
+		return {
+			"available": False,
+			"reason": str(exc) or _("The statement feature could not be checked."),
+		}
 
 	return {"available": True, "reason": None}
 
