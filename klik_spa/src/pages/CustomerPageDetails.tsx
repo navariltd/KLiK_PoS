@@ -346,11 +346,14 @@ export default function CustomerDetailsPage() {
         {/* Mobile Header */}
         <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-between gap-2">
+              {/* min-w-0 on this group is what makes the truncate below actually fire: a flex
+                  item defaults to min-width:auto, so without it the group refuses to shrink
+                  past the full customer name and shoves the buttons off a 375px screen. */}
+              <div className="flex min-w-0 items-center space-x-3">
                 <button
                   onClick={() => navigate(-1)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  className="shrink-0 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
@@ -364,14 +367,18 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   onClick={() => setShowPaymentModal(true)}
                   className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shrink-0"
                   type="button"
                 >
                   <Banknote className="w-4 h-4" />
-                  <span>Pay</span>
+                  {/* Icon-only on phones. Three labelled buttons left the customer name about
+                      85px — even "Mike Jones" truncated — and the name is what identifies the
+                      page once the body scrolls away. Colour still marks this as the primary
+                      action; the desktop header keeps the full "Receive Payment" label. */}
+                  <span className="hidden sm:inline">Pay</span>
                 </button>
                 {canStatement && companyName && (
                   <button
@@ -393,7 +400,10 @@ export default function CustomerDetailsPage() {
                     type="button"
                   >
                     <Edit className="w-4 h-4" />
-                    <span>Edit</span>
+                    {/* Label hidden on phones, same treatment Statement already gets: three
+                        labelled buttons squeeze the customer name down to "Com...". Pay keeps
+                        its label as the primary action. */}
+                    <span className="hidden sm:inline">Edit</span>
                   </button>
                 )}
               </div>
