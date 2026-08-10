@@ -44,7 +44,13 @@ export async function isStatementAvailable(): Promise<boolean> {
       credentials: "include",
     });
     const result = await response.json();
-    return Boolean(result?.message?.available);
+    const available = Boolean(result?.message?.available);
+    if (!available && result?.message?.reason) {
+      // Not a toast: a cashier cannot act on "update the reports app". This is for whoever
+      // is asking why the button is missing.
+      console.info("Statement feature unavailable:", result.message.reason);
+    }
+    return available;
   } catch {
     return false;
   }

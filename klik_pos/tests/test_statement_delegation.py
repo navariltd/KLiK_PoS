@@ -14,16 +14,19 @@ class TestStatementDelegation(FrappeTestCase):
 	"""
 
 	def test_is_available_true_when_upstream_resolves(self):
-		self.assertEqual(soa.is_available(), {"available": True})
+		self.assertEqual(soa.is_available(), {"available": True, "reason": None})
 
 	def test_is_available_false_when_upstream_missing(self):
 		with patch.object(soa, "_upstream", side_effect=ImportError("no module")):
-			self.assertEqual(soa.is_available(), {"available": False})
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("Cecypo Frappe Reports", result["reason"])
 
 	def test_is_available_never_raises(self):
 		# The frontend calls this to decide whether to render a button; it must always answer.
 		with patch.object(soa, "_upstream", side_effect=Exception("boom")):
-			self.assertEqual(soa.is_available(), {"available": False})
+			result = soa.is_available()
+		self.assertFalse(result["available"])
 
 	def test_delegate_forwards_arguments_and_returns_the_result(self):
 		captured = {}
@@ -32,8 +35,12 @@ class TestStatementDelegation(FrappeTestCase):
 			captured.update(kwargs)
 			return "rendered"
 
-		with patch.object(soa, "_upstream", return_value=fake):
-			result = soa._delegate("render_statement_html", customer="ACME", company="Dev Co")
+		# _upstream_capability is bypassed here: this test is about _delegate's forwarding, not
+		# about capability resolution (covered separately), and a bare **kwargs stub returned for
+		# every dotted path — including STATEMENT_API_VERSION — is not a real int to check.
+		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
+			with patch.object(soa, "_upstream", return_value=fake):
+				result = soa._delegate("render_statement_html", customer="ACME", company="Dev Co")
 
 		self.assertEqual(result, "rendered")
 		self.assertEqual(captured, {"customer": "ACME", "company": "Dev Co"})
@@ -46,8 +53,9 @@ class TestStatementDelegation(FrappeTestCase):
 			captured.update(kwargs)
 			return True
 
-		with patch.object(soa, "_upstream", return_value=fake):
-			soa._delegate("email_statement", customer="ACME", some_new_upstream_arg=42)
+		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
+			with patch.object(soa, "_upstream", return_value=fake):
+				soa._delegate("email_statement", customer="ACME", some_new_upstream_arg=42)
 
 		self.assertEqual(captured["some_new_upstream_arg"], 42)
 
@@ -68,7 +76,9 @@ class TestStatementDelegation(FrappeTestCase):
 		# Resolution is not capability. A user who cannot read the PSOA doctype must not be
 		# shown a button that opens onto a permission error.
 		with patch.object(frappe, "has_permission", return_value=False):
-			self.assertEqual(soa.is_available(), {"available": False})
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("permission", result["reason"].lower())
 
 	def test_missing_attribute_is_treated_as_missing_app(self):
 		with patch.object(soa, "_upstream", side_effect=AttributeError("gone")):
@@ -81,9 +91,10 @@ class TestStatementDelegation(FrappeTestCase):
 		def fake(**kwargs):
 			frappe.throw("No transactions for ACME in the selected period.")
 
-		with patch.object(soa, "_upstream", return_value=fake):
-			with self.assertRaises(frappe.ValidationError) as ctx:
-				soa._delegate("render_statement_html", customer="ACME")
+		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
+			with patch.object(soa, "_upstream", return_value=fake):
+				with self.assertRaises(frappe.ValidationError) as ctx:
+					soa._delegate("render_statement_html", customer="ACME")
 		self.assertIn("No transactions", str(ctx.exception))
 
 	def test_forwarded_kwargs_are_accepted_by_the_real_upstream_signatures(self):
@@ -149,14 +160,19 @@ class TestStatementDelegation(FrappeTestCase):
 			seen.append(method)
 			return fake
 
-		with patch.object(soa, "_upstream", side_effect=spy):
-			soa.get_statement_templates(company="Dev Co")
-			soa.get_default_recipient(party_type="customer", party="ACME")
-			soa.render_statement_html(customer="ACME", company="Dev Co", template="AR")
-			soa.download_statement(customer="ACME", company="Dev Co", template="AR")
-			soa.preview_bulk_statements(company="Dev Co", template="AR")
-			soa.email_bulk_statements(company="Dev Co", template="AR")
-			soa.email_statement(customer="ACME", company="Dev Co", template="AR")
+		# _upstream_capability is bypassed: this test is about which upstream name each wrapper
+		# forwards to, not about capability resolution (covered separately) — without this, the
+		# capability probe's own resolutions of all seven names plus the version constant would
+		# land in `seen` too, ahead of each real forwarding call.
+		with patch.object(soa, "_upstream_capability", return_value=(True, None)):
+			with patch.object(soa, "_upstream", side_effect=spy):
+				soa.get_statement_templates(company="Dev Co")
+				soa.get_default_recipient(party_type="customer", party="ACME")
+				soa.render_statement_html(customer="ACME", company="Dev Co", template="AR")
+				soa.download_statement(customer="ACME", company="Dev Co", template="AR")
+				soa.preview_bulk_statements(company="Dev Co", template="AR")
+				soa.email_bulk_statements(company="Dev Co", template="AR")
+				soa.email_statement(customer="ACME", company="Dev Co", template="AR")
 
 		self.assertEqual(
 			seen,
@@ -179,7 +195,54 @@ class TestStatementDelegation(FrappeTestCase):
 		whether to render a button, so it has to answer rather than 500.
 		"""
 		with patch.object(frappe, "has_permission", side_effect=frappe.DoesNotExistError("no doctype")):
-			self.assertEqual(soa.is_available(), {"available": False})
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+
+	def test_is_available_false_when_a_required_method_is_missing(self):
+		# An older upstream that lacks a newer function must read as unavailable, not as
+		# available-then-broken at call time.
+		real_upstream = soa._upstream
+
+		def missing_one(method):
+			if method == "preview_bulk_statements":
+				raise AttributeError(method)
+			return real_upstream(method)
+
+		with patch.object(soa, "_upstream", side_effect=missing_one):
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("preview_bulk_statements", result["reason"])
+
+	def test_is_available_false_when_upstream_api_version_is_too_old(self):
+		with patch.object(soa, "_upstream_api_version", return_value=1):
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("1", result["reason"])
+		self.assertIn(str(soa.REQUIRED_UPSTREAM_API), result["reason"])
+
+	def test_absent_version_constant_reads_as_the_pre_contract_version(self):
+		# An upstream predating the constant must read as 1, not raise and not pass.
+		with patch.object(soa, "_upstream", side_effect=AttributeError("STATEMENT_API_VERSION")):
+			self.assertEqual(soa._upstream_api_version(), 1)
+
+	def test_is_available_reports_a_reason_when_permission_is_denied(self):
+		with patch.object(frappe, "has_permission", return_value=False):
+			result = soa.is_available()
+		self.assertFalse(result["available"])
+		self.assertIn("permission", result["reason"].lower())
+
+	def test_is_available_true_reports_no_reason(self):
+		result = soa.is_available()
+		self.assertTrue(result["available"])
+		self.assertIsNone(result.get("reason"))
+
+	def test_delegate_refuses_when_upstream_is_too_old(self):
+		# The endpoint must refuse, not half-work. is_available only hides a button; anything
+		# calling the API directly, or a stale SPA bundle, never consults it.
+		with patch.object(soa, "_upstream_api_version", return_value=1):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				soa._delegate("render_statement_html", customer="ACME")
+		self.assertIn("Cecypo Frappe Reports", str(ctx.exception))
 
 	def test_email_bulk_statements_is_post_only(self):
 		"""@frappe.whitelist() with no methods accepts GET, and Frappe only validates CSRF for
