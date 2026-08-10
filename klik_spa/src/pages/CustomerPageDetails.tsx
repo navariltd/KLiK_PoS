@@ -40,6 +40,7 @@ import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
 import { useCustomerReceivable } from "../hooks/useCustomerReceivable";
+import { useCustomerSummary } from "../hooks/useCustomerSummary";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { isStatementAvailable } from "../services/statementOfAccounts";
@@ -78,6 +79,7 @@ export default function CustomerDetailsPage() {
     showPaymentModal ? customer?.id || null : null
   );
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
+  const { summary, isLoading: isLoadingSummary } = useCustomerSummary(customer?.id || null);
   const { posDetails } = usePOSProfileStore();
   const companyName = resolveCompanyName(posDetails?.company);
 
@@ -285,23 +287,6 @@ export default function CustomerDetailsPage() {
     setSelectedCustomer(null);
   };
 
-  // Calculate customer metrics
-  const customerMetrics = useMemo(() => {
-    const totalInvoices = customerInvoices.length;
-    const totalRevenue = customerInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-    const outstandingAmount = customerInvoices
-      .filter(inv => inv.status === "Unpaid" || inv.status === "Overdue")
-      .reduce((sum, inv) => sum + inv.totalAmount, 0);
-    const avgOrderValue = totalInvoices > 0 ? totalRevenue / totalInvoices : 0;
-
-    return {
-      totalInvoices,
-      totalRevenue,
-      outstandingAmount,
-      avgOrderValue
-    };
-  }, [customerInvoices]);
-
   // Loading state
   if (isLoadingC) {
     return (
@@ -464,52 +449,61 @@ export default function CustomerDetailsPage() {
 
           {/* Metrics Cards */}
           <div className="grid grid-cols-2 gap-3 mb-4">
+            {/* Same icon-beside-label arrangement as the desktop tree: on a 375px screen a
+                half-width card leaves the value ~120px, which wrapped the currency onto its
+                own line. */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {customerMetrics.totalInvoices}
-                  </p>
-                </div>
-                <FileText className="w-6 h-6 text-beveren-600" />
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
+                <FileText className="w-5 h-5 shrink-0 text-beveren-600" />
               </div>
+              <p className="mt-1 text-base font-bold sm:text-lg text-gray-900 dark:text-white">
+                {!isLoadingSummary && summary ? summary.invoice_count : "—"}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
-                  </p>
-                </div>
-                <DollarSign className="w-6 h-6 text-green-600" />
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
+                <DollarSign className="w-5 h-5 shrink-0 text-green-600" />
               </div>
+              <p className="mt-1 text-base font-bold sm:text-lg text-gray-900 dark:text-white">
+                {!isLoadingSummary && summary
+                  ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                  : "—"}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
-                  </p>
-                </div>
-                <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
+                <AlertCircle
+                  className={`w-5 h-5 shrink-0 ${
+                    !isLoadingSummary && summary && summary.outstanding != null
+                      ? summary.outstanding > 0
+                        ? "text-red-600" // real debt
+                        : "text-gray-400" // real zero — genuinely nothing owed
+                      : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
+                  }`}
+                />
               </div>
+              <p className="mt-1 text-base font-bold sm:text-lg text-gray-900 dark:text-white">
+                {!isLoadingSummary && summary && summary.outstanding != null
+                  ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                  : "—"}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
-                  </p>
-                </div>
-                <TrendingUp className="w-6 h-6 text-blue-600" />
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
+                <TrendingUp className="w-5 h-5 shrink-0 text-blue-600" />
               </div>
+              <p className="mt-1 text-base font-bold sm:text-lg text-gray-900 dark:text-white">
+                {!isLoadingSummary && summary
+                  ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                  : "—"}
+              </p>
             </div>
           </div>
 
@@ -822,125 +816,136 @@ export default function CustomerDetailsPage() {
 
         <div className="flex-1 overflow-auto pt-20 ml-20">
           <div className="px-6 py-8 max-w-none">
-            {/* Customer Info Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-beveren-600 rounded-full flex items-center justify-center">
-                    <User className="w-8 h-8 text-white" />
-                  </div>
-                  <div className="space-y-1">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                            {/* @ts-expect-error just ignore */}
-                      {customer.customer_name || customer.name}
-                    </h2>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Mail className="w-4 h-4" />
-                        <span>{customer.email || "No email provided"}</span>
+            {/* Customer Info + Metrics Cards */}
+            <div className="flex flex-col lg:flex-row gap-6 mb-6">
+              {/* Customer Info Card */}
+              <div className="flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-16 h-16 bg-beveren-600 rounded-full flex items-center justify-center">
+                      <User className="w-8 h-8 text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                              {/* @ts-expect-error just ignore */}
+                        {customer.customer_name || customer.name}
+                      </h2>
+                      <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Mail className="w-4 h-4" />
+                          <span>{customer.email || "No email provided"}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Phone className="w-4 h-4" />
+                          <span>{customer.phone || "No phone provided"}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <Phone className="w-4 h-4" />
-                        <span>{customer.phone || "No phone provided"}</span>
+                      <div className="flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
+                        <MapPin className="w-4 h-4" />
+                        <span>{customer.territory || "No territory specified"}</span>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
-                      <MapPin className="w-4 h-4" />
-                      <span>{customer.territory || "No territory specified"}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Customer Group: {customer.customer_group}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <span>Type: {customer.type}</span>
-                    </div>
-                    {customer.is_walkin == 1 && (
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        <span>Walk-in Customer</span>
+                        <span>Customer Group: {customer.customer_group}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Type: {customer.type}</span>
+                      </div>
+                      {customer.is_walkin == 1 && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          <span>Walk-in Customer</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                        Active
+                      </span>
+                    </div>
+                                          {/* @ts-expect-error just ignore */}
+                    {customer.creation && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                                                {/* @ts-expect-error just ignore */}
+                          <span>Created: {new Date(customer.creation).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    )}
+                                          {/* @ts-expect-error just ignore */}
+                    {customer.modified && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex items-center space-x-1">
+                          <Clock className="w-4 h-4" />
+                                              {/* @ts-expect-error just ignore */}
+                          <span>Updated: {new Date(customer.modified).toLocaleDateString()}</span>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="text-right space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-                      Active
-                    </span>
-                  </div>
-                                        {/* @ts-expect-error just ignore */}
-                  {customer.creation && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
-                                              {/* @ts-expect-error just ignore */}
-                        <span>Created: {new Date(customer.creation).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  )}
-                                        {/* @ts-expect-error just ignore */}
-                  {customer.modified && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-4 h-4" />
-                                            {/* @ts-expect-error just ignore */}
-                        <span>Updated: {new Date(customer.modified).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Metrics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Invoices</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {customerMetrics.totalInvoices}
-                    </p>
-                  </div>
-                  <FileText className="w-8 h-8 text-beveren-600" />
-                </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
-                    </p>
+              {/* Metrics Cards */}
+              <div className="grid grid-cols-2 gap-3 lg:w-[420px] lg:shrink-0">
+                {/* Icon sits beside the LABEL, not the value: sharing a flex row with the value
+                    squeezed it into ~145px, which wrapped "KES 400,335.24" onto two lines. */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
+                    <FileText className="w-5 h-5 shrink-0 text-beveren-600" />
                   </div>
-                  <DollarSign className="w-8 h-8 text-green-600" />
+                  <p className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary ? summary.invoice_count : "—"}
+                  </p>
                 </div>
-              </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
-                    </p>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
+                    <DollarSign className="w-5 h-5 shrink-0 text-green-600" />
                   </div>
-                  <AlertCircle className={`w-8 h-8 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                  <p className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary
+                      ? formatCurrencyWithSymbol(summary.net_revenue, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
                 </div>
-              </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
-                    </p>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
+                    <AlertCircle
+                      className={`w-5 h-5 shrink-0 ${
+                        !isLoadingSummary && summary && summary.outstanding != null
+                          ? summary.outstanding > 0
+                            ? "text-red-600" // real debt
+                            : "text-gray-400" // real zero — genuinely nothing owed
+                          : "text-gray-400" // still loading, failed, or indeterminate — same muted treatment as the dash
+                      }`}
+                    />
                   </div>
-                  <TrendingUp className="w-8 h-8 text-blue-600" />
+                  <p className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary && summary.outstanding != null
+                      ? formatCurrencyWithSymbol(summary.outstanding, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
+                    <TrendingUp className="w-5 h-5 shrink-0 text-blue-600" />
+                  </div>
+                  <p className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                    {!isLoadingSummary && summary
+                      ? formatCurrencyWithSymbol(summary.avg_order_value, summary.currency || posDetails?.currency || 'USD')
+                      : "—"}
+                  </p>
                 </div>
               </div>
             </div>

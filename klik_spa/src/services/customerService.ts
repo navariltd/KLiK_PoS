@@ -1,3 +1,5 @@
+import { extractErrorMessage } from "../utils/errorExtraction";
+
 interface CustomerAddress {
   addressType?: string;
   street: string;
@@ -137,3 +139,41 @@ export const useCustomerActions = () => {
     getTerritories
   };
 };
+
+/**
+ * The four headline figures for the customer detail page cards, computed server-side from
+ * every submitted Sales Invoice (not just POS till history) so they agree with the AR report.
+ *
+ * `outstanding` is `null` when the AR path could not determine it (permission failure, broken
+ * report) — that is distinct from `0`, which means the customer genuinely owes nothing.
+ * `currency` is `null` when no company resolved for the session. Callers must render both as a
+ * dash, never as zero.
+ */
+export interface CustomerAccountSummary {
+  invoice_count: number;
+  net_revenue: number;
+  avg_order_value: number;
+  outstanding: number | null;
+  currency: string | null;
+}
+
+export async function getCustomerAccountSummary(customer: string): Promise<CustomerAccountSummary> {
+  const response = await fetch(
+    `/api/method/klik_pos.api.customer_summary.get_customer_account_summary?customer=${encodeURIComponent(customer)}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message) {
+    throw new Error(extractErrorMessage(result, "Failed to fetch customer account summary"));
+  }
+
+  return result.message;
+}

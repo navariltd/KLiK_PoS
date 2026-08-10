@@ -179,7 +179,7 @@ export default function CustomerPaymentEntryModal({
               <div className="border-b border-gray-200 px-3 py-2 text-xs font-medium uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
                 Allocation
               </div>
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              <div className="max-h-[17rem] divide-y divide-gray-200 overflow-y-auto dark:divide-gray-700">
                 {allocationTargets?.map((target) => {
                   const isSelected = selectedInvoices.has(target.name);
                   // A selected row shows what it will actually receive — which is zero when
@@ -293,32 +293,31 @@ export default function CustomerPaymentEntryModal({
             )}
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Mode of Payment
-            </label>
-            <select
-              value={modeOfPayment}
-              onChange={(event) => setModeOfPayment(event.target.value)}
-              disabled={isLoading || selectableModes.length === 0}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:bg-gray-800/60"
-            >
-              <option value="">Select payment mode</option>
-              {selectableModes.map((mode) => (
-                <option key={mode.mode_of_payment} value={mode.mode_of_payment}>
-                  {mode.mode_of_payment}
-                </option>
-              ))}
-            </select>
-            {!isLoading && !error && selectableModes.length === 0 && (
-              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-                No payment mode on this POS Profile can be used to receive a payment. M-Pesa
-                modes are excluded until the receive integration is built.
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Mode of Payment
+              </label>
+              <select
+                value={modeOfPayment}
+                onChange={(event) => setModeOfPayment(event.target.value)}
+                disabled={isLoading || selectableModes.length === 0}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:bg-gray-800/60"
+              >
+                <option value="">Select payment mode</option>
+                {selectableModes.map((mode) => (
+                  <option key={mode.mode_of_payment} value={mode.mode_of_payment}>
+                    {mode.mode_of_payment}
+                  </option>
+                ))}
+              </select>
+              {!isLoading && !error && selectableModes.length === 0 && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                  No payment mode on this POS Profile can be used to receive a payment. M-Pesa
+                  modes are excluded until the receive integration is built.
+                </p>
+              )}
+            </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Reference No.
