@@ -293,6 +293,25 @@ class TestStatementDelegation(FrappeTestCase):
 				soa.is_available()
 			self.assertEqual(logger.warning.call_count, 1)
 
+	def test_a_missing_required_method_logs_at_warning_not_info(self):
+		"""A missing method is not the same event as a missing app, and the log level is the only
+		thing that distinguishes them for whoever reads the log later. An absent app is a permanent
+		configuration fact nobody can act on from a log line; an app that is present but has lost
+		one of the seven methods klik_pos calls is a regression from an upgrade — exactly what
+		REQUIRED_UPSTREAM_METHODS exists to catch, and the same severity as a version mismatch.
+		"""
+		soa._LOGGED_UNAVAILABLE_REASONS.clear()
+		self.addCleanup(soa._LOGGED_UNAVAILABLE_REASONS.clear)
+
+		logger = MagicMock()
+		with patch.object(frappe, "logger", return_value=logger):
+			with patch.object(soa, "_upstream", side_effect=AttributeError("gone")):
+				result = soa.is_available()
+
+		self.assertFalse(result["available"])
+		self.assertEqual(logger.warning.call_count, 1)
+		self.assertEqual(logger.info.call_count, 0)
+
 	def test_email_bulk_statements_is_post_only(self):
 		"""@frappe.whitelist() with no methods accepts GET, and Frappe only validates CSRF for
 		unsafe methods — an <img src="...?company=X&template=Y"> on any page a logged-in user
