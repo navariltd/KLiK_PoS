@@ -23,6 +23,7 @@ import {
 import InvoiceViewModal from "../components/InvoiceViewModal";
 import BottomNavigation from "../components/BottomNavigation";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
+import { MULTI_INVOICE_RETURN_ENABLED } from "../utils/featureFlags";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -1097,7 +1098,7 @@ const getStatusBadge = (status: string) => {
             <div className="flex items-center justify-between">
               <h1 className="text-lg font-bold text-gray-900 dark:text-white">Invoice History</h1>
               <div className="flex items-center space-x-2">
-                {canProcessReturns && <button
+                {MULTI_INVOICE_RETURN_ENABLED && canProcessReturns && <button
                     onClick={handleMultiReturnClick}
                     className="flex items-center space-x-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
                   >
@@ -1240,7 +1241,7 @@ const getStatusBadge = (status: string) => {
         {/* Multi-Invoice Return Modal */}
         <MultiInvoiceReturn
           customer={selectedCustomer}
-          isOpen={showMultiReturn}
+          isOpen={MULTI_INVOICE_RETURN_ENABLED && showMultiReturn}
           onClose={() => setShowMultiReturn(false)}
           onSuccess={handleMultiReturnSuccess}
           // @ts-expect-error just ignore
@@ -1269,7 +1270,7 @@ const getStatusBadge = (status: string) => {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice History</h1>
               </div>
               <div className="flex items-center space-x-3">
-                {canProcessReturns && <button
+                {MULTI_INVOICE_RETURN_ENABLED && canProcessReturns && <button
                   onClick={handleMultiReturnClick}
                   className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                 >
@@ -1413,7 +1414,7 @@ const getStatusBadge = (status: string) => {
         {/* Multi-Invoice Return Modal */}
         <MultiInvoiceReturn
           customer={selectedCustomer}
-          isOpen={showMultiReturn}
+          isOpen={MULTI_INVOICE_RETURN_ENABLED && showMultiReturn}
           onClose={() => setShowMultiReturn(false)}
           onSuccess={handleMultiReturnSuccess}
           // @ts-expect-error just ignore

@@ -48,6 +48,7 @@ import DisplayPrintPreview from "../utils/invoicePrint";
 import { handlePrintInvoice } from "../utils/printHandler";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
+import { MULTI_INVOICE_RETURN_ENABLED } from "../utils/featureFlags";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import { useCartStore } from "../stores/cartStore";
@@ -562,21 +563,23 @@ export default function InvoiceViewPage() {
                       </span>
                     </button>
 
-                    <button
-                      className="group relative p-2 text-orange-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-900 rounded-lg transition-all duration-200"
-                      onClick={() => {
-                        if (!canProcessReturns) {
-                          toast.error("Returns are disabled for this POS Profile");
-                          return;
-                        }
-                        setShowMultiReturn(true);
-                      }}
-                    >
-                      <FileMinus size={20} />
-                      <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
-                        Multi-Invoice Return
-                      </span>
-                    </button>
+                    {MULTI_INVOICE_RETURN_ENABLED && (
+                      <button
+                        className="group relative p-2 text-orange-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-900 rounded-lg transition-all duration-200"
+                        onClick={() => {
+                          if (!canProcessReturns) {
+                            toast.error("Returns are disabled for this POS Profile");
+                            return;
+                          }
+                          setShowMultiReturn(true);
+                        }}
+                      >
+                        <FileMinus size={20} />
+                        <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
+                          Multi-Invoice Return
+                        </span>
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -1129,7 +1132,7 @@ export default function InvoiceViewPage() {
       {/* Multi-Invoice Return Modal */}
       <MultiInvoiceReturn
         customer={invoice?.customer || ''}
-        isOpen={showMultiReturn}
+        isOpen={MULTI_INVOICE_RETURN_ENABLED && showMultiReturn}
         onClose={() => setShowMultiReturn(false)}
         onSuccess={handleMultiReturnSuccess}
       />
