@@ -75,9 +75,12 @@ export default function CustomerDetailsPage() {
 
   const { id: customerId } = useParams();
   const { customer, isLoading: isLoadingC, error: errorC } = useCustomerDetails(customerId ?? null);
-  const { receivable: customerReceivable, isLoading: isLoadingReceivable } = useCustomerReceivable(
-    showPaymentModal ? customer?.id || null : null
-  );
+  const {
+    receivable: customerReceivable,
+    isLoading: isLoadingReceivable,
+    degraded: customerReceivableDegraded,
+    degradedReason: customerReceivableDegradedReason,
+  } = useCustomerReceivable(showPaymentModal ? customer?.id || null : null);
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
   const { summary, isLoading: isLoadingSummary } = useCustomerSummary(customer?.id || null);
   const { posDetails } = usePOSProfileStore();
@@ -725,6 +728,8 @@ export default function CustomerDetailsPage() {
           <CustomerPaymentEntryModal
             customer={customer}
             allocationTargets={customerReceivable?.invoices}
+            degraded={customerReceivableDegraded}
+            degradedReason={customerReceivableDegradedReason}
             onClose={() => setShowPaymentModal(false)}
             onCreated={handleInvoicePaymentCreated}
           />
@@ -1200,6 +1205,8 @@ export default function CustomerDetailsPage() {
           <CustomerPaymentEntryModal
             customer={customer}
             allocationTargets={customerReceivable?.invoices}
+            degraded={customerReceivableDegraded}
+            degradedReason={customerReceivableDegradedReason}
             onClose={() => setShowPaymentModal(false)}
             onCreated={handleInvoicePaymentCreated}
           />

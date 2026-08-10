@@ -103,6 +103,12 @@ export interface CustomerReceivablesResponse {
   as_of_date: string;
   currency: string;
   data: CustomerReceivable[];
+  // Absent on an older backend. Only an explicit `true` means the figures came from the
+  // Sales-Invoice-only fallback — never treat a missing/undefined value as degraded.
+  degraded?: boolean;
+  // Human-readable, built from ERPNext's raw exception text server-side. Display only —
+  // never branch on its contents.
+  degraded_reason?: string | null;
 }
 
 export interface PaymentAllocation {

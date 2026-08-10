@@ -1031,6 +1031,23 @@ def get_invoice_details(invoice_id):
 			_get_refundable_cash(invoice, invoice) if not invoice.is_return else 0.0
 		)
 
+		# Derived the same way the list endpoint derives it (_process_invoices), so the detail
+		# page and Invoice History cannot disagree about how an invoice was paid. Without this
+		# the detail page saw no payment field at all and fell back to displaying "Cash",
+		# which reads as a fact rather than an absence — an M-Pesa sale showed as Cash.
+		payments = [
+			{"mode_of_payment": p.mode_of_payment, "amount": flt(p.amount or 0)}
+			for p in (getattr(invoice, "payments", []) or [])
+		]
+		invoice_data["payment_methods"] = payments
+		if not payments:
+			invoice_data["mode_of_payment"] = "-"
+		elif len(payments) == 1:
+			invoice_data["mode_of_payment"] = payments[0]["mode_of_payment"]
+		else:
+			# A split payment is genuinely more than one mode; joining matches the list view.
+			invoice_data["mode_of_payment"] = "/".join(p["mode_of_payment"] for p in payments)
+
 		return {
 			"success": True,
 			"data": {

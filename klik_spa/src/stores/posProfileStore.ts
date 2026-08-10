@@ -51,6 +51,7 @@ export interface POSProfile {
   custom_quick_switch_price?: boolean | number;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;
+  custom_autofetch_batchserial_?: boolean | number;
   [key: string]: unknown;
 }
 

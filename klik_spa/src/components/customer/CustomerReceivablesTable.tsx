@@ -11,6 +11,10 @@ interface CustomerReceivablesTableProps {
   onReceiveCustomer: (receivable: CustomerReceivable) => void;
   onReceiveInvoice: (receivable: CustomerReceivable, invoice: ReceivableInvoice) => void;
   onStatement?: (receivable: CustomerReceivable) => void;
+  // True only when the backend explicitly returned `degraded: true` for this fetch — the
+  // figures below are Sales-Invoice-only (gross of advances, no journal entries).
+  degraded?: boolean;
+  degradedReason?: string | null;
 }
 
 const statusBadge = (status?: string | null) => {
@@ -40,6 +44,8 @@ export default function CustomerReceivablesTable({
   onReceiveCustomer,
   onReceiveInvoice,
   onStatement,
+  degraded,
+  degradedReason,
 }: CustomerReceivablesTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -158,6 +164,13 @@ export default function CustomerReceivablesTable({
 
   return (
     <>
+      {degraded && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          {degradedReason ||
+            "Figures exclude advances and journal entries. Totals may be understated if a customer has an unallocated advance."}
+        </div>
+      )}
+
       {/* Desktop */}
       <div className="hidden overflow-hidden rounded-lg border border-gray-200 bg-white md:block dark:border-gray-700 dark:bg-gray-800">
         <div className="overflow-x-auto">

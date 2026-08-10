@@ -236,6 +236,13 @@ export interface SalesInvoice {
   taxAmount: number
   totalAmount: number
   paymentMethod: "Cash" | "Debit Card"
+  /**
+   * Mode of Payment as recorded on the invoice, joined with "/" for a split payment.
+   * Free text because a site names its own modes — "Mpesa-898102", a specific bank account —
+   * which is why the `paymentMethod` union above cannot represent a real invoice and must not
+   * be used to display how something was paid.
+   */
+  mode_of_payment?: string
   payment_methods?: Array<{
     mode_of_payment: string
     amount: number

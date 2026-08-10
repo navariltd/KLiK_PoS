@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import flt, getdate, nowdate
+from frappe.utils import flt, getdate, nowdate, strip_html_tags
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -106,6 +106,138 @@ def _group_receivable_rows(rows, as_of_date, statuses=None):
 	return result
 
 
+def _bucket_key(due_date, posting_date, as_of):
+	"""Same boundaries ERPNext's AR report uses (30/60/90/120 days), aged by due_date
+	(falling back to posting_date) against `as_of`.
+
+	This only actually mirrors `_group_receivable_rows`/the healthy path because
+	`get_customer_receivables` pins `ageing_based_on: "Due Date"` and
+	`calculate_ageing_with: "Report Date"` on the AR filters — without those, ERPNext's
+	own report ages by posting_date as of today, not due_date as of `as_of`, and the two
+	paths would disagree. Not-yet-due gets its own bucket rather than inflating 0-30, same
+	as the healthy path's range0.
+	"""
+	entry_date = getdate(due_date) if due_date else getdate(posting_date)
+	if entry_date > as_of:
+		return "bucket_current"
+
+	age = (as_of - entry_date).days
+	if age <= 30:
+		return "bucket_0_30"
+	if age <= 60:
+		return "bucket_31_60"
+	if age <= 90:
+		return "bucket_61_90"
+	return "bucket_90_plus"
+
+
+def _degraded_receivables_fallback(company, as_of_date, customer, error):
+	"""Sales-Invoice-only fallback for when the AR engine's own reads (Journal Entry, GL
+	Entry, Payment Ledger Entry) are denied to the caller.
+
+	Uses `frappe.get_all` — permissions still apply, this is not a way around them — and reads
+	nothing this caller was not already entitled to read via Sales Invoice. Deliberately
+	narrower than the AR path: no unallocated advances (those live on Payment Entry / Journal
+	Entry references the AR engine nets in; a Sales-Invoice-only query cannot see them, and
+	guessing is worse than leaving it at 0.0).
+	"""
+	filters = {
+		"company": company,
+		"docstatus": 1,
+		"outstanding_amount": [">", 0],
+	}
+	if customer:
+		filters["customer"] = customer
+
+	invoices = frappe.get_all(
+		"Sales Invoice",
+		filters=filters,
+		fields=[
+			"name",
+			"customer",
+			"customer_name",
+			"customer_group",
+			"posting_date",
+			"due_date",
+			"outstanding_amount",
+			"grand_total",
+			"status",
+		],
+	)
+
+	grouped = {}
+	for inv in invoices:
+		party = inv.customer
+		entry = grouped.setdefault(
+			party,
+			{
+				"customer": party,
+				"customer_name": inv.customer_name or party,
+				"customer_group": inv.customer_group or "",
+				"total_invoiced": 0.0,
+				"total_paid": 0.0,
+				"outstanding": 0.0,
+				"bucket_current": 0.0,
+				"bucket_0_30": 0.0,
+				"bucket_31_60": 0.0,
+				"bucket_61_90": 0.0,
+				"bucket_90_plus": 0.0,
+				"unallocated_advance": 0.0,
+				"last_payment": None,
+				"invoices": [],
+			},
+		)
+
+		grand_total = flt(inv.grand_total, 2)
+		outstanding = flt(inv.outstanding_amount, 2)
+		paid = flt(grand_total - outstanding, 2)
+
+		entry["total_invoiced"] = flt(entry["total_invoiced"] + grand_total, 2)
+		entry["total_paid"] = flt(entry["total_paid"] + paid, 2)
+		entry["outstanding"] = flt(entry["outstanding"] + outstanding, 2)
+		entry[_bucket_key(inv.due_date, inv.posting_date, as_of_date)] += outstanding
+
+		due_date = getdate(inv.due_date) if inv.due_date else getdate(inv.posting_date)
+		entry["invoices"].append(
+			{
+				"name": inv.name,
+				"posting_date": inv.posting_date,
+				"grand_total": grand_total,
+				"paid": paid,
+				"outstanding": outstanding,
+				"due_date": inv.due_date,
+				"days_overdue": max(0, (as_of_date - due_date).days),
+				"status": inv.status,
+			}
+		)
+
+	result = list(grouped.values())
+	for entry in result:
+		for bucket in (
+			"bucket_current",
+			"bucket_0_30",
+			"bucket_31_60",
+			"bucket_61_90",
+			"bucket_90_plus",
+		):
+			entry[bucket] = flt(entry[bucket], 2)
+		entry["invoices"].sort(key=lambda i: getdate(i["due_date"] or i["posting_date"]))
+	result.sort(key=lambda e: e["outstanding"], reverse=True)
+
+	reason_detail = strip_html_tags(str(error)) if str(error) else "a restricted doctype"
+	return {
+		"success": True,
+		"as_of_date": str(as_of_date),
+		"currency": frappe.db.get_value("Company", company, "default_currency"),
+		"data": result,
+		"degraded": True,
+		"degraded_reason": (
+			f"Figures exclude advances and journal entries: {reason_detail}. "
+			"Totals may be understated if this customer has an unallocated advance."
+		),
+	}
+
+
 @frappe.whitelist()
 def get_customer_receivables(as_of_date=None, customer=None):
 	"""One row per customer with a receivable balance, with their open invoices nested.
@@ -128,13 +260,32 @@ def get_customer_receivables(as_of_date=None, customer=None):
 			"company": pos_profile.company,
 			"report_date": as_of_date,
 			"party_type": "Customer",
+			# Explicit rather than left to ERPNext's own defaults: with these unset the AR
+			# report ages by posting_date as of today (frappe/erpnext accounts_receivable.py
+			# ReceivablePayableReport.__init__ and .set_ageing), silently ignoring as_of_date
+			# for ageing even though it's honoured for the outstanding figures themselves —
+			# and disagreeing with the degraded fallback below, which ages by due_date as of
+			# as_of_date. Pinning both here makes the healthy and fallback paths agree, and
+			# fixes as_of_date being ignored for ageing on the healthy path too.
+			"ageing_based_on": "Due Date",
+			"calculate_ageing_with": "Report Date",
 		}
 		if customer:
 			# The AR report takes party as a list. Filtering here rather than post-hoc keeps
 			# the engine from building the whole company's ledger for a single-customer modal.
 			filters["party"] = [customer]
 
-		_columns, data, *_rest = _get_ar_execute()(filters)
+		try:
+			_columns, data, *_rest = _get_ar_execute()(filters)
+		except frappe.PermissionError as e:
+			# The AR engine reads Journal Entry / GL Entry / Payment Ledger Entry
+			# unconditionally, regardless of whether this customer has any. A caller who
+			# can read Sales Invoice but not those still needs to see what is owed — the
+			# alternative is the Receive modal silently opening with no allocation rows
+			# and every payment landing as an unallocated advance instead of paying down
+			# the invoice. Fall back to a narrower, Sales-Invoice-only read rather than
+			# failing outright.
+			return _degraded_receivables_fallback(pos_profile.company, as_of_date, customer, e)
 
 		voucher_nos = [
 			row["voucher_no"]
@@ -157,6 +308,8 @@ def get_customer_receivables(as_of_date=None, customer=None):
 			"as_of_date": str(as_of_date),
 			"currency": frappe.db.get_value("Company", pos_profile.company, "default_currency"),
 			"data": _group_receivable_rows(data, as_of_date, statuses),
+			"degraded": False,
+			"degraded_reason": None,
 		}
 	except Exception as e:
 		frappe.log_error(
