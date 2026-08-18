@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import type { MenuItem, Customer, ItemGroup } from '../../types';
 import { usePOSProfileStore } from './posProfileStore';
 import { useCartStore } from './cartStore';
+import { resolveNextOffset, shouldKeepPaginating } from '../utils/pagination';
 
 interface ProductStoreState {
   products: MenuItem[];
@@ -47,7 +48,9 @@ interface ProductStoreState {
     items: MenuItem[];
     item_groups: ItemGroup[];
     total_count: number;
+    page_count: number;
     has_more: boolean;
+    next_offset: number | null;
   }>;
   fetchStockUpdates: () => Promise<Record<string, number>>;
   getFilteredItems: () => MenuItem[];
@@ -193,11 +196,16 @@ export const useProductStore = create<ProductStoreState>()(
             items: message.items || [],
             item_groups: message.item_groups || [],
             total_count: message.total_count || 0,
+            page_count: message.page_count ?? (message.items || []).length,
             has_more: message.has_more || false,
+            // Advances by SQL rows consumed, which is not the same as items received once
+            // hide_unavailable_items filters a page. null on an older backend that does
+            // not send it - callers fall back to counting items.
+            next_offset: typeof message.next_offset === 'number' ? message.next_offset : null,
           };
         } catch (err) {
           console.error('fetchProductsFromAPI error:', err);
-          return { items: [], item_groups: [], total_count: 0, has_more: false };
+          return { items: [], item_groups: [], total_count: 0, page_count: 0, has_more: false, next_offset: null };
         }
       },
 
@@ -259,7 +267,7 @@ export const useProductStore = create<ProductStoreState>()(
             itemGroups: result.item_groups,
             totalCount: result.total_count,
             hasMore: result.has_more,
-            currentOffset: result.items.length,
+            currentOffset: resolveNextOffset(result.next_offset, result.items.length),
             isLoading: false,
             lastFullRefresh: Date.now(),
             lastUpdated: new Date(),
@@ -326,7 +334,10 @@ export const useProductStore = create<ProductStoreState>()(
             itemGroups: reset ? result.item_groups : get().itemGroups,
             totalCount: result.total_count,
             hasMore: result.has_more,
-            currentOffset: reset ? result.items.length : get().currentOffset + result.items.length,
+            currentOffset: resolveNextOffset(
+              result.next_offset,
+              reset ? result.items.length : get().currentOffset + result.items.length,
+            ),
             isLoading: false,
             lastFullRefresh: Date.now(),
             lastUpdated: new Date(),
@@ -340,10 +351,21 @@ export const useProductStore = create<ProductStoreState>()(
       loadMoreProducts: async () => {
         const { isLoadingMore, hasMore, searchQuery, fetchProducts } = get();
         if (isLoadingMore || !hasMore || searchQuery) return;
-        
+
+        const offsetBefore = get().currentOffset;
+
         set({ isLoadingMore: true });
         await fetchProducts(false);
-        set({ isLoadingMore: false });
+
+        // Backstop: the grid's infinite-scroll sentinel re-fires for as long as hasMore is
+        // true, so a page that leaves the cursor where it was loops forever. Require real
+        // forward progress rather than trusting the server's has_more. A context change
+        // mid-flight also lands here (the stale-response guard above returns without moving
+        // the cursor) and stopping is the right outcome there too - the reset fetch that
+        // follows the change repopulates hasMore.
+        const state = get();
+        const keepGoing = shouldKeepPaginating(state.hasMore, offsetBefore, state.currentOffset);
+        set({ isLoadingMore: false, ...(keepGoing ? {} : { hasMore: false }) });
       },
 
       searchProducts: async (query: string, immediate = false) => {
@@ -451,7 +473,7 @@ export const useProductStore = create<ProductStoreState>()(
               itemGroups: result.item_groups,
               totalCount: result.total_count,
               hasMore: false,
-              currentOffset: result.items.length,
+              currentOffset: resolveNextOffset(result.next_offset, result.items.length),
               isSearching: false,
             });
           }
