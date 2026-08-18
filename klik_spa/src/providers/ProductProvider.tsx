@@ -15,6 +15,9 @@ interface ProductContextType {
   
   totalCount: number;
   hasMore: boolean;
+  degraded: boolean;
+  degradedReason: string | null;
+  stockUnavailable: boolean;
   
   isLoading: boolean;
   isLoadingMore: boolean;
@@ -83,6 +86,9 @@ export function ProductProvider({ children, posName, initialCustomerId }: Produc
     
     totalCount: store.totalCount,
     hasMore: store.hasMore,
+    degraded: store.degraded,
+    degradedReason: store.degradedReason,
+    stockUnavailable: store.stockUnavailable,
     
     isLoading: store.isLoading,
     isLoadingMore: store.isLoadingMore,

@@ -19,6 +19,9 @@ interface UseProductsReturn {
   clearSearch: () => void;
   count: number;
   totalCount: number;
+  degraded: boolean;
+  degradedReason: string | null;
+  stockUnavailable: boolean;
   hasMore: boolean;
   lastUpdated: Date | null;
   searchQuery: string;
@@ -58,6 +61,9 @@ export function useProducts(): UseProductsReturn {
     clearSearch: context.clearSearch,
     count: context.products.length,
     totalCount: context.totalCount,
+    degraded: context.degraded,
+    degradedReason: context.degradedReason,
+    stockUnavailable: context.stockUnavailable,
     hasMore: context.hasMore,
     lastUpdated: context.lastUpdated,
     searchQuery: context.searchQuery,

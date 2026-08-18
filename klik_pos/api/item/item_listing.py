@@ -4,7 +4,13 @@ from frappe.utils import cint, flt, getdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
-from ..sql_builder import apply_sql_permissions
+from ..sql_builder import (
+    apply_sql_permissions,
+    describe_denied_doctypes,
+    get_denied_doctypes,
+    record_denied_doctype,
+    reset_denied_doctypes,
+)
 from .item_price import fetch_item_price
 from .item_stock import apply_queue_reservations_to_stock_map, fetch_item_balance
 from .search_utils import build_item_search_conditions
@@ -29,10 +35,21 @@ def get_items(
 
     limit = min(limit, 2000)
 
+    reset_denied_doctypes()
+
     requested_price_list = price_list
     requested_warehouse = warehouse
     pos_doc, warehouse, pos_price_list, hide_unavailable = _get_pos_context()
     include_service_items = _include_service_items(pos_doc)
+
+    # Probed up front rather than inferred from the denial record, because the query branch
+    # below has to be chosen before any stock query has run.
+    stock_unavailable = not frappe.has_permission("Bin", "read")
+
+    # When stock cannot be read every balance reads as zero, so hide_unavailable_items would
+    # filter away the entire catalogue - an empty shop rather than a visible error, which is
+    # exactly how this surfaced in production. Stand the filter down and report instead.
+    effective_hide_unavailable = bool(hide_unavailable) and not stock_unavailable
 
     if requested_warehouse:
         warehouse = requested_warehouse
@@ -55,7 +72,7 @@ def get_items(
         if getattr(pos_doc, "item_groups", None):
             allowed_item_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
 
-        if hide_unavailable and include_service_items:
+        if effective_hide_unavailable and include_service_items:
             join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code"
             if warehouse:
                 join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code AND b.warehouse = %s"
@@ -81,7 +98,7 @@ def get_items(
             if warehouse:
                 params_list.append(warehouse)
                 count_params.append(warehouse)
-        elif hide_unavailable:
+        elif effective_hide_unavailable:
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
                 "FROM `tabItem` i",
@@ -199,7 +216,7 @@ def get_items(
         item_groups_data = _get_item_groups_with_counts(
             pos_doc,
             warehouse,
-            hide_unavailable,
+            effective_hide_unavailable,
             search_term,
             category,
             enhanced_search,
@@ -216,6 +233,7 @@ def get_items(
                 "next_offset": offset,
                 "limit": limit,
                 "offset": offset,
+                **_build_degradation(stock_unavailable),
             }
 
         item_codes = [item["name"] for item in items]
@@ -273,7 +291,7 @@ def get_items(
                 balance = min(stock_component_limits) if stock_component_limits else 0
 
             if (
-                hide_unavailable
+                effective_hide_unavailable
                 and not is_variant_template
                 and (is_stock_item or is_product_bundle)
                 and balance <= 0
@@ -372,6 +390,7 @@ def get_items(
             "next_offset": offset + sql_row_count,
             "limit": limit,
             "offset": offset,
+            **_build_degradation(stock_unavailable),
         }
 
     except Exception:
@@ -838,13 +857,21 @@ def _get_pos_context():
         warehouse = frappe.db.get_single_value("Stock Settings", "default_warehouse")
 
     if not warehouse:
-        any_wh = frappe.get_list(
-            "Warehouse",
-            filters={"is_group": 0},
-            fields=["name"],
-            limit=1,
-        )
-        warehouse = any_wh[0].name if any_wh else None
+        # This runs outside get_items' try block, so an unreadable Warehouse used to leave
+        # the endpoint as a bare 403 and the POS simply dead - no message, no diagnostic.
+        # Degrade to "no warehouse" instead; the caller's own warehouse parameter is applied
+        # immediately after this and usually resolves it anyway.
+        try:
+            any_wh = frappe.get_list(
+                "Warehouse",
+                filters={"is_group": 0},
+                fields=["name"],
+                limit=1,
+            )
+            warehouse = any_wh[0].name if any_wh else None
+        except frappe.PermissionError:
+            record_denied_doctype("Warehouse")
+            warehouse = None
 
     return (
         pos_doc,
@@ -852,6 +879,35 @@ def _get_pos_context():
         getattr(pos_doc, "selling_price_list", None),
         getattr(pos_doc, "hide_unavailable_items", False),
     )
+
+
+def _build_degradation(stock_unavailable):
+    """Describe what this response could not read, in the shape receivables already uses.
+
+    Silence is the failure being fixed here: a permission gap used to surface as confident
+    zeros and - with hide_unavailable_items on - an empty catalogue, with nothing anywhere
+    saying why.
+    """
+    denied = set(get_denied_doctypes())
+    if stock_unavailable:
+        denied.add("Bin")
+
+    if not denied:
+        return {"degraded": False, "degraded_reason": None, "stock_unavailable": False}
+
+    reason = f"Some data could not be read for your role: no permission on {describe_denied_doctypes(denied)}."
+    if stock_unavailable:
+        reason += (
+            " Stock levels are unknown, so availability is shown as unknown rather than zero"
+            " and the hide-unavailable-items filter has been ignored to avoid hiding the"
+            " whole catalogue."
+        )
+
+    return {
+        "degraded": True,
+        "degraded_reason": reason,
+        "stock_unavailable": bool(stock_unavailable),
+    }
 
 
 def _get_priority_price_list(customer=None, pos_profile=None, default_price_list=None):

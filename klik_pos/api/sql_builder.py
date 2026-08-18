@@ -63,6 +63,53 @@ def _extract_doctype_aliases(sql: str, primary_only: bool = False):
     return aliases
 
 
+_DENIED_FLAG = "klik_denied_doctypes"
+
+
+def _record_denied_doctype(doctype: str):
+    """Remember that this request was denied a doctype.
+
+    apply_sql_permissions degrades a permission failure to `0=1` so one missing perm on a
+    peripheral doctype cannot take the whole POS down. That is the right call, but it used
+    to throw away *which* doctype was denied, leaving callers unable to tell "no rows" from
+    "not allowed" — so the POS served confident zeros and empty grids with no way to explain
+    itself. Recording the doctype is what lets an endpoint say so.
+
+    frappe.flags is per-request, so there is no bleed between requests.
+    """
+    denied = frappe.flags.get(_DENIED_FLAG)
+    if denied is None:
+        denied = set()
+        frappe.flags[_DENIED_FLAG] = denied
+    denied.add(doctype)
+
+
+def record_denied_doctype(doctype: str):
+    """Public alias — for callers outside this module that degrade a denial themselves."""
+    _record_denied_doctype(doctype)
+
+
+def get_denied_doctypes() -> frozenset:
+    """Doctypes this request was denied by apply_sql_permissions."""
+    return frozenset(frappe.flags.get(_DENIED_FLAG) or ())
+
+
+def reset_denied_doctypes():
+    """Clear the record. Call at the start of an endpoint so a reused worker context or a
+    test does not inherit a previous run's denials."""
+    frappe.flags[_DENIED_FLAG] = set()
+
+
+def describe_denied_doctypes(doctypes) -> str:
+    """Human-readable list for a degraded_reason message."""
+    names = sorted(doctypes)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def apply_sql_permissions(sql: str):
     """Automatically inject Frappe permission conditions into SQL query."""
     try:
@@ -94,6 +141,7 @@ def apply_sql_permissions(sql: str):
                 # whole query text, which would desync placeholders from args and
                 # crash frappe.db.sql() with "not all arguments converted".
                 permission_conditions.append("0=1")
+                _record_denied_doctype(doctype)
 
         if not permission_conditions:
             return sql
