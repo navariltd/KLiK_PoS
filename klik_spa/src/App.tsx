@@ -9,6 +9,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { setupGlobalErrorHandling } from "./utils/apiUtils";
 import RetailSidebar from "./components/RetailSidebar";
+import { useQueueFailureAlerts } from "./hooks/useQueueFailureAlerts";
 
 const queryClient = new QueryClient();
 
@@ -17,6 +18,10 @@ function App() {
     // Set up global error handling for API calls
     setupGlobalErrorHandling();
   }, []);
+
+  // A queued invoice that fails to submit does so after checkout has returned success,
+  // so the alert has to reach the cashier wherever they are by then.
+  useQueueFailureAlerts();
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -333,19 +333,52 @@ def _get_sales_invoice_reservation_map(invoice_name, item_codes=None, warehouse=
 
 
 def _cancel_sales_invoice_reservations(invoice_name):
-	"""Cancel active Stock Reservation Entries for a Sales Invoice."""
+	"""Cancel active Stock Reservation Entries for a Sales Invoice.
+
+	Selects exactly what erpnext's cancel_stock_reservation_entries would, but cancels
+	each entry with flags.ignore_permissions so that releasing a reservation costs no
+	more rights than creating one did — _reserve_stock_for_queued_invoice already
+	submits these entries with ignore_permissions.
+
+	Without the flag, erpnext's helper does a bare frappe.get_doc(...).cancel(), whose
+	write check fails for any role without Stock Reservation Entry rights (every Express
+	role, for one). That raises inside before_submit, aborts the whole submit, and
+	strands the invoice in the queue with its stock still held — the reservation can be
+	taken but never given back.
+	"""
 	if not invoice_name:
 		return
 
-	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
-		cancel_stock_reservation_entries,
-	)
+	sre = frappe.qb.DocType("Stock Reservation Entry")
+	rows = (
+		frappe.qb.from_(sre)
+		.select(sre.name)
+		.where(
+			(sre.docstatus == 1)
+			& (sre.voucher_type == "Sales Invoice")
+			& (sre.voucher_no == invoice_name)
+		)
+		.orderby(sre.creation)
+	).run(as_dict=True)
 
-	cancel_stock_reservation_entries(
-		voucher_type="Sales Invoice",
-		voucher_no=invoice_name,
-		notify=False,
-	)
+	for row in rows:
+		entry = frappe.get_doc("Stock Reservation Entry", row.name)
+		entry.flags.ignore_permissions = True
+		entry.cancel()
+
+
+def _stock_reservation_enabled():
+	"""Whether this site permits stock reservation at all.
+
+	ERPNext gates every reservation it creates on this switch (see
+	validate_stock_reservation_settings), and additionally refuses any voucher type
+	other than Sales Order. klik_pos builds its Sales Invoice entries by hand, so it
+	honours neither by default — meaning a site with reservation switched off still
+	accumulated entries. Respecting the switch makes it the real control it appears to
+	be, and lets a deployment that should not reserve (ERPNext Express, whose roles hold
+	no Stock Reservation Entry rights) simply turn it off.
+	"""
+	return bool(frappe.get_cached_value("Stock Settings", None, "enable_stock_reservation"))
 
 
 def _should_reserve_stock(doc):
@@ -357,6 +390,8 @@ def _reserve_stock_for_queued_invoice(doc):
 	if not doc or doc.doctype != "Sales Invoice" or doc.docstatus != 0:
 		return
 	if not _should_reserve_stock(doc):
+		return
+	if not _stock_reservation_enabled():
 		return
 	if getattr(doc, "is_return", 0):
 		return
@@ -575,7 +610,30 @@ def _get_queue_failure_recipients(requested_by=None):
 	return list(recipients)
 
 
+QUEUE_FAILURE_EVENT = "klik_pos_invoice_queue_failed"
+
+
 def _notify_queue_failure(invoice_doc, requested_by, error_message):
+	# Push to the till first. Background submission returns HTTP 200 the moment the invoice
+	# is queued, so without this the cashier sees a completed sale and only the Notification
+	# Log and email below record that it never posted - neither of which is in front of
+	# someone standing at a counter. after_commit so the alert cannot precede the failure
+	# actually being recorded on the invoice.
+	try:
+		frappe.publish_realtime(
+			event=QUEUE_FAILURE_EVENT,
+			message={
+				"invoice_name": invoice_doc.name,
+				"customer": invoice_doc.customer_name or invoice_doc.customer,
+				"error": _truncate_queue_error(error_message),
+			},
+			user=requested_by or frappe.session.user,
+			after_commit=True,
+		)
+	except Exception:
+		# Never let the alert channel take down the record-keeping below.
+		frappe.log_error(frappe.get_traceback(), f"Queue failure realtime publish failed for {invoice_doc.name}")
+
 	subject = f"POS invoice queue failed: {invoice_doc.name}"
 	body = (
 		f"Invoice <b>{invoice_doc.name}</b> failed in the background queue."
@@ -1362,7 +1420,11 @@ def queue_sales_invoice(data):
 		doc.base_paid_amount = paid_credit
 		doc.paid_amount = paid_credit
 		doc.outstanding_amount = max(flt(doc.grand_total) - paid_credit, 0)
-		doc.reserve_stock = 1
+		# Only claim stock when the site allows reservation. Left at 0 the invoice never
+		# reserves, never validates against reservations, and has nothing to release —
+		# while an invoice flagged before the switch was turned off still takes the
+		# cancel path below, so nothing is stranded mid-flight.
+		doc.reserve_stock = 1 if _stock_reservation_enabled() else 0
 		_apply_klik_invoice_flags(doc, is_held=False, is_submitted=False)
 
 		_validate_reserved_stock_for_items(doc)
