@@ -34,7 +34,7 @@ export default function ProductGrid({
   totalCount = 0,
   isSearching = false,
 }: ProductGridProps) {
-  const { filteredItems, hideUnavailableItems, selectedCustomer } = useProduct();
+  const { filteredItems, hideUnavailableItems, selectedCustomer, degraded, degradedReason, stockUnavailable } = useProduct();
   const { addToCart, cartItems, updateQuantity, removeItem } = useCartStore();
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, ensureInitialized, isRestoring } = useSalespersonStore();
@@ -53,13 +53,16 @@ export default function ProductGrid({
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
+  // Mirrors the backend's stand-down: when stock could not be read every balance is 0, so
+  // this client-side filter would blank the grid and undo the whole point of the server
+  // returning the full catalogue. Passing the flag keeps the two in step.
   const inStockItems = useMemo(
     () => (
-      hideUnavailableItems
-        ? filteredItems.filter((item) => !isItemOutOfStock(item))
+      hideUnavailableItems && !stockUnavailable
+        ? filteredItems.filter((item) => !isItemOutOfStock(item, stockUnavailable))
         : filteredItems
     ),
-    [filteredItems, hideUnavailableItems],
+    [filteredItems, hideUnavailableItems, stockUnavailable],
   );
 
   useEffect(() => { setFocusedIndex(-1); }, [inStockItems]);
@@ -97,7 +100,7 @@ export default function ProductGrid({
   }, [addConcreteItemToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (isItemOutOfStock(item)) return;
+    if (isItemOutOfStock(item, stockUnavailable)) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {
@@ -120,7 +123,7 @@ export default function ProductGrid({
     }
 
     await addItemToCart(item);
-  }, [addItemToCart, ensureInitialized, requiresSalespersonPin, scannerOnly]);
+  }, [addItemToCart, ensureInitialized, requiresSalespersonPin, scannerOnly, stockUnavailable]);
 
   const handleItemKeyDown = useCallback((index: number, item: MenuItem, e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -199,9 +202,23 @@ export default function ProductGrid({
     };
   }, [handleObserver]);
 
+  // Same amber treatment as CustomerReceivablesTable, so a degraded response reads as one
+  // system wherever it appears. Rendered in every branch below - including the empty state,
+  // which is exactly where a cashier most needs to know a permission is missing rather than
+  // assuming the shop has no stock.
+  const degradationBanner = degraded ? (
+    <div
+      role="status"
+      className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+    >
+      {degradedReason || "Some data could not be read for your role, so figures may be incomplete."}
+    </div>
+  ) : null;
+
   if (viewMode === "list") {
     return (
       <>
+        {degradationBanner}
         <div className="flex flex-col relative">
         {isSearching && (
           <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 z-10 flex items-center justify-center">
@@ -209,6 +226,7 @@ export default function ProductGrid({
           </div>
         )}
         <ProductLineView
+          stockUnavailable={stockUnavailable}
           items={inStockItems}
           onAddToCart={handleAddToCart}
           isMobile={isMobile}
@@ -269,6 +287,7 @@ export default function ProductGrid({
   if (inStockItems.length === 0 && !isSearching) {
     return (
       <>
+        {degradationBanner}
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="text-6xl mb-4">🔍</div>
@@ -313,6 +332,7 @@ export default function ProductGrid({
 
   return (
     <>
+      {degradationBanner}
       <div className={`${isMobile ? "p-3" : "p-6"} bg-gray-50 dark:bg-gray-900 relative`}>
       {isSearching && (
         <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 z-10 flex items-center justify-center">
@@ -322,6 +342,7 @@ export default function ProductGrid({
       <div className={`grid ${isMobile ? "gap-3 grid-cols-2 sm:grid-cols-2" : "gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4"}`}>
         {inStockItems.map((item, i) => (
           <ProductCard
+            stockUnavailable={stockUnavailable}
             key={item.id}
             item={item}
             onAddToCart={handleAddToCart}

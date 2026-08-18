@@ -25,6 +25,12 @@ interface ProductStoreState {
   lastFullRefresh: number | null;
   lastUpdated: Date | null;
   isInitialized: boolean;
+  // Set from the backend's degradation contract (same keys as api/receivables.py). A
+  // permission gap degrades rather than erroring, so this is the only way the UI learns
+  // that what it is showing is incomplete.
+  degraded: boolean;
+  degradedReason: string | null;
+  stockUnavailable: boolean;
   posName: string | null;
   initializePOS: (posName: string, customerId?: string) => Promise<void>;
   fetchProducts: (reset?: boolean) => Promise<void>;
@@ -51,6 +57,9 @@ interface ProductStoreState {
     page_count: number;
     has_more: boolean;
     next_offset: number | null;
+    degraded: boolean;
+    degraded_reason: string | null;
+    stock_unavailable: boolean;
   }>;
   fetchStockUpdates: () => Promise<Record<string, number>>;
   getFilteredItems: () => MenuItem[];
@@ -84,6 +93,9 @@ export const useProductStore = create<ProductStoreState>()(
       selectedCategory: 'all',
       totalCount: 0,
       hasMore: false,
+      degraded: false,
+      degradedReason: null,
+      stockUnavailable: false,
       currentOffset: 0,
       isLoading: false,
       isLoadingMore: false,
@@ -202,10 +214,16 @@ export const useProductStore = create<ProductStoreState>()(
             // hide_unavailable_items filters a page. null on an older backend that does
             // not send it - callers fall back to counting items.
             next_offset: typeof message.next_offset === 'number' ? message.next_offset : null,
+            degraded: !!message.degraded,
+            degraded_reason: message.degraded_reason ?? null,
+            stock_unavailable: !!message.stock_unavailable,
           };
         } catch (err) {
           console.error('fetchProductsFromAPI error:', err);
-          return { items: [], item_groups: [], total_count: 0, page_count: 0, has_more: false, next_offset: null };
+          return {
+            items: [], item_groups: [], total_count: 0, page_count: 0, has_more: false,
+            next_offset: null, degraded: false, degraded_reason: null, stock_unavailable: false,
+          };
         }
       },
 
@@ -267,6 +285,9 @@ export const useProductStore = create<ProductStoreState>()(
             itemGroups: result.item_groups,
             totalCount: result.total_count,
             hasMore: result.has_more,
+            degraded: result.degraded,
+            degradedReason: result.degraded_reason,
+            stockUnavailable: result.stock_unavailable,
             currentOffset: resolveNextOffset(result.next_offset, result.items.length),
             isLoading: false,
             lastFullRefresh: Date.now(),
@@ -334,6 +355,9 @@ export const useProductStore = create<ProductStoreState>()(
             itemGroups: reset ? result.item_groups : get().itemGroups,
             totalCount: result.total_count,
             hasMore: result.has_more,
+            degraded: result.degraded,
+            degradedReason: result.degraded_reason,
+            stockUnavailable: result.stock_unavailable,
             currentOffset: resolveNextOffset(
               result.next_offset,
               reset ? result.items.length : get().currentOffset + result.items.length,
@@ -473,6 +497,9 @@ export const useProductStore = create<ProductStoreState>()(
               itemGroups: result.item_groups,
               totalCount: result.total_count,
               hasMore: false,
+              degraded: result.degraded,
+              degradedReason: result.degraded_reason,
+              stockUnavailable: result.stock_unavailable,
               currentOffset: resolveNextOffset(result.next_offset, result.items.length),
               isSearching: false,
             });

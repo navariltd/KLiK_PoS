@@ -6,6 +6,7 @@ import ProductTooltip from "./ProductTooltip";
 import ProductDetailsModal from "./ProductDetailsModal";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { isItemOutOfStock } from "../utils/stock";
+import { formatAvailability } from "../utils/availability";
 
 interface ProductCardProps {
   item: MenuItem;
@@ -17,6 +18,7 @@ interface ProductCardProps {
   isFocused?: boolean;
   onFocused?: () => void;
   onKeyboardAction?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  stockUnavailable?: boolean;
 }
 
 export default function ProductCard({
@@ -29,11 +31,12 @@ export default function ProductCard({
   isFocused = false,
   onFocused,
   onKeyboardAction,
+  stockUnavailable = false,
 }: ProductCardProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const isServiceItem = item.is_stock_item === false;
-  const isOutOfStock = isItemOutOfStock(item);
+  const isOutOfStock = isItemOutOfStock(item, stockUnavailable);
   const isDisabled = isOutOfStock || scannerOnly;
   const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0;
   const variantCount = item.is_variant_template ? item.variant_count || 0 : 0;
@@ -158,7 +161,11 @@ export default function ProductCard({
                 item.is_variant_template ? "bg-sky-700" : item.is_product_bundle ? "bg-amber-700" : isServiceItem ? "bg-indigo-600" : "bg-slate-600"
               }`}
             >
-              {item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
+              {item.is_variant_template
+                ? variantCount
+                : isServiceItem
+                  ? "Service"
+                  : formatAvailability(item.available, stockUnavailable)}
             </div>
           )}
 

@@ -7,6 +7,7 @@ import ProductDetailsModal from "./ProductDetailsModal"
 
 import { formatCurrencyWithSymbol } from "../utils/currency"
 import { isItemOutOfStock } from "../utils/stock"
+import { formatAvailability } from "../utils/availability"
 
 interface ProductLineViewProps {
   items: MenuItem[]
@@ -18,6 +19,7 @@ interface ProductLineViewProps {
   focusedIndex?: number
   onItemFocus?: (index: number) => void
   onItemKeyDown?: (index: number, item: MenuItem, e: React.KeyboardEvent<HTMLDivElement>) => void
+  stockUnavailable?: boolean
 }
 
 export default function ProductLineView({
@@ -30,6 +32,7 @@ export default function ProductLineView({
   focusedIndex = -1,
   onItemFocus,
   onItemKeyDown,
+  stockUnavailable = false,
 }: ProductLineViewProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | number | null>(null)
   const [hoveredImageId, setHoveredImageId] = useState<string | number | null>(null)
@@ -81,7 +84,7 @@ export default function ProductLineView({
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
             {items.map((item, rowIndex) => {
               const isServiceItem = item.is_stock_item === false
-              const isOutOfStock = isItemOutOfStock(item)
+              const isOutOfStock = isItemOutOfStock(item, stockUnavailable)
               const isDisabled = isOutOfStock || scannerOnly
               const expectedPrice = Number(item.price_with_vat ?? item.price)
               const basePrice = Number(item.price || 0)
@@ -217,7 +220,11 @@ export default function ProductLineView({
                         <p className={`font-medium text-xs ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
+                          {item.is_variant_template
+                            ? variantCount
+                            : isServiceItem
+                              ? "Service"
+                              : formatAvailability(isOutOfStock ? 0 : item.available, stockUnavailable)}
                         </p>
                       </div>
 
@@ -258,7 +265,11 @@ export default function ProductLineView({
                         <span className={`font-medium text-sm ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
+                          {item.is_variant_template
+                            ? variantCount
+                            : isServiceItem
+                              ? "Service"
+                              : formatAvailability(isOutOfStock ? 0 : item.available, stockUnavailable)}
                         </span>
                       </div>
 

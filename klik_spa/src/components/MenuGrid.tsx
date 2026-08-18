@@ -40,6 +40,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     clearSearch,
     filteredItems,
     defaultView,
+    stockUnavailable,
   } = useProduct();
   const { addToCart } = useCartStore();
   
@@ -112,7 +113,7 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     // item and auto-add is on, Enter adds it to the cart.
     if (posDetails?.auto_add_item_to_cart && !isSearching && filteredItems.length === 1) {
       const item = filteredItems[0];
-      if (item && !item.is_variant_template && !item.has_variants && !isItemOutOfStock(item)) {
+      if (item && !item.is_variant_template && !item.has_variants && !isItemOutOfStock(item, stockUnavailable)) {
         void addToCart({ ...item, item_code: item.id });
         clearSearch();
         return;
