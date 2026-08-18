@@ -190,6 +190,12 @@ def get_items(
             as_dict=True,
         )
 
+        # Rows the SQL window actually consumed. The caller's next offset must advance by
+        # THIS, not by the number of items that survive the hide_unavailable filter below —
+        # those two counts differ whenever an item is dropped in Python, and a page where
+        # every item is dropped would otherwise leave the cursor parked forever.
+        sql_row_count = len(items)
+
         item_groups_data = _get_item_groups_with_counts(
             pos_doc,
             warehouse,
@@ -204,8 +210,10 @@ def get_items(
             return {
                 "items": [],
                 "item_groups": item_groups_data,
-                "total_count": 0,
+                "total_count": total_available_count,
+                "page_count": 0,
                 "has_more": False,
+                "next_offset": offset,
                 "limit": limit,
                 "offset": offset,
             }
@@ -355,8 +363,13 @@ def get_items(
         return {
             "items": enriched_items,
             "item_groups": item_groups_data,
-            "total_count": len(enriched_items),
-            "has_more": (offset + limit) < total_available_count,
+            # total_count is the size of the whole result set; page_count is what this
+            # page yielded after filtering. They differ whenever hide_unavailable_items
+            # drops rows, and conflating them is what made "Showing X of Y" meaningless.
+            "total_count": total_available_count,
+            "page_count": len(enriched_items),
+            "has_more": (offset + sql_row_count) < total_available_count,
+            "next_offset": offset + sql_row_count,
             "limit": limit,
             "offset": offset,
         }
