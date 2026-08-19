@@ -81,6 +81,7 @@ def get_permission_health():
 	Never raises: a health check that can break the POS is worse than no health check.
 	"""
 	missing = []
+	unchecked = []
 
 	for doctype, ptype, severity, consequence in POS_PERMISSION_REQUIREMENTS:
 		try:
@@ -90,7 +91,10 @@ def get_permission_health():
 			if frappe.has_permission(doctype, ptype):
 				continue
 		except Exception:
-			frappe.log_error(frappe.get_traceback(), f"POS permission health check failed for {doctype}")
+			# Collected, not logged per doctype. Whatever breaks a permission check breaks it
+			# for all of them, so logging inside the loop turned one fault into nine Error Log
+			# rows on every POS load - which is how this was spotted.
+			unchecked.append(doctype)
 			continue
 
 		missing.append(
@@ -101,6 +105,12 @@ def get_permission_health():
 				"consequence": _(consequence),
 				"granting_roles": _granting_roles(doctype, ptype),
 			}
+		)
+
+	if unchecked:
+		frappe.log_error(
+			f"Could not evaluate POS permissions for: {', '.join(unchecked)}\n\n{frappe.get_traceback()}",
+			"POS permission health check failed",
 		)
 
 	return {

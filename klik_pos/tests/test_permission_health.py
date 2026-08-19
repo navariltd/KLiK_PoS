@@ -97,3 +97,20 @@ class TestPermissionHealth(FrappeTestCase):
 			result = get_permission_health()
 
 		self.assertTrue(result["healthy"], "an unusable check must not invent failures")
+
+	def test_a_broken_check_logs_once_not_once_per_doctype(self):
+		"""Whatever breaks a permission check breaks it for all of them.
+
+		Logging inside the loop turned one fault into nine Error Log rows on every POS load -
+		found by auditing which handlers were actually firing.
+		"""
+		from unittest.mock import patch as mock_patch
+
+		with (
+			mock_patch.object(permission_health.frappe, "has_permission", side_effect=Exception("boom")),
+			mock_patch.object(permission_health.frappe, "log_error") as log_error,
+		):
+			get_permission_health()
+
+		self.assertEqual(log_error.call_count, 1)
+		self.assertIn("Bin", log_error.call_args.args[0])
