@@ -2920,7 +2920,7 @@
    "creation": "2026-04-20 09:13:50.359790",
    "default": "1",
    "depends_on": null,
-   "description": null,
+   "description": "Submit invoices in a background worker so checkout returns immediately. Trade-off: submit-time validations (valuation rate, stock, tax and compliance checks contributed by ERPNext and other apps) then run AFTER the customer has paid, and a failure surfaces in the unposted-sales banner instead of blocking checkout. Leave this off if you want a sale to be refused before money changes hands.",
    "docstatus": 0,
    "dt": "POS Profile",
    "fetch_from": null,
