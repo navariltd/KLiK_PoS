@@ -585,8 +585,13 @@ def _update_queue_fields(doc, status, error_message=None, attempts=None):
 		doc.queue_last_attempt_at = frappe.utils.now_datetime()
 
 
-def _get_queue_failure_recipients(requested_by=None):
-	recipients = set()
+def _get_queue_failure_user_ids(requested_by=None):
+	"""Enabled users who should hear about a failed queued invoice: the cashier and managers.
+
+	Returns User names, not email addresses. frappe.publish_realtime targets a user by name and
+	the two are not guaranteed to match, so the realtime push needs this list rather than the
+	address list _get_queue_failure_recipients derives from it.
+	"""
 	user_ids = []
 
 	if requested_by:
@@ -599,11 +604,30 @@ def _get_queue_failure_recipients(requested_by=None):
 	)
 	user_ids.extend(manager_users or [])
 
+	enabled = []
+	seen = set()
 	for user_id in user_ids:
+		if user_id in seen:
+			continue
+		seen.add(user_id)
 		try:
 			user_doc = frappe.get_doc("User", user_id)
-			if user_doc.enabled and user_doc.email:
-				recipients.add(user_doc.email)
+			if user_doc.enabled:
+				enabled.append(user_doc.name)
+		except Exception:
+			continue
+
+	return enabled
+
+
+def _get_queue_failure_recipients(requested_by=None):
+	recipients = set()
+
+	for user_id in _get_queue_failure_user_ids(requested_by):
+		try:
+			email = frappe.db.get_value("User", user_id, "email")
+			if email:
+				recipients.add(email)
 		except Exception:
 			continue
 
@@ -619,20 +643,29 @@ def _notify_queue_failure(invoice_doc, requested_by, error_message):
 	# Log and email below record that it never posted - neither of which is in front of
 	# someone standing at a counter. after_commit so the alert cannot precede the failure
 	# actually being recorded on the invoice.
-	try:
-		frappe.publish_realtime(
-			event=QUEUE_FAILURE_EVENT,
-			message={
-				"invoice_name": invoice_doc.name,
-				"customer": invoice_doc.customer_name or invoice_doc.customer,
-				"error": _truncate_queue_error(error_message),
-			},
-			user=requested_by or frappe.session.user,
-			after_commit=True,
-		)
-	except Exception:
-		# Never let the alert channel take down the record-keeping below.
-		frappe.log_error(frappe.get_traceback(), f"Queue failure realtime publish failed for {invoice_doc.name}")
+	payload = {
+		"invoice_name": invoice_doc.name,
+		"customer": invoice_doc.customer_name or invoice_doc.customer,
+		"error": _truncate_queue_error(error_message),
+	}
+
+	# Managers as well as the cashier: a supervisor should not learn about a failed sale from
+	# an email minutes later. No noise risk - a realtime event only reaches a subscribed
+	# client, so a manager who is not in the POS never sees it.
+	for user_id in _get_queue_failure_user_ids(requested_by or frappe.session.user):
+		try:
+			frappe.publish_realtime(
+				event=QUEUE_FAILURE_EVENT,
+				message=payload,
+				user=user_id,
+				after_commit=True,
+			)
+		except Exception:
+			# Never let the alert channel take down the record-keeping below.
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"Queue failure realtime publish failed for {invoice_doc.name} to {user_id}",
+			)
 
 	subject = f"POS invoice queue failed: {invoice_doc.name}"
 	body = (
