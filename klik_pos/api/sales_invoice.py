@@ -1585,6 +1585,66 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 
 
 @frappe.whitelist()
+def get_unresolved_queue_failures():
+	"""Sales that were queued, failed, and still have not posted.
+
+	The realtime alert is fire-and-forget: a cashier who had reloaded, or who was serving
+	someone else when it fired, never sees it. Rather than tracking alert delivery and
+	acknowledgement, derive the state - a failed queued invoice is already durable, so ask
+	the question at load time and let the answer clear itself when the invoice submits.
+
+	Scope follows the alert audience: a manager sees every unresolved failure, everyone else
+	sees their own. Managers are the ones who can act on a till they are not standing at.
+	"""
+	try:
+		user = frappe.session.user
+		is_manager = bool({"Sales Manager", "System Manager"} & set(frappe.get_roles(user)))
+
+		filters = {"docstatus": 0, "queue_status": QUEUE_STATUSES["failed"]}
+		if not is_manager:
+			filters["owner"] = user
+
+		invoices = frappe.get_all(
+			"Sales Invoice",
+			filters=filters,
+			fields=[
+				"name",
+				"customer",
+				"customer_name",
+				"grand_total",
+				"currency",
+				"queue_error",
+				"queue_attempts",
+				"modified",
+			],
+			order_by="modified desc",
+			limit=20,
+			ignore_permissions=True,
+		)
+
+		return {
+			"success": True,
+			"count": len(invoices),
+			"invoices": [
+				{
+					"invoice_name": row.name,
+					"customer": row.customer_name or row.customer,
+					"grand_total": flt(row.grand_total or 0),
+					"currency": row.currency,
+					"error": row.queue_error or "",
+					"attempts": int(row.queue_attempts or 0),
+					"failed_at": str(row.modified) if row.modified else None,
+				}
+				for row in invoices
+			],
+		}
+	except Exception:
+		# A status check must never be the thing that breaks the POS.
+		frappe.log_error(frappe.get_traceback(), "Get Unresolved Queue Failures Error")
+		return {"success": False, "count": 0, "invoices": []}
+
+
+@frappe.whitelist()
 def retry_failed_sales_invoice(invoice_name):
 	"""Retry a failed queued invoice by enqueueing it again."""
 	try:

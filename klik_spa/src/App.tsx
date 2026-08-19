@@ -9,6 +9,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { setupGlobalErrorHandling } from "./utils/apiUtils";
 import RetailSidebar from "./components/RetailSidebar";
+import UnresolvedSalesBanner from "./components/UnresolvedSalesBanner";
 import { useQueueFailureAlerts } from "./hooks/useQueueFailureAlerts";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ function App() {
           <I18nProvider>
             <ProductProvider>
               <RetailSidebar />
+              <UnresolvedSalesBanner />
               <Outlet />
               <ToastContainer position="top-center" autoClose={3000} aria-label="Notification" />
             </ProductProvider>
