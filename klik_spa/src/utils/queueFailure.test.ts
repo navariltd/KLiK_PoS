@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeUnresolvedFailure,
   formatQueueFailure,
+  stripHtml,
   summariseUnresolvedFailures,
 } from "./queueFailure";
 
@@ -80,5 +81,52 @@ describe("describeUnresolvedFailure", () => {
 
   it("omits a zero total rather than showing a misleading amount", () => {
     expect(describeUnresolvedFailure({ invoice_name: "INV-1", grand_total: 0 })).toBe("INV-1");
+  });
+});
+
+describe("stripHtml", () => {
+  it("removes markup that frappe.throw embeds in messages", () => {
+    expect(
+      stripHtml("Insufficient stock for item <strong>BOSCH DISC</strong> in <strong>Main</strong>."),
+    ).toBe("Insufficient stock for item BOSCH DISC in Main.");
+  });
+
+  it("decodes the entities that come with it", () => {
+    expect(stripHtml("A&amp;B &lt;tag&gt;&nbsp;here")).toBe("A&B <tag> here");
+  });
+
+  it("is empty for nothing", () => {
+    expect(stripHtml(undefined)).toBe("");
+    expect(stripHtml(null)).toBe("");
+  });
+});
+
+describe("markup in rendered failure text", () => {
+  it("never reaches the toast", () => {
+    expect(
+      formatQueueFailure({ invoice_name: "INV-1", error: "no <strong>stock</strong>" }),
+    ).toBe("Invoice INV-1 was not submitted: no stock");
+  });
+
+  it("never reaches the banner row", () => {
+    expect(
+      describeUnresolvedFailure({ invoice_name: "INV-1", error: "no <strong>stock</strong>" }),
+    ).toBe("INV-1 — no stock");
+  });
+});
+
+describe("summariseUnresolvedFailures with a capped list", () => {
+  it("counts every unposted sale, not just the listed ones", () => {
+    // The endpoint caps the list at 20; reporting 20 to a till that has 40 would be the
+    // silent truncation this banner exists to prevent.
+    expect(summariseUnresolvedFailures([{ invoice_name: "INV-1" }], 40)).toBe(
+      "40 sales did not post and are not recorded yet.",
+    );
+  });
+
+  it("never reports fewer than it is showing", () => {
+    expect(
+      summariseUnresolvedFailures([{ invoice_name: "INV-1" }, { invoice_name: "INV-2" }], 0),
+    ).toBe("2 sales did not post and are not recorded yet.");
   });
 });

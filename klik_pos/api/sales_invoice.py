@@ -6,7 +6,7 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.get_item_details import get_item_details
 from frappe import _
 from frappe.exceptions import ValidationError
-from frappe.utils import cint, flt, nowdate
+from frappe.utils import cint, flt, nowdate, strip_html_tags
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -249,7 +249,13 @@ def _coerce_queue_status(status):
 
 
 def _truncate_queue_error(error_message, max_length=900):
-	message = str(error_message or "").strip()
+	"""Plain-text, length-capped version of a queue failure reason.
+
+	frappe.throw messages routinely carry markup ("Insufficient stock for item
+	<strong>X</strong>..."), and this text is rendered as text - in a toast, a banner and the
+	invoice view - so the tags would otherwise show up literally in front of the cashier.
+	"""
+	message = strip_html_tags(str(error_message or "")).strip()
 	if len(message) <= max_length:
 		return message
 	return f"{message[:max_length].rstrip()}..."
@@ -1655,16 +1661,23 @@ def get_unresolved_queue_failures():
 			ignore_permissions=True,
 		)
 
+		# The list is capped, the count is not: telling a till with forty unposted sales that
+		# it has twenty is the same silent truncation this banner exists to prevent.
+		total = frappe.db.count("Sales Invoice", filters)
+
 		return {
 			"success": True,
-			"count": len(invoices),
+			"count": total,
+			"shown": len(invoices),
 			"invoices": [
 				{
 					"invoice_name": row.name,
 					"customer": row.customer_name or row.customer,
 					"grand_total": flt(row.grand_total or 0),
 					"currency": row.currency,
-					"error": row.queue_error or "",
+					# Stripped on read as well as on write: errors stored before the write-side
+					# strip landed still carry markup, and this text is rendered as text.
+					"error": _truncate_queue_error(row.queue_error),
 					"attempts": int(row.queue_attempts or 0),
 					"failed_at": str(row.modified) if row.modified else None,
 				}
@@ -1674,7 +1687,7 @@ def get_unresolved_queue_failures():
 	except Exception:
 		# A status check must never be the thing that breaks the POS.
 		frappe.log_error(frappe.get_traceback(), "Get Unresolved Queue Failures Error")
-		return {"success": False, "count": 0, "invoices": []}
+		return {"success": False, "count": 0, "shown": 0, "invoices": []}
 
 
 @frappe.whitelist()

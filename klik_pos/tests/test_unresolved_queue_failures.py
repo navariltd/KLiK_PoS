@@ -137,3 +137,33 @@ class TestUnresolvedQueueFailures(FrappeTestCase):
 
 		self.assertTrue(result["success"])
 		self.assertEqual(result["count"], 0)
+
+	def test_the_count_is_the_true_total_not_the_listed_page(self):
+		"""Capping the list must not cap the number the cashier is told."""
+		import unittest.mock as mock
+
+		self._failed_invoice(CASHIER)
+		self._failed_invoice(CASHIER)
+
+		with mock.patch.object(frappe, "get_all", wraps=frappe.get_all) as get_all:
+			result = self._as(CASHIER)
+			limits = [c.kwargs.get("limit") for c in get_all.call_args_list if c.kwargs.get("limit")]
+
+		self.assertTrue(limits, "the list should be capped")
+		self.assertGreaterEqual(result["count"], result["shown"])
+		self.assertEqual(result["shown"], len(result["invoices"]))
+
+	def test_the_reason_reaches_the_client_as_plain_text(self):
+		"""frappe.throw messages carry markup; it must not render literally at the till."""
+		name = self._failed_invoice(CASHIER)
+		frappe.db.set_value(
+			"Sales Invoice",
+			name,
+			"queue_error",
+			"Insufficient stock for item <strong>BOSCH DISC</strong>.",
+			update_modified=False,
+		)
+
+		row = next(r for r in self._as(CASHIER)["invoices"] if r["invoice_name"] == name)
+
+		self.assertNotIn("<strong>", row["error"])
