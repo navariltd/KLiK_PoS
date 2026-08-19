@@ -257,6 +257,51 @@ def ensure_mpesa_reconciled_payment_child():
         frappe.log_error(frappe.get_traceback(), "klik_pos: POS Mpesa Reconciled Payment child install failed")
 
 
+def install_pos_closing_entry_invoice_table():
+    """Create the `custom_sales_invoice` Table field on POS Closing Entry.
+
+    _populate_sales_invoices_to_closing_entry (api/pos_entry.py) has always appended to this
+    field, but nothing ever created it: klik_pos ships only Property Setter fixtures, and the
+    `Klik Sales Invoice Reference` child doctype it targets was added without the field that
+    would hold it. The append therefore raised AttributeError on every shift close, was
+    swallowed by the surrounding try/except so the closing entry still saved, and left an
+    Error Log row nobody read - so the invoice breakdown has never appeared on a closing
+    entry on any site.
+
+    Read-only: it is a traceability record of what the shift sold, rebuilt from the invoices
+    themselves, not something to hand-edit.
+    """
+    if not frappe.db.exists("DocType", "Klik Sales Invoice Reference"):
+        # Shipped with the app; if it is missing the field would point at nothing.
+        return
+
+    if not frappe.db.exists(
+        "Custom Field", {"dt": "POS Closing Entry", "fieldname": "custom_sales_invoice"}
+    ):
+        create_custom_fields({
+            "POS Closing Entry": [{
+                "fieldname": "custom_sales_invoice",
+                "label": "Sales Invoices",
+                "fieldtype": "Table",
+                "options": "Klik Sales Invoice Reference",
+                "insert_after": "pos_transactions",
+                "description": "Sales Invoices submitted against this shift's POS Opening Entry.",
+                "module": "KLiK PoS",
+                "read_only": 1,
+            }]
+        }, update=True)
+
+
+def ensure_pos_closing_entry_invoice_table():
+    """Hook-safe wrapper. Never abort migrate on failure."""
+    try:
+        install_pos_closing_entry_invoice_table()
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(), "klik_pos: POS Closing Entry invoice table install failed"
+        )
+
+
 def ensure_pos_profile_feature_fields():
     """Hook entrypoint for after_migrate / after_install. Never abort on failure."""
     try:
@@ -265,3 +310,4 @@ def ensure_pos_profile_feature_fields():
         frappe.log_error(frappe.get_traceback(), "klik_pos: POS Profile feature-field install failed")
     ensure_pos_extra_fields_child()
     ensure_mpesa_reconciled_payment_child()
+    ensure_pos_closing_entry_invoice_table()
