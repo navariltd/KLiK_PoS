@@ -10,6 +10,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { setupGlobalErrorHandling } from "./utils/apiUtils";
 import RetailSidebar from "./components/RetailSidebar";
 import PermissionHealthBanner from "./components/PermissionHealthBanner";
+import UnresolvedSalesBanner from "./components/UnresolvedSalesBanner";
 import { useQueueFailureAlerts } from "./hooks/useQueueFailureAlerts";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,9 @@ function App() {
           <I18nProvider>
             <ProductProvider>
               <RetailSidebar />
+              {/* Unposted sales first: money the till will not balance outranks a
+                  warning about figures the cashier can still work past. */}
+              <UnresolvedSalesBanner />
               <PermissionHealthBanner />
               <Outlet />
               <ToastContainer position="top-center" autoClose={3000} aria-label="Notification" />

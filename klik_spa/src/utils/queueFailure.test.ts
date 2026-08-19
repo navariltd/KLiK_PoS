@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatQueueFailure } from "./queueFailure";
+import {
+  describeUnresolvedFailure,
+  formatQueueFailure,
+  summariseUnresolvedFailures,
+} from "./queueFailure";
 
 describe("formatQueueFailure", () => {
   it("names the invoice, the customer and the reason", () => {
@@ -36,5 +40,45 @@ describe("formatQueueFailure", () => {
     expect(formatQueueFailure({ invoice_name: "INV-1", customer: "   ", error: "  " })).toBe(
       "Invoice INV-1 was not submitted. No reason was recorded.",
     );
+  });
+});
+
+describe("summariseUnresolvedFailures", () => {
+  it("says nothing when the till is clean", () => {
+    expect(summariseUnresolvedFailures([])).toBe("");
+  });
+
+  it("uses the singular for one unposted sale", () => {
+    expect(summariseUnresolvedFailures([{ invoice_name: "INV-1" }])).toBe(
+      "1 sale did not post and is not recorded yet.",
+    );
+  });
+
+  it("uses the plural for several", () => {
+    expect(
+      summariseUnresolvedFailures([{ invoice_name: "INV-1" }, { invoice_name: "INV-2" }]),
+    ).toBe("2 sales did not post and are not recorded yet.");
+  });
+});
+
+describe("describeUnresolvedFailure", () => {
+  it("names the invoice, customer, amount and reason", () => {
+    expect(
+      describeUnresolvedFailure({
+        invoice_name: "ACC-SINV-2026-00042",
+        customer: "ZAODON",
+        grand_total: 1430,
+        currency: "KES",
+        error: "Insufficient Permission",
+      }),
+    ).toBe("ACC-SINV-2026-00042 · ZAODON · KES 1430 — Insufficient Permission");
+  });
+
+  it("degrades to just the invoice when nothing else is known", () => {
+    expect(describeUnresolvedFailure({ invoice_name: "INV-1" })).toBe("INV-1");
+  });
+
+  it("omits a zero total rather than showing a misleading amount", () => {
+    expect(describeUnresolvedFailure({ invoice_name: "INV-1", grand_total: 0 })).toBe("INV-1");
   });
 });
