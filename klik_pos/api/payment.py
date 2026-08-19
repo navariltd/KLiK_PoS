@@ -772,8 +772,19 @@ def _merge_payment_entry_rows(sales_rows, payment_entry_rows):
 
 
 def _build_payment_summary(opening_modes, sales_data):
-	"""Build payment summary by merging opening balances with sales data."""
-	sales_map = {row.mode_of_payment: row for row in sales_data}
+	"""Build payment summary by merging opening balances with sales data.
+
+	sales_data rows are plain dicts - _merge_payment_entry_rows builds them by hand rather
+	than returning query results - so they must be read with .get(), as the rest of this
+	function already does for total_amount and transactions. Attribute access here raised
+	AttributeError on every call that had any sales to summarise, and only survived at all
+	because an empty list makes the comprehension a no-op.
+	"""
+	sales_map = {}
+	for row in sales_data or []:
+		mode = row.get("mode_of_payment")
+		if mode:
+			sales_map[mode] = row
 
 	summary = []
 	for mode in opening_modes:
