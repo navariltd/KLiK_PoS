@@ -24,7 +24,7 @@ export default function PermissionHealthBanner() {
   return (
     <div
       role="status"
-      className={`flex items-start gap-3 px-4 py-2 text-sm ${
+      className={`lg:ml-20 flex items-start gap-3 px-4 py-2 text-sm ${
         critical
           ? "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200"
           : "bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"

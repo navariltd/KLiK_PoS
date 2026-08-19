@@ -19,6 +19,7 @@ interface FrappeRealtimeClient {
  */
 export function useUnresolvedQueueFailures() {
   const [failures, setFailures] = useState<UnresolvedQueueFailure[]>([]);
+  const [total, setTotal] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -31,6 +32,7 @@ export function useUnresolvedQueueFailures() {
       const message = data?.message;
       if (message?.success && Array.isArray(message.invoices)) {
         setFailures(message.invoices as UnresolvedQueueFailure[]);
+        setTotal(typeof message.count === "number" ? message.count : message.invoices.length);
       }
     } catch {
       // Deliberately silent — see the note above.
@@ -53,5 +55,5 @@ export function useUnresolvedQueueFailures() {
     };
   }, [refresh]);
 
-  return { failures, refresh };
+  return { failures, total, refresh };
 }

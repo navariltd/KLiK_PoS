@@ -13,11 +13,31 @@ export interface QueueFailureEvent {
   error?: string;
 }
 
+/**
+ * Plain text from a message that may carry markup.
+ *
+ * frappe.throw messages routinely embed tags ("Insufficient stock for item
+ * <strong>X</strong>"), and these strings are rendered as text, so the tags would show up
+ * literally. The backend strips going forward; this covers errors already stored on older
+ * invoices.
+ */
+export function stripHtml(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Human-readable one-liner for a failed queued invoice. */
 export function formatQueueFailure(event: QueueFailureEvent | null | undefined): string {
   const invoice = event?.invoice_name?.trim();
   const customer = event?.customer?.trim();
-  const reason = event?.error?.trim();
+  const reason = stripHtml(event?.error);
 
   const subject = invoice
     ? `Invoice ${invoice}${customer ? ` for ${customer}` : ""} was not submitted`
@@ -42,11 +62,16 @@ export interface UnresolvedQueueFailure {
  * Deliberately blunt about money: an unposted sale is a till that will not balance, and the
  * cashier needs to grasp that faster than they can read a list.
  */
-export function summariseUnresolvedFailures(failures: UnresolvedQueueFailure[]): string {
+export function summariseUnresolvedFailures(
+  failures: UnresolvedQueueFailure[],
+  total: number = failures.length,
+): string {
   if (!failures.length) return "";
 
-  const noun = failures.length === 1 ? "sale" : "sales";
-  return `${failures.length} ${noun} did not post and ${failures.length === 1 ? "is" : "are"} not recorded yet.`;
+  // `total` can exceed the listed rows - the endpoint caps the list but counts them all.
+  const count = Math.max(total, failures.length);
+  const noun = count === 1 ? "sale" : "sales";
+  return `${count} ${noun} did not post and ${count === 1 ? "is" : "are"} not recorded yet.`;
 }
 
 /** One line per unresolved sale: who it was for, how much, and why it failed. */
@@ -57,5 +82,6 @@ export function describeUnresolvedFailure(failure: UnresolvedQueueFailure): stri
     parts.push(`${failure.currency ?? ""} ${failure.grand_total}`.trim());
   }
   const head = parts.join(" · ");
-  return failure.error ? `${head} — ${failure.error}` : head;
+  const reason = stripHtml(failure.error);
+  return reason ? `${head} — ${reason}` : head;
 }
