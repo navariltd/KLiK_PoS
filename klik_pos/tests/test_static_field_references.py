@@ -9,6 +9,38 @@ klik_pos has 213 bare `except Exception` handlers. That is a deliberate design -
 permission or one bad link should not take a till offline - but it also means a reference that
 can never resolve produces no visible symptom, just a log line nobody reads. These tests close
 the statically-detectable half of that gap so the class cannot come back silently.
+
+What these tests do NOT cover
+-----------------------------
+Rows built as plain dicts and then read with attribute access. `_build_payment_summary` did
+exactly that - `_merge_payment_entry_rows` hands back dict literals, and the consumer read
+`row.mode_of_payment` while reading every other field of the same row with `.get()`. It raised
+on any till that had taken money, and survived two and a half months because an empty result
+set makes the comprehension a no-op, so it looked fine on a quiet till.
+
+That is a dataflow property, not name resolution: catching it means tracking a helper's return
+type to its call sites. Not cheaply static-checkable, and deliberately not attempted here - a
+checker that half-covers a class is worse than none, because it reads as coverage. Treat
+attribute access on anything a klik_pos helper returns as suspect unless you can see it come
+from a query (frappe returns `_dict`, which supports both).
+
+The rule for new handlers
+-------------------------
+When wrapping something that should always work in `except Exception`, ask what a PERMANENT
+failure would look like to the user:
+
+- Transient (network, external service, optional integration) -> swallow and log. Correct, and
+  why one missing permission does not take a till offline.
+- Permanent (a name that never resolves, a type that never matches) -> the code can never
+  succeed. Swallowing means the feature silently does not exist and nobody finds out for
+  months.
+
+A handler cannot tell these apart at runtime. A reviewer can, at write time. If the answer to
+"what would the user see" is "nothing", the handler is hiding a bug rather than absorbing one.
+
+The cheapest ongoing signal is to join the `log_error` titles in this app against `tabError
+Log` and look at what is actually firing; on a production site that list is short and every
+entry is real.
 """
 
 import ast
