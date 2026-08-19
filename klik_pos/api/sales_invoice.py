@@ -488,9 +488,20 @@ def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=No
 
 
 def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
-	"""Validate stock considering quantities reserved via Stock Reservation Entry."""
-	if not _should_reserve_stock(doc):
-		return
+	"""Validate available stock, net of anything held by Stock Reservation Entries.
+
+	Deliberately NOT gated on _should_reserve_stock. Whether the site reserves stock and
+	whether it cares about overselling are different questions: get_reserved_stock_map simply
+	returns nothing when there are no reservations, so the check degrades to a plain
+	availability test rather than switching itself off.
+
+	It used to bail on that gate, which had two consequences. On the checkout preview the
+	call was dead outright - build_sales_invoice_doc never sets reserve_stock, so it returned
+	immediately and stock was never validated before payment. And once reservation became
+	conditional on the Stock Settings switch, the queue path stopped validating too on any
+	site with reservation turned off, so an oversell that used to be blocked at checkout
+	would go through and fail at submit instead.
+	"""
 	if not getattr(doc, "items", None):
 		return
 
