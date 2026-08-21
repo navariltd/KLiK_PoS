@@ -95,8 +95,9 @@ export default function DashboardPage() {
     );
   }
 
-  // Sales Dashboard is only for Sales Manager, System Manager or Administrator
-  if (userInfo && !userInfo.is_admin_user) {
+  // Backstop for a direct /dashboard navigation. Reads the dedicated access flag, not
+  // isAdminUser - that one still governs cashier/POS-profile scope further down.
+  if (userInfo && !userInfo.can_view_sales_dashboard) {
     navigate("/pos", { replace: true });
     return null;
   }
