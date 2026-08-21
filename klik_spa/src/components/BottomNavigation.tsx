@@ -9,7 +9,7 @@ export default function BottomNavigation() {
   const { userInfo } = useUserInfo()
   const { posDetails } = usePOSProfileStore()
 
-  const canAccessSalesDashboard = userInfo?.is_admin_user ?? false
+  const canAccessSalesDashboard = userInfo?.can_view_sales_dashboard ?? false
 
    const menuItems = [
     { icon: Grid3X3, path: "/pos", label: "POS" },
@@ -46,7 +46,7 @@ export default function BottomNavigation() {
             key={index}
             onClick={() => handleNav(item)}
             disabled={disabled}
-            title={disabled ? "Sales Dashboard (Sales Manager, System Manager or Administrator only)" : item.label}
+            title={disabled ? "Sales Dashboard — you don't have access" : item.label}
             className={`flex flex-col items-center justify-center min-w-0 flex-1 py-2 px-1 transition-colors ${
               disabled
                 ? "opacity-50 cursor-not-allowed text-gray-400 dark:text-gray-500"

@@ -65,6 +65,8 @@ export interface UserInfo {
   email: string;
   roles: string[];
   is_admin_user: boolean;
+  /** Opens the Sales Dashboard. Separate from is_admin_user, which widens data scope. */
+  can_view_sales_dashboard: boolean;
   admin_roles: string[];
   pos_profile: string | null;
   pos_profile_name: string | null;

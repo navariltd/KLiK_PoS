@@ -7,7 +7,7 @@ export default function RetailSidebar() {
   const location = useLocation()
   const { userInfo } = useUserInfo()
 
-  const canAccessSalesDashboard = userInfo?.is_admin_user ?? false
+  const canAccessSalesDashboard = userInfo?.can_view_sales_dashboard ?? false
 
   const menuItems = [
     { icon: Grid3X3, path: "/pos", label: "POS" },
@@ -45,7 +45,7 @@ export default function RetailSidebar() {
             key={index}
             onClick={() => handleNav(item)}
             disabled={disabled}
-            title={disabled ? "Sales Dashboard (Sales Manager, System Manager or Administrator only)" : item.label}
+            title={disabled ? "Sales Dashboard — you don't have access" : item.label}
             className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
               disabled
                 ? "opacity-50 cursor-not-allowed text-gray-400 dark:text-gray-600"
