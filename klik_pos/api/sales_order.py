@@ -12,6 +12,7 @@ from klik_pos.api.sales_invoice import (
     get_current_pos_opening_entry,
     parse_invoice_data,
 )
+from klik_pos.roles import is_admin_user
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ def _assert_held_order_access(so):
     if not so.custom_is_klik_held:
         frappe.throw(_("Order {0} is not a KLiK held order.").format(so.name))
 
-    if "System Manager" in frappe.get_roles():
+    if is_admin_user():
         return
 
     opening_entry = get_current_pos_opening_entry()
@@ -333,17 +334,17 @@ def get_held_orders(limit=50, start=0, search="", skip_opening_entry_filter=Fals
 
         limit = int(limit) if limit else 50
         start = int(start) if start else 0
-        is_admin_user = "System Manager" in frappe.get_roles() or "Administrator" in frappe.get_roles()
+        is_admin = is_admin_user()
 
         filters = {"custom_is_klik_held": 1, "docstatus": 0}
         if skip_opening_entry_filter:
-            if not is_admin_user:
+            if not is_admin:
                 filters["owner"] = frappe.session.user
         else:
             opening_entry = get_current_pos_opening_entry()
             if opening_entry:
                 filters["custom_pos_opening_entry"] = opening_entry
-            elif not is_admin_user:
+            elif not is_admin:
                 # No active session — only show the caller's own held orders
                 filters["owner"] = frappe.session.user
 
