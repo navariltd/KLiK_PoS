@@ -7,6 +7,7 @@ from frappe.utils import flt, nowdate
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
 from klik_pos.klik_pos.utils import get_current_pos_profile
 from klik_pos.api.sql_builder import apply_sql_permissions
+from klik_pos.roles import is_admin_user
 
 
 def _doctype_has_field(doctype, fieldname):
@@ -650,10 +651,8 @@ def _extract_opening_info(opening_doc):
 
 
 def _check_admin_privileges():
-	"""Check if current user has administrative privileges."""
-	user_roles = frappe.get_roles(frappe.session.user)
-	admin_roles = {"Administrator", "Sales Manager", "System Manager"}
-	return bool(admin_roles & set(user_roles))
+	"""Check if current user has administrative privileges. See klik_pos.roles."""
+	return is_admin_user()
 
 
 def _fetch_sales_data(pos_profile, opening_entry_name, opening_date, is_admin):

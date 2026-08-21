@@ -9,6 +9,8 @@ from frappe.exceptions import ValidationError
 from frappe.utils import cint, flt, nowdate, strip_html_tags
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.roles import ALERT_ROLES
+from klik_pos.roles import is_admin_user as _is_admin_user
 
 from .item.item_price import get_price_list_with_customer_priority
 from .loyalty import (
@@ -616,7 +618,7 @@ def _get_queue_failure_user_ids(requested_by=None):
 
 	manager_users = frappe.get_all(
 		"Has Role",
-		filters={"role": ["in", ["Sales Manager", "System Manager"]]},
+		filters={"role": ["in", ALERT_ROLES]},
 		pluck="parent",
 	)
 	user_ids.extend(manager_users or [])
@@ -842,8 +844,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 			current_pos_profile = None
 
 		current_opening_entry = get_current_pos_opening_entry()
-		user_roles = frappe.get_roles()
-		is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
+		is_admin_user = _is_admin_user()
 
 		sales_invoice_meta = frappe.get_meta("Sales Invoice")
 		has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
@@ -1648,7 +1649,7 @@ def get_unresolved_queue_failures():
 	"""
 	try:
 		user = frappe.session.user
-		is_manager = bool({"Sales Manager", "System Manager"} & set(frappe.get_roles(user)))
+		is_manager = _is_admin_user(user)
 
 		filters = {"docstatus": 0, "queue_status": QUEUE_STATUSES["failed"]}
 		if not is_manager:
