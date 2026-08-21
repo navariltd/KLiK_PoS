@@ -1,7 +1,18 @@
 import frappe
 from frappe import _
 
-from klik_pos.roles import ADMIN_ROLES, DASHBOARD_ROLES
+# Roles that count as administrative for POS *data scope*: the cashier filter in
+# InvoiceHistory, the POS-profile filter in DashboardPage, and the widened invoice
+# query. Adding a role here grants visibility over other people's tills.
+ADMIN_ROLES = ["Administrator", "Sales Manager", "System Manager"]
+
+# Roles permitted to OPEN the Sales Dashboard. Deliberately separate from ADMIN_ROLES:
+# reading the dashboard and seeing every till are different rights, and conflating them
+# meant an ERPNext Express deployment could not grant the first without the second.
+# Express Admin holds no standard role and, by erpnext_express's role hygiene hook,
+# cannot be given one - so naming it here is the only way in. On a site without
+# erpnext_express the name simply never matches; it is compared, never looked up.
+DASHBOARD_ROLES = [*ADMIN_ROLES, "Express Admin"]
 
 
 @frappe.whitelist()
