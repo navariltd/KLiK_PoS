@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { formatCurrencyWithSymbol } from "../utils/currency"
 import {
@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const { posDetails } = usePOSProfileStore()
 
   // Only fetch submitted invoices for dashboard (exclude Draft and Cancelled)
-  const { invoices, isLoading: invoicesLoading } = useSalesInvoices("", false, undefined, true)
+  const { invoices, isLoading: invoicesLoading } = useSalesInvoices("", false, undefined, true, "dashboard")
   const { userInfo, isLoading: userInfoLoading } = useUserInfo()
   // Blank => current POS opening session
   const [timeRange, setTimeRange] = useState("")
@@ -43,9 +43,6 @@ export default function DashboardPage() {
 
 
 
-  // Role-based access control
-  const isAdminUser = userInfo?.is_admin_user || false
-  const currentUserCashier = userInfo?.full_name || "Unknown"
   const [cashierFilter, setCashierFilter] = useState("all")
   const [paymentFilter, setPaymentFilter] = useState("all")
   const [showFilters, setShowFilters] = useState(false)
@@ -75,13 +72,9 @@ export default function DashboardPage() {
   )
   const uniqueCashiers = [...new Set(submittedInvoices.map((invoice: SalesInvoice) => invoice.cashier))]
 
-  // Set default cashier filter based on user role
-  useEffect(() => {
-    if (userInfo && !isAdminUser) {
-      // For non-admin users, set cashier filter to current user
-      setCashierFilter(currentUserCashier)
-    }
-  }, [userInfo, isAdminUser, currentUserCashier])
+  // No default cashier filter here. The dashboard is an overview of the business and
+  // never narrows to the viewer - the gate is who may open it, enforced server-side in
+  // get_sales_invoices(surface="dashboard") as well as by the nav.
 
   // Loading state - must be after all hooks
   if (userInfoLoading || invoicesLoading) {
@@ -95,8 +88,8 @@ export default function DashboardPage() {
     );
   }
 
-  // Backstop for a direct /dashboard navigation. Reads the dedicated access flag, not
-  // isAdminUser - that one still governs cashier/POS-profile scope further down.
+  // Backstop for a direct /dashboard navigation. The server enforces the same list in
+  // get_sales_invoices(surface="dashboard"), so this is convenience, not the guard.
   if (userInfo && !userInfo.can_view_sales_dashboard) {
     navigate("/pos", { replace: true });
     return null;
@@ -122,7 +115,8 @@ export default function DashboardPage() {
         : invoice.custom_pos_opening_entry === posDetails.current_opening_entry
 
     // Role-based filtering: Non-admin users only see invoices for their POS profile
-    const matchesPOSProfile = isAdminUser || !posDetails?.name || invoice.posProfile === posDetails.name
+    // Never narrowed by till: the dashboard reports the whole business.
+    const matchesPOSProfile = true
 
     return matchesCashier && matchesPayment && matchesTime && matchesOpening && matchesPOSProfile
   })
@@ -388,9 +382,8 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                   <select
                     value={cashierFilter}
                     onChange={(e) => setCashierFilter(e.target.value)}
-                    disabled={!isAdminUser}
                     className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      !isAdminUser ? 'opacity-50 cursor-not-allowed' : ''
+                      ''
                     }`}
                   >
                     <option value="all">All Cashiers</option>
@@ -400,11 +393,6 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                       </option>
                     ))}
                   </select>
-                  {!isAdminUser && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Showing only your transactions
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -999,9 +987,8 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                 <select
                   value={cashierFilter}
                   onChange={(e) => setCashierFilter(e.target.value)}
-                  disabled={!isAdminUser}
                   className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                    !isAdminUser ? 'opacity-50 cursor-not-allowed' : ''
+                    ''
                   }`}
                 >
                   <option value="all">All Cashiers</option>
@@ -1011,11 +998,6 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
                     </option>
                   ))}
                 </select>
-                {!isAdminUser && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Showing only your transactions
-                  </p>
-                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

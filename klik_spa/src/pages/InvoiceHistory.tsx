@@ -134,7 +134,7 @@ export default function InvoiceHistoryPage() {
 
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
-  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
+  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter, false, "history");
 
   // Held draft Sales Orders (custom_is_klik_held=1) — surfaced under the Draft tab.
   // Mapped to the SalesInvoice shape with `isHeldOrder` so the row + action handlers
@@ -223,8 +223,10 @@ export default function InvoiceHistoryPage() {
   
   const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
 
-  // Role-based filtering
-  const isAdminUser = userInfo?.is_admin_user || false;
+  // Cross-cashier reading is a property of the till, not of the person: the POS Profile
+  // decides, and it decides for managers too. Absent flag reads as off, matching the
+  // backend, so a site that has not migrated keeps the behaviour it has today.
+  const canViewOtherCashiers = posDetails?.custom_allow_viewing_other_cashiers === 1;
   const currentUserCashier = userInfo?.full_name || "";
 
   // Force the cashier filter to the current (non-admin) user once fresh user
@@ -233,10 +235,10 @@ export default function InvoiceHistoryPage() {
   // user on a shared device, instead of only seeding it once from "all".
   useEffect(() => {
     if (userInfoLoading) return;
-    if (!isAdminUser && currentUserCashier && cashierFilter !== currentUserCashier) {
+    if (!canViewOtherCashiers && currentUserCashier && cashierFilter !== currentUserCashier) {
       setCashierFilter(currentUserCashier);
     }
-  }, [isAdminUser, currentUserCashier, cashierFilter, userInfoLoading]);
+  }, [canViewOtherCashiers, currentUserCashier, cashierFilter, userInfoLoading]);
 
   useEffect(() => {
     window.localStorage.setItem(INVOICE_HISTORY_VIEW_MODE_KEY, viewMode);
@@ -534,9 +536,9 @@ const getStatusBadge = (status: string) => {
         <select
           value={cashierFilter}
           onChange={(e) => setCashierFilter(e.target.value)}
-          disabled={!isAdminUser}
+          disabled={!canViewOtherCashiers}
           className={`px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white ${
-            !isAdminUser ? 'opacity-50 cursor-not-allowed' : ''
+            !canViewOtherCashiers ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
           <option value="all">All Cashiers</option>
@@ -546,7 +548,7 @@ const getStatusBadge = (status: string) => {
             </option>
           ))}
         </select>
-        {!isAdminUser && (
+        {!canViewOtherCashiers && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Showing only your transactions</p>
         )}
         <select
