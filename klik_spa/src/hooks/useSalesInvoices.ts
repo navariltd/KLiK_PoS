@@ -6,7 +6,10 @@ export function useSalesInvoices(
   searchTerm: string = "",
   skipOpeningEntryFilter: boolean = false,
   cashierName?: string,
-  submittedOnly: boolean = false
+  submittedOnly: boolean = false,
+  /** Which screen is asking. The backend scopes differently per surface — see
+   *  get_sales_invoices. Omit it for Closing Shift and customer invoice lists. */
+  surface: "" | "history" | "dashboard" = ""
 ) {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,8 +51,10 @@ export function useSalesInvoices(
       const cashierParam = cashierName && cashierName !== 'all' ? `&cashier_name=${encodeURIComponent(cashierName)}` : '';
       // Only submitted invoices (exclude Draft and Cancelled) - for Sales Dashboard
       const submittedOnlyParam = submittedOnly ? '&submitted_only=true' : '';
+      // Which screen is asking; the backend will not guess it from the other params.
+      const surfaceParam = surface ? `&surface=${surface}` : '';
       const response = await fetch(
-        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}${submittedOnlyParam}`,
+        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}${submittedOnlyParam}${surfaceParam}`,
         {
           method: 'GET',
           headers: {
@@ -177,7 +182,7 @@ export function useSalesInvoices(
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName, submittedOnly]);
+  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName, submittedOnly, surface]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {

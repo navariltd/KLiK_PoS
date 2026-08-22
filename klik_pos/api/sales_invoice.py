@@ -810,8 +810,45 @@ def get_current_pos_opening_entry():
 		return None
 
 
+def _can_view_sales_dashboard(user_roles):
+	"""Whether these roles may open the Sales Dashboard.
+
+	DASHBOARD_ROLES is imported from api.user rather than restated here: that module
+	serves the same list to the SPA for the nav gate, and the two drifting apart is what
+	produced a dashboard tab that opened onto a query refusing to fill it.
+
+	A plain string comparison, never a Role lookup, so "Express Admin" costs nothing on a
+	klik_pos install without erpnext_express - no such role exists there, so it matches
+	nobody and every other role behaves exactly as before.
+	"""
+	from klik_pos.api.user import DASHBOARD_ROLES
+
+	return bool(set(DASHBOARD_ROLES) & set(user_roles or []))
+
+
+def _profile_allows_other_cashiers(pos_doc):
+	"""Whether this till lets its users read invoices they did not ring.
+
+	A property of the POS Profile rather than of the person: with it off, everyone on the
+	till - managers included - is held to their own invoices in Invoice History. Missing
+	profile or missing field reads as off, so a site that has not migrated yet keeps the
+	behaviour it has today rather than silently opening up.
+	"""
+	if not pos_doc:
+		return False
+	return bool(getattr(pos_doc, "custom_allow_viewing_other_cashiers", 0))
+
+
 @frappe.whitelist(allow_guest=True)
-def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False):
+def get_sales_invoices(
+	limit=100,
+	start=0,
+	search="",
+	skip_opening_entry_filter=False,
+	cashier_name=None,
+	submitted_only=False,
+	surface="",
+):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 
@@ -819,6 +856,21 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		skip_opening_entry_filter: If True, skip filtering by opening entry (for Invoice History page)
 		cashier_name: Filter by cashier name (full name). If provided, only returns invoices for that cashier.
 		submitted_only: If True, only return submitted invoices (docstatus=1). Use for Sales Dashboard; excludes Draft and Cancelled.
+		surface: Which screen is asking. Four screens share this endpoint and they do not
+			want the same scoping, so they say which they are rather than having it
+			guessed from the other arguments:
+
+			"dashboard" - the Sales Dashboard. Restricts nothing: no opening entry, no POS
+				profile, no owner. The dashboard is an overview of the business, so the
+				gate is who may open it, checked here rather than only in the SPA.
+			"history"   - Invoice History. Cross-cashier reading is decided by the till's
+				POS Profile (custom_allow_viewing_other_cashiers), not by role. With it
+				off the owner filter is applied in SQL; previously the restriction existed
+				only because the page sent its own name as cashier_name, which anyone
+				could omit.
+			""          - Closing Shift and the customer invoice list. Untouched: a shift
+				legitimately spans cashiers on a shared till, and a customer's invoices
+				were rung by whoever served them.
 	"""
 	try:
 		if isinstance(skip_opening_entry_filter, str):
@@ -845,6 +897,9 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		user_roles = frappe.get_roles()
 		is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
 
+		if surface == "dashboard" and not _can_view_sales_dashboard(user_roles):
+			return {"success": False, "error": _("Not permitted to view the Sales Dashboard")}
+
 		sales_invoice_meta = frappe.get_meta("Sales Invoice")
 		has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
 		has_custom_is_held = any(df.fieldname == "custom_is_held" for df in sales_invoice_meta.fields)
@@ -869,7 +924,11 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		conditions = []
 		params = []
 
-		if not skip_opening_entry_filter:
+		if surface == "history" and not _profile_allows_other_cashiers(pos_doc):
+			conditions.append("si.owner = %s")
+			params.append(frappe.session.user)
+
+		if surface != "dashboard" and not skip_opening_entry_filter:
 			if is_admin_user:
 				conditions.append("si.custom_pos_opening_entry != ''")
 			elif current_opening_entry:
@@ -890,7 +949,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 				conditions.append(f"si.owner IN ({placeholders})")
 				params.extend(cashier_user_ids)
 
-		if current_pos_profile and not is_admin_user:
+		if surface != "dashboard" and current_pos_profile and not is_admin_user:
 			conditions.append("si.pos_profile = %s")
 			params.append(current_pos_profile)
 

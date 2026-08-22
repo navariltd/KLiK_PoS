@@ -40,11 +40,27 @@ class TestPosProfileFeatureFields(FrappeTestCase):
         self.assertEqual(f["default"], "0")
         self.assertEqual(f["module"], "KLiK PoS")
 
+    def test_spec_includes_other_cashier_visibility_toggle(self):
+        names = [f["fieldname"] for f in POS_PROFILE_FEATURE_FIELDS]
+        self.assertIn("custom_allow_viewing_other_cashiers", names)
+        f = next(x for x in POS_PROFILE_FEATURE_FIELDS if x["fieldname"] == "custom_allow_viewing_other_cashiers")
+        self.assertEqual(f["fieldtype"], "Check")
+        # Default off: an upgraded site must keep the visibility it has today.
+        self.assertEqual(f["default"], "0")
+        self.assertEqual(f["module"], "KLiK PoS")
+        # insert_after must name a field created earlier in the same pass, or the
+        # column lands in the wrong place on a fresh install.
+        self.assertEqual(f["insert_after"], "custom_allow_credit_sales_as_pos")
+        self.assertLess(
+            names.index("custom_allow_credit_sales_as_pos"),
+            names.index("custom_allow_viewing_other_cashiers"),
+        )
+
     @patch("klik_pos.setup.pos_profile_fields.create_custom_fields")
     @patch("frappe.db.has_column", return_value=False)
     def test_creates_all_when_none_exist(self, _hc, mock_create):
         result = install_pos_profile_feature_fields()
-        self.assertEqual(result, ["allow_price_list_switching", "allow_warehouse_change", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos"])
+        self.assertEqual(result, ["allow_price_list_switching", "allow_warehouse_change", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos", "custom_allow_viewing_other_cashiers"])
         sent = mock_create.call_args[0][0]
         self.assertEqual(sent["POS Profile"], POS_PROFILE_FEATURE_FIELDS)
         self.assertTrue(mock_create.call_args.kwargs.get("update"))
@@ -54,9 +70,9 @@ class TestPosProfileFeatureFields(FrappeTestCase):
         # warehouse already exists (e.g. standard field), price-list and sales-lens missing
         with patch("frappe.db.has_column", side_effect=lambda dt, fn: fn == "allow_warehouse_change"):
             result = install_pos_profile_feature_fields()
-        self.assertEqual(result, ["allow_price_list_switching", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos"])
+        self.assertEqual(result, ["allow_price_list_switching", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos", "custom_allow_viewing_other_cashiers"])
         sent = mock_create.call_args[0][0]
-        self.assertEqual([f["fieldname"] for f in sent["POS Profile"]], ["allow_price_list_switching", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos"])
+        self.assertEqual([f["fieldname"] for f in sent["POS Profile"]], ["allow_price_list_switching", "custom_enable_sales_lens", "custom_show_overdue_warning", "custom_allow_credit_sales_as_pos", "custom_allow_viewing_other_cashiers"])
 
     @patch("klik_pos.setup.pos_profile_fields.create_custom_fields")
     @patch("frappe.db.has_column", return_value=True)

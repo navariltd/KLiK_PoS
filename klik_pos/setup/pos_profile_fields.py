@@ -57,6 +57,22 @@ POS_PROFILE_FEATURE_FIELDS = [
         "default": "0",
         "module": "KLiK PoS",
     },
+    {
+        "fieldname": "custom_allow_viewing_other_cashiers",
+        "label": "Allow Viewing Other Cashiers' Invoices",
+        "fieldtype": "Check",
+        "insert_after": "custom_allow_credit_sales_as_pos",
+        "description": (
+            "Invoice History only. When off (default), every user on this profile sees "
+            "only the invoices they rang, and the cashier filter is locked to their own "
+            "name. When on, anyone on this till may filter by and read any cashier's "
+            "invoices. This is a property of the till, not of the person: it applies to "
+            "managers too. The Sales Dashboard is unaffected - it never restricts data, "
+            "and is instead limited to who may open it."
+        ),
+        "default": "0",
+        "module": "KLiK PoS",
+    },
 ]
 
 
