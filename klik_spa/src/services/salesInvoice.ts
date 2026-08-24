@@ -108,7 +108,40 @@ export async function createSalesInvoice(data: any) {
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, 'Failed to create invoice');
-    throw new Error(errorMessage);
+    // Carry the server's payload on the error. A failed checkout that still names an
+    // invoice is not the same as one that created nothing, and the caller has to be
+    // able to tell them apart before it decides whether to keep the request id.
+    const error = new Error(errorMessage) as Error & {
+      checkoutResponseReceived?: boolean;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      checkoutResponse?: any;
+    };
+    error.checkoutResponseReceived = true;
+    error.checkoutResponse = result.message;
+    throw error;
+  }
+
+  return result.message;
+}
+
+/** Ask the server what became of a checkout whose response never arrived. */
+export async function getCheckoutRequestStatus(checkoutRequestId: string) {
+  const params = new URLSearchParams({ checkout_request_id: checkoutRequestId });
+  const response = await fetch(
+    `/api/method/klik_pos.api.sales_invoice.get_checkout_request_status?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    },
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    throw new Error(extractErrorMessage(result, 'Failed to recover checkout status'));
   }
 
   return result.message;

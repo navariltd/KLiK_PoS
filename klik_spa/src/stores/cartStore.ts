@@ -5,6 +5,7 @@ import type { CartItem, GiftCoupon } from '../../types'
 import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
+import { clearCheckoutAttempt } from '../utils/checkoutAttempt'
 import { usePOSProfileStore } from './posProfileStore'
 import { roundCurrency } from '../utils/currencyMath'
 
@@ -498,6 +499,8 @@ export const useCartStore = create<CartState>()(
 
       clearCart: () => {
         clearDraftInvoiceCache();
+        // The cart is gone, so the idempotency key that described it is spent.
+        clearCheckoutAttempt();
         set(() => ({
           cartItems: [],
           appliedCoupons: [],

@@ -417,6 +417,22 @@ def checkout_held_order(order_id, data=None):
         if data and isinstance(data, str):
             data = json.loads(data)
 
+        # Answer a replay before touching the Sales Order: a successful first call already
+        # deleted it, so loading it here would fail the retry instead of returning the
+        # invoice that first call created.
+        from klik_pos.api.sales_invoice import (
+            _checkout_request_response,
+            _get_checkout_request,
+            _normalize_checkout_request_id,
+        )
+
+        checkout_request_id = _normalize_checkout_request_id(
+            (data or {}).get("checkout_request_id")
+        )
+        existing_checkout = _get_checkout_request(checkout_request_id)
+        if existing_checkout:
+            return _checkout_request_response(existing_checkout)
+
         so = frappe.get_doc("Sales Order", order_id)
         _assert_held_order_access(so)
         if so.docstatus != 0:
