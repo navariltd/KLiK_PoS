@@ -32,6 +32,7 @@ import {
 
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
+import EditWalkinInfoModal from "../components/dialog/EditWalkinInfoModal";
 import { useInvoiceDetails } from "../hooks/useInvoiceDetails";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { usePOSProfileStore } from "../stores/posProfileStore";
@@ -77,6 +78,9 @@ export default function InvoiceViewPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [customerData, setCustomerData] = useState<any>(null)
   const [isLoadingCustomer, setIsLoadingCustomer] = useState(false)
+
+  // Walk-in customer name/Tax ID edit modal state (works on draft AND submitted invoices)
+  const [showEditWalkinModal, setShowEditWalkinModal] = useState(false)
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -596,12 +600,34 @@ export default function InvoiceViewPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.address_line1}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.email_id}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.phone}</p>
-                        {invoice.tax_id && (
+                        {invoice.customer_is_walkin ? (
                           <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Tax ID:</h4>
-                            <p className="text-sm text-gray-900 dark:text-white font-medium">{invoice.tax_id}</p>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                                Customer Name / Tax ID:
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => setShowEditWalkinModal(true)}
+                                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-beveren-600 dark:hover:bg-gray-800"
+                                title="Edit customer name / Tax ID"
+                              >
+                                <Edit size={14} />
+                              </button>
+                            </div>
+                            {invoice.custom_customer_alias && (
+                              <p className="text-sm text-gray-900 dark:text-white font-medium">
+                                {invoice.custom_customer_alias}
+                              </p>
+                            )}
+                            {invoice.tax_id && (
+                              <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.tax_id}</p>
+                            )}
+                            {!invoice.custom_customer_alias && !invoice.tax_id && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Not captured yet</p>
+                            )}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                       <div className="text-right">
                         <div className="space-y-2">
@@ -1161,6 +1187,25 @@ export default function InvoiceViewPage() {
         title="Verify salesperson"
         description="Verify the salesperson before continuing this invoice action."
       />
+
+      {invoice && (
+        <EditWalkinInfoModal
+          isOpen={showEditWalkinModal}
+          onClose={() => setShowEditWalkinModal(false)}
+          invoiceName={invoice.name || invoice.id}
+          initialAlias={invoice.custom_customer_alias || ""}
+          initialTaxId={invoice.tax_id || ""}
+          initialChangeLog={(() => {
+            try {
+              const parsed = JSON.parse(invoice.custom_walkin_info_change_log || "[]");
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })()}
+          onSaved={() => refetch()}
+        />
+      )}
 
       </div>
     </div>

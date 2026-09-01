@@ -49,6 +49,12 @@ doc_events = {
     "POS Profile": {
         "validate": "klik_pos.overrides.pos_profile.remove_duplicate_sales_persons"
     },
+    "Purchase Receipt": {
+        "on_submit": "klik_pos.klik_pos.backorder.fulfill_backorders_on_purchase_receipt",
+    },
+    "Purchase Invoice": {
+        "on_submit": "klik_pos.klik_pos.backorder.fulfill_backorders_on_purchase_invoice",
+    },
 }
 
 extend_doctype_class = {

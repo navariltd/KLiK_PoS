@@ -1,4 +1,3 @@
-
 import { extractErrorMessage } from "../utils/errorExtraction";
 
 export interface LoyaltyRedemptionPreview {
@@ -182,6 +181,54 @@ export async function retryQueuedInvoice(invoiceId: string) {
   }
 
   return result.message;
+}
+
+export interface WalkinInfoChangeLogEntry {
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: string;
+  changed_on: string;
+}
+
+// Updates a walk-in sale's per-transaction Customer Name (Alias) and/or Tax ID.
+// Works whether the invoice is still a draft or has already been submitted --
+// pass only the field(s) that should change; omit a field entirely (leave it
+// undefined) to leave it untouched rather than clearing it.
+export async function updateWalkinCustomerInfo(
+  invoiceName: string,
+  fields: { alias?: string; taxId?: string }
+) {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch('/api/method/klik_pos.api.sales_invoice.update_walkin_customer_info', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken
+    },
+    body: JSON.stringify({
+      invoice_name: invoiceName,
+      alias: fields.alias,
+      tax_id: fields.taxId,
+    }),
+    credentials: 'include'
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    const errorMessage = extractErrorMessage(result, result.message?.message || 'Failed to update customer info');
+    throw new Error(errorMessage);
+  }
+
+  return result.message as {
+    success: boolean;
+    changed: boolean;
+    custom_customer_alias?: string | null;
+    tax_id?: string | null;
+    change_log?: WalkinInfoChangeLogEntry[];
+  };
 }
 
 export async function createSalesReturn(invoiceName: string) {

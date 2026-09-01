@@ -553,16 +553,61 @@ def _fetch_sales_data(pos_profile, opening_entry_name, opening_date, is_admin):
 	return _fetch_opening_sales_data(opening_entry_name)
 
 
+# Change/overpayment attribution rule (matches the checkout-time restriction
+# in sales_invoice.py's _validate_change_payment_restrictions):
+#   - Cash alone, or M-Pesa alone -> that one mode absorbs the change.
+#   - Cash + exactly one other mode -> Cash absorbs the change, the other
+#     mode is counted at exactly what was entered against it.
+#   - Anything else (3+ modes, or 2 modes without Cash) shouldn't happen for
+#     invoices created after the checkout restriction went live, but old
+#     invoices from before that fix may still have it. For those we fall
+#     back to the previous proportional split so the numbers stay internally
+#     consistent (always sum back to grand_total) even though there's no
+#     longer a single "correct" mode to blame for the surplus.
+_CHANGE_ATTRIBUTION_CASE = """
+            CASE
+                WHEN inv.num_modes = 1 THEN sip.amount - inv.change_amt
+                WHEN inv.num_modes = 2 AND inv.has_cash = 1 AND sip.mode_of_payment = 'Cash'
+                    THEN sip.amount - inv.change_amt
+                WHEN inv.num_modes = 2 AND inv.has_cash = 1 AND sip.mode_of_payment != 'Cash'
+                    THEN sip.amount
+                ELSE sip.amount * inv.grand_total / NULLIF(inv.total_paid, 0)
+            END
+"""
+
+
 def _fetch_daily_sales_data(pos_profile, opening_date):
-	"""Fetch all sales data for the day (admin view)."""
+	"""Fetch all sales data for the day (admin view).
+
+	Attributes each invoice's change/overpayment to a specific mode per the
+	rule above, instead of spreading it proportionally across every mode
+	used on the invoice.
+	"""
 	rows = frappe.db.sql(
-		"""
+		f"""
         SELECT
             sip.mode_of_payment,
-            SUM(sip.amount) as total_amount,
+            SUM({_CHANGE_ATTRIBUTION_CASE}) as total_amount,
             COUNT(DISTINCT si.name) as transactions
         FROM `tabSales Invoice` si
         JOIN `tabSales Invoice Payment` sip ON si.name = sip.parent
+        JOIN (
+            SELECT
+                si2.name AS inv_name,
+                si2.grand_total AS grand_total,
+                SUM(sip2.amount) AS total_paid,
+                GREATEST(SUM(sip2.amount) - si2.grand_total, 0) AS change_amt,
+                COUNT(DISTINCT CASE WHEN sip2.amount > 0 THEN sip2.mode_of_payment END) AS num_modes,
+                MAX(CASE WHEN sip2.mode_of_payment = 'Cash' AND sip2.amount > 0 THEN 1 ELSE 0 END) AS has_cash
+            FROM `tabSales Invoice` si2
+            JOIN `tabSales Invoice Payment` sip2 ON sip2.parent = si2.name
+            WHERE si2.pos_profile = %s
+              AND si2.docstatus = 1
+              AND si2.posting_date = %s
+              AND si2.custom_pos_opening_entry IS NOT NULL
+              AND si2.custom_pos_opening_entry != ''
+            GROUP BY si2.name, si2.grand_total
+        ) inv ON inv.inv_name = si.name
         WHERE si.pos_profile = %s
           AND si.docstatus = 1
           AND si.posting_date = %s
@@ -570,27 +615,45 @@ def _fetch_daily_sales_data(pos_profile, opening_date):
           AND si.custom_pos_opening_entry != ''
         GROUP BY sip.mode_of_payment
         """,
-		(pos_profile, opening_date),
+		(pos_profile, opening_date, pos_profile, opening_date),
 		as_dict=True,
 	)
 	return _merge_payment_entry_rows(rows, _fetch_daily_payment_entry_data(opening_date))
 
 
 def _fetch_opening_sales_data(opening_entry_name):
-	"""Fetch sales data for specific opening entry (regular user view)."""
+	"""Fetch sales data for specific opening entry (regular user view).
+
+	Same change-attribution rule as _fetch_daily_sales_data -- see that
+	function's docstring and the comment above _CHANGE_ATTRIBUTION_CASE.
+	"""
 	rows = frappe.db.sql(
-		"""
+		f"""
         SELECT
             sip.mode_of_payment,
-            SUM(sip.amount) as total_amount,
+            SUM({_CHANGE_ATTRIBUTION_CASE}) as total_amount,
             COUNT(DISTINCT si.name) as transactions
         FROM `tabSales Invoice` si
         JOIN `tabSales Invoice Payment` sip ON si.name = sip.parent
+        JOIN (
+            SELECT
+                si2.name AS inv_name,
+                si2.grand_total AS grand_total,
+                SUM(sip2.amount) AS total_paid,
+                GREATEST(SUM(sip2.amount) - si2.grand_total, 0) AS change_amt,
+                COUNT(DISTINCT CASE WHEN sip2.amount > 0 THEN sip2.mode_of_payment END) AS num_modes,
+                MAX(CASE WHEN sip2.mode_of_payment = 'Cash' AND sip2.amount > 0 THEN 1 ELSE 0 END) AS has_cash
+            FROM `tabSales Invoice` si2
+            JOIN `tabSales Invoice Payment` sip2 ON sip2.parent = si2.name
+            WHERE si2.custom_pos_opening_entry = %s
+              AND si2.docstatus = 1
+            GROUP BY si2.name, si2.grand_total
+        ) inv ON inv.inv_name = si.name
         WHERE si.custom_pos_opening_entry = %s
           AND si.docstatus = 1
         GROUP BY sip.mode_of_payment
         """,
-		(opening_entry_name,),
+		(opening_entry_name, opening_entry_name),
 		as_dict=True,
 	)
 	return _merge_payment_entry_rows(rows, _fetch_opening_payment_entry_data(opening_entry_name))

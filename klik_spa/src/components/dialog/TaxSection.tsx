@@ -7,6 +7,8 @@ interface TaxSectionProps {
   isProcessingPayment: boolean;
   taxPin: string;
   onTaxPinChange: (pin: string) => void;
+  customerAlias: string;
+  onCustomerAliasChange: (alias: string) => void;
   calculations: Calculations;
   displayCurrencySymbol: string;
   backendTaxPreview: BackendTaxPreview | null;
@@ -20,6 +22,8 @@ export default function TaxSection({
   isProcessingPayment,
   taxPin,
   onTaxPinChange,
+  customerAlias,
+  onCustomerAliasChange,
   calculations,
   displayCurrencySymbol,
   backendTaxPreview,
@@ -41,23 +45,46 @@ export default function TaxSection({
       <div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tax Configuration</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 items-stretch">
-        <div className="min-w-0 h-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 sm:p-4 flex flex-col">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            {invoiceSubmitted ? "Customer Tax ID" : "Customer Tax ID (optional)"}
-          </label>
+        <div className="min-w-0 h-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 sm:p-4 flex flex-col gap-3">
           {selectedCustomer?.isWalkin === 1 ? (
-            <input
-              type="text"
-              value={taxPin}
-              onChange={(e) => onTaxPinChange(e.target.value.toUpperCase())}
-              onBlur={() => onTaxPinChange(taxPin.trim().toUpperCase())}
-              placeholder="A123456789P"
-              disabled={invoiceSubmitted || isProcessingPayment}
-              className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white uppercase tracking-widest ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
-            />
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {invoiceSubmitted ? "Customer Name" : "Customer Name (optional)"}
+                </label>
+                <input
+                  type="text"
+                  value={customerAlias}
+                  onChange={(e) => onCustomerAliasChange(e.target.value)}
+                  onBlur={() => onCustomerAliasChange(customerAlias.trim())}
+                  placeholder="e.g. Jane Wanjiku"
+                  disabled={invoiceSubmitted || isProcessingPayment}
+                  className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Can be added or corrected later from Invoice History too.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {invoiceSubmitted ? "Customer Tax ID" : "Customer Tax ID (optional)"}
+                </label>
+                <input
+                  type="text"
+                  value={taxPin}
+                  onChange={(e) => onTaxPinChange(e.target.value.toUpperCase())}
+                  onBlur={() => onTaxPinChange(taxPin.trim().toUpperCase())}
+                  placeholder="A123456789P"
+                  disabled={invoiceSubmitted || isProcessingPayment}
+                  className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white uppercase tracking-widest ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                />
+              </div>
+            </>
           ) : (
             <div className="flex-1 flex items-center">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Available for walk-in customers only.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Customer name and Tax ID are available for walk-in customers only.
+              </p>
             </div>
           )}
         </div>

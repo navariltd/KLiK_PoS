@@ -164,7 +164,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
+  // Whole-invoice ("bill-level") discount - separate from the per-item discounts in
+  // itemDiscounts. Only one of the two should be non-zero; the input handlers below
+  // enforce that. Cleared whenever the dialog is (re)opened for a fresh cart.
+  const [billDiscountPercentage, setBillDiscountPercentage] = useState(0);
+  const [billDiscountAmount, setBillDiscountAmount] = useState(0);
   const [taxPin, setTaxPin] = useState("");
+  const [customerAlias, setCustomerAlias] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
@@ -622,6 +628,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       couponDiscount: calculations.couponDiscount,
       deliveryCharge: Number(deliveryCharge || 0),
       delivery_charge: Number(deliveryCharge || 0),
+      billDiscountPercentage: Number(billDiscountPercentage || 0),
+      billDiscountAmount: Number(billDiscountAmount || 0),
       grandTotal: checkoutGrandTotal,
       amountPaid: totalPaidAmount,
       outstandingAmount: outstandingAmount,
@@ -636,6 +644,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
       tax_id: taxPin || null,
+      custom_customer_alias: customerAlias || null,
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -919,6 +928,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       SalesTaxCharges: selectedSalesTaxCharges,
       businessType: posDetails?.business_type || "",
       deliveryCharge: Number(deliveryCharge || 0),
+      billDiscountPercentage: Number(billDiscountPercentage || 0),
+      billDiscountAmount: Number(billDiscountAmount || 0),
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -978,6 +989,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           deliveryCharge,
+          billDiscountPercentage: Number(billDiscountPercentage || 0),
+          billDiscountAmount: Number(billDiscountAmount || 0),
           loyalty: appliedLoyalty
             ? {
                 loyalty_program: appliedLoyalty.loyalty_program,
@@ -1053,6 +1066,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     deliveryCharge,
+    billDiscountPercentage,
+    billDiscountAmount,
     appliedLoyalty,
     isCreditSale,
     dueDate,
@@ -1145,8 +1160,22 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setMpesaSearchTerm("");
       setSelectedMpesaPayments([]);
       setDeliveryCharge(0);
+      setBillDiscountPercentage(0);
+      setBillDiscountAmount(0);
     }
   }, [isOpen]);
+
+  const handleBillDiscountPercentageChange = (value: number) => {
+    const next = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+    setBillDiscountPercentage(next);
+    if (next > 0) setBillDiscountAmount(0);
+  };
+
+  const handleBillDiscountAmountChange = (value: number) => {
+    const next = Number.isFinite(value) ? Math.max(0, value) : 0;
+    setBillDiscountAmount(next);
+    if (next > 0) setBillDiscountPercentage(0);
+  };
 
   useEffect(() => {
     clearLoyaltyRedemption();
@@ -1349,6 +1378,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         businessType: posDetails?.business_type,
         salesperson: currentSalesperson?.name || null,
         tax_id: taxPin || null,
+        custom_customer_alias: customerAlias || null,
         loyalty: appliedLoyalty
           ? {
               loyalty_program: appliedLoyalty.loyalty_program,
@@ -1520,6 +1550,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   useEffect(() => {
     if (isOpen) setTaxPin("");
+    if (isOpen) setCustomerAlias("");
   }, [isOpen]);
 
   useEffect(() => {
@@ -1956,12 +1987,55 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     </p>
                   </div>
                 )}
+                {posDetails?.allow_discount_change && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Bill Discount (whole invoice)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          placeholder="Discount %"
+                          value={billDiscountPercentage || ""}
+                          onChange={(e) => handleBillDiscountPercentageChange(Number(e.target.value || 0))}
+                          disabled={invoiceSubmitted || isProcessingPayment || billDiscountAmount > 0}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment || billDiscountAmount > 0 ? "cursor-not-allowed opacity-50" : ""}`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">% off</p>
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Discount amount"
+                          value={billDiscountAmount || ""}
+                          onChange={(e) => handleBillDiscountAmountChange(Number(e.target.value || 0))}
+                          disabled={invoiceSubmitted || isProcessingPayment || billDiscountPercentage > 0}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment || billDiscountPercentage > 0 ? "cursor-not-allowed opacity-50" : ""}`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {displayCurrencySymbol} off
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Set 100% here to make the whole bill free. Use either % or amount, not both.
+                    </p>
+                  </div>
+                )}
                 <TaxSection
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
                   isProcessingPayment={isProcessingPayment}
                   taxPin={taxPin}
                   onTaxPinChange={setTaxPin}
+                  customerAlias={customerAlias}
+                  onCustomerAliasChange={setCustomerAlias}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}
@@ -2179,6 +2253,47 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     </p>
                   </div>
                 )}
+                {posDetails?.allow_discount_change && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Bill Discount (whole invoice)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          placeholder="Discount %"
+                          value={billDiscountPercentage || ""}
+                          onChange={(e) => handleBillDiscountPercentageChange(Number(e.target.value || 0))}
+                          disabled={invoiceSubmitted || isProcessingPayment || billDiscountAmount > 0}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment || billDiscountAmount > 0 ? "cursor-not-allowed opacity-50" : ""}`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">% off</p>
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Discount amount"
+                          value={billDiscountAmount || ""}
+                          onChange={(e) => handleBillDiscountAmountChange(Number(e.target.value || 0))}
+                          disabled={invoiceSubmitted || isProcessingPayment || billDiscountPercentage > 0}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment || billDiscountPercentage > 0 ? "cursor-not-allowed opacity-50" : ""}`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {displayCurrencySymbol} off
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Set 100% here to make the whole bill free. Use either % or amount, not both.
+                    </p>
+                  </div>
+                )}
 
                 <TaxSection
                   selectedCustomer={selectedCustomer}
@@ -2186,6 +2301,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   isProcessingPayment={isProcessingPayment}
                   taxPin={taxPin}
                   onTaxPinChange={setTaxPin}
+                  customerAlias={customerAlias}
+                  onCustomerAliasChange={setCustomerAlias}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}

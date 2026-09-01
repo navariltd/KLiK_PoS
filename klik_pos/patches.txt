@@ -8,3 +8,6 @@ klik_pos.patches.v16_0.set_default_view_from_hide_images
 klik_pos.patches.v16_0.add_default_sales_type_to_pos_profile
 klik_pos.patches.v16_0.add_allow_zero_rate_sales_to_pos_profile
 klik_pos.patches.v16_0.add_price_list_switching_to_pos_profile
+klik_pos.patches.v16_0.add_oversell_backorder_fields
+klik_pos.patches.v16_0.add_walkin_alias_taxid_fields
+klik_pos.patches.v16_0.add_walkin_tax_id_etims_override_field

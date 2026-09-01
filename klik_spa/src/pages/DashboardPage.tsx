@@ -36,8 +36,10 @@ export default function DashboardPage() {
   // Only fetch submitted invoices for dashboard (exclude Draft and Cancelled)
   const { invoices, isLoading: invoicesLoading } = useSalesInvoices("", false, undefined, true)
   const { userInfo, isLoading: userInfoLoading } = useUserInfo()
-  // Blank => current POS opening session
-  const [timeRange, setTimeRange] = useState("")
+  // Default filters: Today / All Cashiers / All Methods (blank timeRange
+  // would mean "current POS opening session" -- kept as a selectable option
+  // in the dropdown, just no longer the default on load).
+  const [timeRange, setTimeRange] = useState("today")
   // Current session payment summary from backend (includes zero-amount methods)
   const { modes: sessionPaymentSummary } = useAllPaymentModes()
 
@@ -183,6 +185,25 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
   const salesByHourData = calculateSalesByHour()
 
   // Calculate payment methods - show all POS profile methods, even with zero amounts
+  //
+  // Change/overpayment attribution: `invoice.payment_methods[].amount` is the
+  // raw amount entered against each mode at checkout, which for a cash sale
+  // includes whatever was handed back as change. Summing that raw amount
+  // per mode (as this used to do) makes the Payment Methods total exceed
+  // Total Revenue by however much change was given across all invoices.
+  // Instead, each invoice's real total (invoice.totalAmount, i.e.
+  // grand_total) is attributed to a single mode per the same rule enforced
+  // at checkout (_validate_change_payment_restrictions in
+  // sales_invoice.py) and used in the POS Closing Summary / payment.py:
+  //   - one mode used            -> that mode gets the full invoice total
+  //   - Cash + exactly one other -> Cash absorbs the change
+  //                                 (invoice.changeGiven), the other mode
+  //                                 is counted at exactly what was entered
+  //   - anything else (legacy invoices from before the checkout
+  //     restriction was enforced) -> fall back to a proportional split so
+  //     the numbers still sum back to the real total
+  // This keeps the Payment Methods breakdown always summing to Total
+  // Revenue, for any number of split payment methods on any invoice.
   const calculatePaymentMethods = () => {
     const methodMap: { [key: string]: { amount: number; transactions: number } } = {}
 
@@ -199,7 +220,16 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
     filteredInvoices.forEach(invoice => {
 
       // Check if invoice has multiple payment methods
-      if (invoice.payment_methods && Array.isArray(invoice.payment_methods)) {
+      if (invoice.payment_methods && Array.isArray(invoice.payment_methods) && invoice.payment_methods.length > 0) {
+        const change = Math.max(0, invoice.changeGiven || 0)
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nonZeroRows = invoice.payment_methods.filter((p: any) => (p.amount || 0) > 0)
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const modesUsed = [...new Set(nonZeroRows.map((p: any) => p.mode_of_payment))]
+        const hasCash = modesUsed.includes('Cash')
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const totalPaid = nonZeroRows.reduce((s: number, p: any) => s + (p.amount || 0), 0)
+
         // Distribute amounts across all payment methods
         //eslint-disable-next-line @typescript-eslint/no-explicit-any
         invoice.payment_methods.forEach((payment: any) => {
@@ -207,7 +237,19 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
           if (!methodMap[method]) {
             methodMap[method] = { amount: 0, transactions: 0 }
           }
-          methodMap[method].amount += payment.amount
+
+          let trueAmount = payment.amount || 0
+          if (trueAmount > 0) {
+            if (modesUsed.length === 1) {
+              trueAmount = invoice.totalAmount
+            } else if (modesUsed.length === 2 && hasCash) {
+              trueAmount = method === 'Cash' ? payment.amount - change : payment.amount
+            } else if (change > 0 && totalPaid > 0) {
+              trueAmount = (payment.amount / totalPaid) * invoice.totalAmount
+            }
+          }
+
+          methodMap[method].amount += trueAmount
           // Only count transaction once per invoice, not per payment method
           // @ts-expect-error just ignore
           if (invoice.payment_methods.indexOf(payment) === 0) {
