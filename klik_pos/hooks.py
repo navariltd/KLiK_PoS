@@ -33,7 +33,10 @@ add_to_apps_screen = [
 
 doc_events = {
     "Sales Invoice": {
-        "before_submit": "klik_pos.overrides.sales_invoice.validate_sales_person_on_submit",
+        "before_submit": [
+            "klik_pos.overrides.sales_invoice.validate_sales_person_on_submit",
+            "klik_pos.overrides.sales_invoice.block_submit_of_voided_draft",
+        ],
         # "before_save": [
         # 	"klik_pos.api.sales_invoice.sync_return_payments_before_save",
         # ],
