@@ -35,6 +35,8 @@ export interface POSProfile {
   custom_delivery_charge_account?: string;
   custom_prevent_invoice_reprinting?: boolean | number;
   custom_allow_return?: boolean | number | string;
+  custom_allow_out_of_stock_sale?: boolean | number;
+  allow_out_of_stock_sale?: boolean | number;
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_cart_item_insertion_position?: "Top" | "Bottom";
@@ -437,3 +439,44 @@ export const usePOSProfileStore = create<POSDetailsState>()(
     }
   )
 );
+
+/**
+ * Whether the active POS Profile's GLOBAL out-of-stock switch is on. Checks both
+ * `custom_allow_out_of_stock_sale` and `allow_out_of_stock_sale`, since Frappe's
+ * Customize Form does not always prefix a manually-named custom field with `custom_`
+ * -- this keeps the frontend working regardless of which name the field actually
+ * ended up with.
+ *
+ * When this is on, EVERY stock item is sellable past zero (backend backorders the
+ * shortfall and fulfills it from the next Purchase Receipt) regardless of that
+ * item's own setting -- the global flag overrides the per-item one. Prefer
+ * `isOversellAllowedForItem` below for any actual "can I add this to the cart"
+ * decision; this export stays for callers that only have profile-level context.
+ */
+export const isOutOfStockSaleAllowed = (): boolean => {
+  const details = usePOSProfileStore.getState().posDetails;
+  return !!(details?.custom_allow_out_of_stock_sale || details?.allow_out_of_stock_sale);
+};
+
+/**
+ * Whether a specific item can still be sold once its available stock hits zero.
+ * True if the POS Profile's global switch is on (overrides every item), otherwise
+ * falls back to that item's own `custom_allow_oversell` flag -- so oversell can be
+ * turned on per item (e.g. fast-moving OTC stock) without opening it up store-wide.
+ *
+ * Mirrors the precedence implemented server-side in
+ * klik_pos.klik_pos.sales_invoice._is_oversell_allowed_for_item -- keep both in sync
+ * if this logic ever changes, since the backend is the actual source of truth at
+ * checkout time; this only controls whether the product grid greys the item out.
+ *
+ * Requires the item payload from the backend to include `custom_allow_oversell`
+ * (added to Item via the oversell/backorder patch) -- until the menu/item list API
+ * is updated to select and return that field, this silently behaves as
+ * item-level-off and falls back to the global flag alone.
+ */
+export const isOversellAllowedForItem = (item?: {
+  custom_allow_oversell?: boolean | number;
+}): boolean => {
+  if (isOutOfStockSaleAllowed()) return true;
+  return !!item?.custom_allow_oversell;
+};

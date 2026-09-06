@@ -6,6 +6,7 @@ import ProductTooltip from "./ProductTooltip"
 import ProductDetailsModal from "./ProductDetailsModal"
 
 import { formatCurrencyWithSymbol } from "../utils/currency"
+import { isOversellAllowedForItem } from "../stores/posProfileStore"
 
 interface ProductLineViewProps {
   items: MenuItem[]
@@ -72,7 +73,7 @@ export default function ProductLineView({
             {items.map((item) => {
               const isServiceItem = item.is_stock_item === false
               const isOutOfStock = item.is_stock_item !== false && item.available <= 0
-              const isDisabled = isOutOfStock || scannerOnly
+              const isDisabled = (isOutOfStock && !isOversellAllowedForItem(item)) || scannerOnly
               const expectedPrice = Number(item.price_with_vat ?? item.price)
               const basePrice = Number(item.price || 0)
               const showsAdjustedPrice = Math.abs(expectedPrice - basePrice) > 0.004

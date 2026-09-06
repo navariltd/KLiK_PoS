@@ -8,7 +8,7 @@ import ProductLineView from "./ProductLineView";
 import SalespersonAuthModal from "./dialog/SalespersonAuthModal";
 import VariantPickerModal from "./VariantPickerModal";
 import { useCartStore } from "../stores/cartStore";
-import { usePOSProfileStore } from "../stores/posProfileStore";
+import { usePOSProfileStore, isOversellAllowedForItem } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
 
 
@@ -91,7 +91,8 @@ export default function ProductGrid({
   }, [addConcreteItemToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.is_stock_item !== false && item.available <= 0) return;
+    if (item.is_stock_item !== false && item.available <= 0 &&
+      !isOversellAllowedForItem(item)) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {

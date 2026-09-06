@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "creation": "2026-08-29 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "purchase_doctype",
+  "purchase_document",
+  "delivery_note",
+  "qty",
+  "posting_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "purchase_doctype",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Stocked Via",
+   "options": "Purchase Receipt\nPurchase Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_document",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Purchase Document",
+   "options": "purchase_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_note",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Note",
+   "options": "Delivery Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty Fulfilled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Fulfilled On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "KLiK PoS",
+ "name": "Klik POS Backorder Fulfillment",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

@@ -11,6 +11,7 @@ from frappe.exceptions import ValidationError
 from frappe.utils import cint, flt, nowdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.overrides.etims_walkin_pin import reflect_walkin_pin_on_customer
 
 from .item.item_price import get_price_list_with_customer_priority
 from .loyalty import (
@@ -216,6 +217,50 @@ def validate_required_salesperson(doc):
 	frappe.throw(
 		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
 	)
+def _validate_change_payment_restrictions(doc):
+	"""Require checkout payments to total exactly the bill amount -- no change,
+	on any payment mode, no exceptions. This removes payment-mode ambiguity at
+	the source instead of the Closing Shift screen (or Sales Dashboard) having
+	to guess which mode absorbed an overpayment: since no invoice can ever be
+	overpaid, every payment row always represents real sales value and nothing
+	needs netting downstream.
+
+	An intentional extra/advance payment still has a route: Receive Payment
+	(create_customer_payment_entry in payment.py), which records it against
+	the customer's account rather than as invoice change.
+	"""
+	if not getattr(doc, "payments", None):
+		return
+	total_paid = flt(sum(flt(row.amount or 0) for row in doc.payments))
+	# Use rounded_total (falling back to grand_total when rounding is disabled
+	# for this currency/POS Profile) -- this is the actual amount the cashier
+	# is shown and asked to collect. Comparing against the unrounded
+	# grand_total instead caused a no-win loop whenever rounding_adjustment
+	# was non-zero: e.g. grand_total 62.70 rounds up to rounded_total 63.00,
+	# so paying 63.00 (matching the on-screen Total) tripped this check as
+	# "0.30 over", while paying exactly 62.70 as instructed then tripped the
+	# separate frontend "insufficient payment" check, which correctly
+	# compares against the rounded, on-screen total.
+	bill_total = flt(doc.rounded_total or doc.grand_total or 0)
+	# Round to cents before comparing so ordinary floating-point noise
+	# (62.699999999999996-type sums) can never manufacture a fake overpayment.
+	overpayment = flt(total_paid - bill_total, 2)
+	if overpayment <= 0:
+		return
+
+	frappe.throw(
+		_(
+			"Amount entered ({0}) is {1} more than the bill total. Please enter exactly "
+			"{2}, or use Receive Payment to record the extra as an advance on the "
+			"customer's account."
+		).format(
+			frappe.bold(frappe.format_value(total_paid, {"fieldtype": "Currency"})),
+			frappe.bold(frappe.format_value(overpayment, {"fieldtype": "Currency"})),
+			frappe.bold(frappe.format_value(bill_total, {"fieldtype": "Currency"})),
+		)
+	)
+
+
 
 def _is_return_allowed_for_current_profile():
 	"""Return True unless POS Profile explicitly disables returns."""
@@ -343,6 +388,24 @@ def _cancel_sales_invoice_reservations(invoice_name):
 	)
 
 
+def _revert_reservations_on_failure(invoice_name, context=""):
+	"""Best-effort cancel of Stock Reservation Entries after a queue/reserve failure.
+
+	Must never raise - this runs inside exception handlers that are already
+	reporting the original error, and a reservation left behind here would
+	silently block Stock Reconciliation for the affected item/warehouse.
+	"""
+	if not invoice_name:
+		return
+	try:
+		_cancel_sales_invoice_reservations(invoice_name)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"Failed to revert stock reservation for {invoice_name} ({context})",
+		)
+
+
 def _should_reserve_stock(doc):
 	return bool(getattr(doc, "reserve_stock", 0))
 
@@ -373,6 +436,10 @@ def _reserve_stock_for_queued_invoice(doc):
 	for row in doc.items:
 		if not row.item_code or not row.warehouse:
 			continue
+		if getattr(row, "custom_is_backorder_row", 0):
+			# No real stock exists for this shortfall yet -- nothing to reserve. It's
+			# tracked as a Klik POS Backorder once the invoice actually submits.
+			continue
 
 		item_meta = item_meta_map.get(row.item_code)
 		if not item_meta or not int(item_meta.is_stock_item or 0):
@@ -399,17 +466,19 @@ def _reserve_stock_for_queued_invoice(doc):
 		)
 		available_to_reserve = flt(actual_qty - reserved_map.get((row.item_code, row.warehouse), 0))
 
-		if required_qty > available_to_reserve + 1e-9:
-			frappe.throw(
-				_(
-					"Insufficient stock to reserve for item {0} in warehouse {1}. Required: {2}, Available to reserve: {3}."
-				).format(
-					frappe.bold(row.item_code),
-					frappe.bold(row.warehouse),
-					flt(required_qty),
-					flt(available_to_reserve),
-				)
-			)
+		# Klik POS allows every item to oversell (see
+		# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and the
+		# Stock Settings "Allow Negative Stock" flags) -- Stock Reservation Entry itself
+		# is a hold against REAL, existing stock, though, and has no equivalent negative
+		# concept. Rather than block the queue here (the old behaviour) or try to force
+		# a reservation beyond what's real, reserve only the genuinely-available portion
+		# -- Stock Settings.allow_partial_reservation covers exactly this -- and simply
+		# don't reserve the oversold remainder, since there's nothing real to hold for
+		# stock that doesn't exist. The oversold qty still gets sold; it just isn't
+		# "reserved" first, the same as it wouldn't be for a non-queued checkout.
+		qty_to_reserve = min(required_qty, max(available_to_reserve, 0))
+		if qty_to_reserve <= 1e-6:
+			continue
 
 		sre = frappe.new_doc("Stock Reservation Entry")
 		sre.item_code = row.item_code
@@ -419,14 +488,15 @@ def _reserve_stock_for_queued_invoice(doc):
 		sre.voucher_type = "Sales Invoice"
 		sre.voucher_no = doc.name
 		sre.voucher_detail_no = row.name
-		sre.available_qty = available_to_reserve
+		sre.available_qty = max(available_to_reserve, 0)
 		sre.voucher_qty = required_qty
-		sre.reserved_qty = required_qty
+		sre.reserved_qty = qty_to_reserve
 		sre.company = doc.company
 		sre.stock_uom = row.stock_uom or item_meta.stock_uom
 		sre.project = doc.project
 		sre.save(ignore_permissions=True)
 		sre.submit()
+		_stamp_system_owner(sre.doctype, sre.name)
 
 
 def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=None):
@@ -439,7 +509,21 @@ def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=No
 
 
 def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
-	"""Validate stock considering quantities reserved via Stock Reservation Entry."""
+	"""Log (never block) stock that's short even after accounting for quantities
+	reserved via Stock Reservation Entry.
+
+	This used to frappe.throw() an "Insufficient stock" error here -- a *separate*
+	hard block from the old fabricated-Stock-Reconciliation oversell mechanism, and
+	one that survived removing that mechanism because nothing about it depended on
+	oversell being allowed. It compares straight against Bin.actual_qty (ignoring
+	Item/Stock Settings "Allow Negative Stock" entirely), so once real stock hit
+	zero this fired regardless of any oversell setting -- previously masked only
+	because the old fabrication code had already inflated actual_qty by the time
+	this ran. Klik POS allows every stock item to oversell now (see
+	klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and the
+	patch that turns on Stock Settings' negative-stock flags), so this must not
+	block either -- it only logs, matching that override's own approach.
+	"""
 	if not _should_reserve_stock(doc):
 		return
 	if not getattr(doc, "items", None):
@@ -465,6 +549,11 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 		if not row.item_code or not row.warehouse:
 			continue
 		if item_stock_flag_map.get(row.item_code, 1) == 0:
+			continue
+		if getattr(row, "custom_is_backorder_row", 0):
+			# Nothing to reserve for stock that doesn't exist yet -- this row is a
+			# deliberate shortfall from _split_oversold_items, tracked as a Klik POS
+			# Backorder instead once the invoice is live.
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -512,18 +601,225 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 			)
 
 	if insufficient:
-		first = insufficient[0]
-		frappe.throw(
-			_(
-				"Insufficient stock for item {0} in warehouse {1}. Required: {2}, Available (after stock reservations): {3}, Reserved: {4}."
-			).format(
-				frappe.bold(first["item_code"]),
-				frappe.bold(first["warehouse"]),
-				flt(first["required_qty"]),
-				flt(first["available_qty"]),
-				flt(first["reserved_qty"]),
+		for row in insufficient:
+			frappe.logger("klik_pos.negative_stock").info(
+				f"Oversell allowed past stock reservations for item {row['item_code']} in "
+				f"warehouse {row['warehouse']}: required {row['required_qty']}, available "
+				f"(after reservations) {row['available_qty']}, reserved {row['reserved_qty']}."
 			)
+
+
+# The cashier who checked out a POS sale is never going to hold create/submit rights
+# on Delivery Note, Stock Reconciliation, Batch or Klik POS Backorder -- nor should
+# they; those are real ERPNext stock/accounting doctypes with their own approval
+# story. Everything the oversell flow creates on their behalf therefore goes in with
+# ignore_permissions=True. That alone would silently attribute the resulting
+# documents to whichever cashier was logged in, which is misleading in an audit trail
+# (it looks like a cashier created a Stock Reconciliation by hand) and papers over the
+# fact that these actions are running outside that user's actual rights.
+#
+# _stamp_system_owner fixes that up with a direct frappe.db.set_value() on
+# owner/modified_by AFTER the document is already inserted/submitted, instead of
+# switching frappe.session.user for the call the way an earlier version of this file
+# did (via a now-removed _as_system_user() context manager). That earlier approach
+# caused a real production incident: frappe.set_user() mid-request mutates the live
+# HTTP request's session/login state, and switching it back in a `finally` block does
+# not fully undo that -- Frappe's own session/CSRF bookkeeping at the end of the
+# request can end up bound to the wrong user, which silently invalidated the
+# cashier's own session and forced a re-login after every single invoice. A raw SQL
+# UPDATE via frappe.db.set_value() achieves the exact same visible result (the
+# record's Owner shows the system account) without ever touching frappe.session or
+# frappe.local.login_manager, so the real request's identity is never disturbed.
+SYSTEM_AUTOMATION_USER = "system.oversell@klikpos.internal"
+
+
+def _ensure_system_automation_user():
+	"""Create the dedicated System Oversell User the first time it's actually needed,
+	rather than via a migrate patch. A patch has to be remembered and wired into
+	patches.txt to ever run -- this codebase has already been bitten by exactly that
+	(add_oversell_backorder_fields sat unregistered for a while) -- so this creates
+	itself on demand instead: no separate migration step to forget. Idempotent; a
+	no-op once the user exists. This user is never logged in as (see
+	_stamp_system_owner) -- it exists purely so the Owner field on auto-generated
+	documents links to a real User record with a readable full name.
+	"""
+	if frappe.db.exists("User", SYSTEM_AUTOMATION_USER):
+		return
+	user = frappe.new_doc("User")
+	user.email = SYSTEM_AUTOMATION_USER
+	user.first_name = "System Oversell User"
+	user.send_welcome_email = 0
+	user.enabled = 1
+	user.user_type = "System User"
+	user.append("roles", {"role": "System Manager"})
+	user.insert(ignore_permissions=True)
+
+
+def _stamp_system_owner(doctype, name):
+	"""Re-attribute an already-inserted/submitted document to SYSTEM_AUTOMATION_USER.
+	Call this once, after every .insert()/.save()/.submit() call on the document is
+	done -- each of those re-stamps owner and/or modified_by from whoever is actually
+	logged in, so stamping any earlier would just get overwritten by the next call.
+	"""
+	_ensure_system_automation_user()
+	frappe.db.set_value(
+		doctype, name, {"owner": SYSTEM_AUTOMATION_USER, "modified_by": SYSTEM_AUTOMATION_USER}
+	)
+
+
+def _process_backorders_after_submit(doc):
+	"""Run right after a Sales Invoice submits. A normal invoice (update_stock = 1)
+	already had ERPNext move its own stock -- nothing to do. An invoice that
+	_split_oversold_items flagged as having a shortfall was built with update_stock = 0
+	instead, so nothing has moved yet: this issues one Delivery Note for whatever
+	genuinely left the shelf, and opens a Klik POS Backorder for whatever didn't.
+	Must never let a backorder-processing bug block a sale that already took payment --
+	failures here are logged, not raised.
+	"""
+	if cint(doc.update_stock):
+		return
+	try:
+		_issue_delivery_note_for_available_qty(doc)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"Failed to issue delivery note for available stock on {doc.name}",
 		)
+	try:
+		_create_backorder_records(doc)
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"Failed to create backorder record(s) for {doc.name}",
+		)
+
+
+def _issue_delivery_note_for_available_qty(doc):
+	"""Issue one Delivery Note covering every row on `doc` that has real stock behind it
+	(i.e. every stock-item row except the ones _split_oversold_items marked
+	custom_is_backorder_row). This is the actual, real-time stock exit for a sale whose
+	invoice was built with update_stock = 0 -- without it, the shelf would still show
+	stock that already walked out the door.
+	"""
+	from frappe.utils import nowdate, nowtime
+
+	candidate_rows = [
+		row for row in doc.items
+		if row.item_code and row.warehouse and not getattr(row, "custom_is_backorder_row", 0)
+		and flt(row.qty) > 0
+	]
+	if not candidate_rows:
+		return None
+
+	item_codes = list({row.item_code for row in candidate_rows})
+	stock_flag_map = {
+		r.name: int(r.is_stock_item or 0)
+		for r in frappe.get_all(
+			"Item", filters={"name": ["in", item_codes]}, fields=["name", "is_stock_item"]
+		)
+	}
+	stock_rows = [row for row in candidate_rows if stock_flag_map.get(row.item_code)]
+	if not stock_rows:
+		return None
+
+	dn = frappe.new_doc("Delivery Note")
+	dn.customer = doc.customer
+	dn.company = doc.company
+	dn.posting_date = nowdate()
+	dn.posting_time = nowtime()
+	dn.set_posting_time = 1
+	dn.selling_price_list = doc.selling_price_list
+	dn.currency = doc.currency
+	dn.conversion_rate = doc.conversion_rate
+	dn.remarks = _("Auto-issued for the in-stock portion of POS Sales Invoice {0}.").format(doc.name)
+
+	for row in stock_rows:
+		dn_row = dn.append(
+			"items",
+			{
+				"item_code": row.item_code,
+				"item_name": row.item_name,
+				"description": row.description,
+				"qty": row.qty,
+				"rate": row.rate,
+				"uom": row.uom,
+				"conversion_factor": row.conversion_factor or 1,
+				"warehouse": row.warehouse,
+				"cost_center": row.cost_center,
+				"expense_account": row.expense_account,
+				"income_account": row.income_account,
+				"against_sales_invoice": doc.name,
+				"si_detail": row.name,
+			},
+		)
+		if getattr(row, "batch_no", None):
+			dn_row.batch_no = row.batch_no
+			dn_row.use_serial_batch_fields = 1
+		elif getattr(row, "serial_and_batch_bundle", None):
+			# The invoice's own bundle (see _create_batch_and_serial_bundle) was created
+			# for a Sales Invoice that never actually submits its stock ledger (this whole
+			# invoice was built with update_stock = 0) -- it stays an orphaned draft and
+			# is never consumed. This Delivery Note is the real, first stock-consuming
+			# transaction for this qty, so it needs its own bundle covering the same
+			# batch(es), not a reference to one scoped to a document that never moves stock.
+			dn_row.serial_and_batch_bundle = _clone_bundle_for_new_voucher(
+				row.serial_and_batch_bundle, "Delivery Note", row.warehouse
+			)
+		if getattr(row, "serial_no", None):
+			dn_row.serial_no = row.serial_no
+			dn_row.use_serial_batch_fields = 1
+
+	dn.insert(ignore_permissions=True)
+	dn.submit()
+	_stamp_system_owner(dn.doctype, dn.name)
+
+	# Keep the Sales Invoice's own delivered-qty bookkeeping in sync even though it never
+	# went through its own update_stock flow -- other reports/screens key off these fields.
+	for row in stock_rows:
+		matching_dn_row = next((r for r in dn.items if r.si_detail == row.name), None)
+		if matching_dn_row:
+			frappe.db.set_value(
+				"Sales Invoice Item",
+				row.name,
+				{
+					"delivery_note": dn.name,
+					"dn_detail": matching_dn_row.name,
+					"delivered_qty": row.qty,
+				},
+			)
+
+	return dn.name
+
+
+def _create_backorder_records(doc):
+	"""Open one Klik POS Backorder per shortfall row on `doc` (the rows
+	_split_oversold_items marked custom_is_backorder_row). Each is fulfilled later, in
+	FIFO order per item/warehouse, by fulfill_backorders_on_purchase_receipt when a
+	Purchase Receipt brings the item back into stock -- see klik_pos/klik_pos/backorder.py.
+	"""
+	backorder_rows = [
+		row for row in doc.items
+		if getattr(row, "custom_is_backorder_row", 0) and row.item_code and flt(row.qty) > 0
+	]
+	if not backorder_rows:
+		return
+
+	for row in backorder_rows:
+		backorder = frappe.new_doc("Klik POS Backorder")
+		backorder.item_code = row.item_code
+		backorder.item_name = row.item_name
+		backorder.warehouse = row.warehouse or getattr(doc, "warehouse", None)
+		backorder.company = doc.company
+		backorder.customer = doc.customer
+		backorder.sales_invoice = doc.name
+		backorder.sales_invoice_item = row.name
+		backorder.qty = flt(row.qty)
+		backorder.rate = flt(row.rate)
+		backorder.pending_qty = flt(row.qty)
+		backorder.fulfilled_qty = 0
+		backorder.status = "Open"
+		backorder.insert(ignore_permissions=True)
+		_stamp_system_owner(backorder.doctype, backorder.name)
 
 
 def _update_queue_fields(doc, status, error_message=None, attempts=None):
@@ -691,7 +987,9 @@ def get_current_pos_opening_entry():
 
 
 @frappe.whitelist(allow_guest=True)
-def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False):
+def get_sales_invoices(
+	limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False, customer=None
+):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 
@@ -699,6 +997,11 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		skip_opening_entry_filter: If True, skip filtering by opening entry (for Invoice History page)
 		cashier_name: Filter by cashier name (full name). If provided, only returns invoices for that cashier.
 		submitted_only: If True, only return submitted invoices (docstatus=1). Use for Sales Dashboard; excludes Draft and Cancelled.
+		customer: Exact Customer doctype name (id, not customer_name label). If provided, only returns
+			invoices for that customer -- use this instead of `search` when you already know the customer's
+			id (e.g. the Customer Detail page); `search` is a fuzzy LIKE across name/customer_name/customer
+			and isn't a reliable way to isolate one customer's invoices, and its total_count reflects the
+			broader fuzzy match rather than this customer's real invoice count.
 	"""
 	try:
 		if isinstance(skip_opening_entry_filter, str):
@@ -732,11 +1035,13 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		has_custom_is_created_from_klik = any(
 			df.fieldname == "custom_is_created_from_klik" for df in sales_invoice_meta.fields
 		)
+		has_custom_pos_voided = any(df.fieldname == "custom_pos_voided" for df in sales_invoice_meta.fields)
 
 		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
 			base_grand_total, base_rounded_total, status, discount_amount,
 			total_taxes_and_charges, custom_pos_opening_entry, queue_status,
-			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed"""
+			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed,
+			change_amount"""
 		if has_zatca_status:
 			select_fields += ", custom_zatca_submit_status"
 		if has_custom_is_held:
@@ -745,6 +1050,12 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 			select_fields += ", custom_is_submitted"
 		if has_custom_is_created_from_klik:
 			select_fields += ", custom_is_created_from_klik"
+		if has_custom_pos_voided:
+			# Voided drafts are kept forever for audit/KRA record-keeping (see
+			# delete_draft_invoice / delete_draft_invoices_for_opening_entry) --
+			# surfaced here so the frontend can tell a resolved/voided draft
+			# apart from one still awaiting action.
+			select_fields += ", custom_pos_voided, custom_pos_void_reason"
 
 		conditions = []
 		params = []
@@ -773,6 +1084,10 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		if current_pos_profile and not is_admin_user:
 			conditions.append("si.pos_profile = %s")
 			params.append(current_pos_profile)
+
+		if customer and str(customer).strip():
+			conditions.append("si.customer = %s")
+			params.append(str(customer).strip())
 
 		if search and search.strip():
 			search_term = f"%{search.strip()}%"
@@ -1040,6 +1355,102 @@ def mark_invoice_as_printed(invoice_name):
 
 
 @frappe.whitelist()
+def update_walkin_customer_info(invoice_name, alias=None, tax_id=None):
+	"""Update a walk-in sale's per-transaction Customer Name (Alias) and/or Tax ID,
+	whether the invoice is still a draft or has already been submitted.
+
+	Deliberately does NOT load the document and call doc.save() -- on a submitted
+	Sales Invoice that would re-run full validation and Frappe would reject changing
+	any field that isn't marked allow_on_submit (which is why custom_customer_alias
+	and tax_id both are, via the add_walkin_alias_taxid_fields patch -- but a raw
+	update sidesteps that machinery entirely, the same safe pattern already used by
+	_stamp_system_owner elsewhere in this file). No frappe.set_user() involved either,
+	for the same reason it was removed from the oversell attribution path: mutating
+	the request's identity mid-request is what caused the forced-logout incident --
+	this only ever writes as whoever is actually logged in.
+
+	Available to any user who can write Sales Invoice (i.e. any normal POS user) --
+	same as editing a draft. Every change is appended to custom_walkin_info_change_log
+	as a JSON array entry recording the old value, new value, who made the change, and
+	when, so a Tax ID corrected after the fact still leaves a clear trail on the
+	invoice -- only fields that actually changed get a log entry.
+	"""
+	if not frappe.db.exists("Sales Invoice", invoice_name):
+		frappe.throw(_("Sales Invoice {0} not found").format(invoice_name))
+
+	if not frappe.has_permission("Sales Invoice", "write", doc=invoice_name):
+		frappe.throw(_("You don't have permission to update this invoice"), frappe.PermissionError)
+
+	current = frappe.db.get_value(
+		"Sales Invoice",
+		invoice_name,
+		["tax_id", "custom_customer_alias", "custom_walkin_info_change_log"],
+		as_dict=True,
+	) or {}
+
+	updates = {}
+	log_entries = []
+
+	def _normalize(value):
+		value = (value or "").strip()
+		return value or None
+
+	new_alias = _normalize(alias) if alias is not None else None
+	new_tax_id = _normalize(tax_id).upper() if tax_id is not None else None
+
+	def _queue_change(fieldname, old_value, new_value):
+		old_value = _normalize(old_value)
+		if new_value == old_value:
+			return
+		updates[fieldname] = new_value
+		log_entries.append(
+			{
+				"field": fieldname,
+				"old_value": old_value,
+				"new_value": new_value,
+				"changed_by": frappe.session.user,
+				"changed_on": frappe.utils.now(),
+			}
+		)
+
+	if alias is not None:
+		_queue_change("custom_customer_alias", current.get("custom_customer_alias"), new_alias)
+	if tax_id is not None:
+		_queue_change("tax_id", current.get("tax_id"), new_tax_id)
+
+	if not updates:
+		# Nothing actually changed -- not an error, just nothing to do.
+		return {"success": True, "changed": False}
+
+	if "tax_id" in updates:
+		# Keep the eTIMS-override shadow field (custom_walkin_tax_id) in sync
+		# with any post-submit correction to tax_id -- no separate log entry,
+		# it's just a mirror of the same value.
+		updates["custom_walkin_tax_id"] = updates["tax_id"]
+
+	try:
+		existing_log = frappe.parse_json(current.get("custom_walkin_info_change_log") or "[]")
+		if not isinstance(existing_log, list):
+			existing_log = []
+	except Exception:
+		existing_log = []
+
+	updates["custom_walkin_info_change_log"] = frappe.as_json(existing_log + log_entries)
+	updates["modified"] = frappe.utils.now()
+	updates["modified_by"] = frappe.session.user
+
+	frappe.db.set_value("Sales Invoice", invoice_name, updates)
+
+	return {
+		"success": True,
+		"changed": True,
+		"custom_customer_alias": updates.get("custom_customer_alias", current.get("custom_customer_alias")),
+		"tax_id": updates.get("tax_id", current.get("tax_id")),
+		"change_log": existing_log + log_entries,
+	}
+
+
+@frappe.whitelist()
 def validate_checkout_invoice(data):
 	"""
 	Pre-validate invoice payload at checkout time without creating any document.
@@ -1061,8 +1472,10 @@ def validate_checkout_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		preview_doc = build_sales_invoice_doc(
@@ -1080,9 +1493,11 @@ def validate_checkout_invoice(data):
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
+			custom_customer_alias=custom_customer_alias,
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			bill_discount=bill_discount,
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1113,6 +1528,14 @@ def validate_checkout_invoice(data):
 				"grand_total": flt(preview_doc.grand_total or 0),
 				"rounded_total": flt(preview_doc.rounded_total or 0),
 				"disable_rounded_total": int(preview_doc.disable_rounded_total or 0),
+				# Whole-invoice ("bill-level") discount actually applied by
+				# calculate_taxes_and_totals(), so the checkout preview can show it as its
+				# own line instead of silently folding it into the grand total. ERPNext
+				# always resolves additional_discount_percentage into a concrete
+				# doc.discount_amount once totals are calculated, regardless of whether the
+				# cashier entered a percentage or a flat amount.
+				"discount_amount": flt(preview_doc.discount_amount or 0),
+				"additional_discount_percentage": flt(preview_doc.additional_discount_percentage or 0),
 			},
 		}
 
@@ -1289,8 +1712,10 @@ def queue_sales_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		if not customer:
@@ -1314,11 +1739,14 @@ def queue_sales_invoice(data):
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
+			custom_customer_alias=custom_customer_alias,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			bill_discount=bill_discount,
 		)
 
 		validate_required_salesperson(doc)
+		_validate_change_payment_restrictions(doc)
 
 		paid_credit = flt(amount_paid) + flt(getattr(doc, "loyalty_amount", 0))
 		doc.base_paid_amount = paid_credit
@@ -1341,6 +1769,10 @@ def queue_sales_invoice(data):
 			try:
 				_reserve_stock_for_queued_invoice(doc)
 			except Exception as reserve_error:
+				# A multi-item invoice can fail partway through reserving (e.g. item 2
+				# is short of stock after item 1's reservation already committed) -
+				# make sure nothing stays reserved for an invoice that never queued.
+				_revert_reservations_on_failure(doc.name, context="reserve at queue time")
 				_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
 				doc.save(ignore_permissions=True)
 				_update_checkout_request(
@@ -1370,6 +1802,9 @@ def queue_sales_invoice(data):
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
+			if custom_customer_alias:
+				doc.db_set("custom_customer_alias", custom_customer_alias)
+
 			processing_time = time.time() - start_time
 			frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
 
@@ -1384,18 +1819,61 @@ def queue_sales_invoice(data):
 				"processing_time": round(processing_time, 2),
 			}
 		else:
-			doc.insert(ignore_permissions=True)
-			_update_checkout_request(
-				checkout_request_id,
-				status="Accepted",
-				invoice_name=doc.name,
-			)
+			# doc.submit() -> Document.save() writes docstatus=1 to this row
+			# (db_update()) *before* running on_submit hooks -- and it's an
+			# on_submit-time hook (ERPNext's own stock/batch/serial validation)
+			# that most commonly throws for a POS sale (insufficient batch qty,
+			# a batch bundle that couldn't be split/assigned, etc.). Without a
+			# savepoint, that half-finished submit is never undone: this
+			# function's own except block below catches the exception and
+			# returns a normal {"success": False} response instead of letting
+			# it propagate, so Frappe's request handler sees no error and
+			# commits the transaction at end of request anyway -- silently
+			# persisting a fully submitted, paid invoice while the cashier's
+			# screen says the sale failed. That is what let a cashier's retry
+			# (a new checkout each time) turn one sale into several duplicate
+			# paid invoices. process_queued_sales_invoice() below already
+			# guards its own doc.submit() with frappe.db.rollback() for this
+			# exact reason; mirror that here with a savepoint (rather than a
+			# full rollback) so the "Processing" Klik Checkout Request row
+			# claimed above survives to be marked Failed for the idempotency
+			# ledger. Deliberately scoped to insert()..submit() only -- the
+			# steps after a *successful* submit (reservation cleanup, backorder
+			# processing, payment-entry finalization) already catch and log
+			# their own failures instead of raising, so they can't trigger this
+			# rollback and can't undo a sale that genuinely went through.
+			submit_savepoint = f"klik_checkout_submit_{frappe.generate_hash(length=10)}"
+			frappe.db.savepoint(submit_savepoint)
+			try:
+				doc.insert(ignore_permissions=True)
+				_update_checkout_request(
+					checkout_request_id,
+					status="Accepted",
+					invoice_name=doc.name,
+				)
 
+				_apply_klik_invoice_flags(doc, is_submitted=True)
+				# Reflecting the checkout PIN onto the walk-in Customer record for the
+				# duration of submit() means validate() picks up the real tax_id (and
+				# kenya_compliance_via_slade's eTIMS payload does too) the normal way --
+				# see klik_pos/overrides/etims_walkin_pin.py for the full reasoning and
+				# the concurrency note on why this is only safe for a single till today.
+				with reflect_walkin_pin_on_customer(doc.customer, tax_id):
+					doc.submit()
+			except Exception:
+				frappe.db.rollback(save_point=submit_savepoint)
+				raise
+
+			# Belt-and-suspenders: doc.tax_id should already be correct after the
+			# reflected submit() above, but force it back on in case reflect_walkin_
+			# pin_on_customer() took its no-op path for any reason (e.g. this
+			# customer wasn't flagged custom_is_walkin) -- same as before this change.
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
-			_apply_klik_invoice_flags(doc, is_submitted=True)
-			doc.submit()
+			if custom_customer_alias:
+				doc.db_set("custom_customer_alias", custom_customer_alias)
+
 			doc.reload()
 
 			try:
@@ -1405,6 +1883,7 @@ def queue_sales_invoice(data):
 					frappe.get_traceback(),
 					f"Failed to cancel reservations after submit for {doc.name}",
 				)
+			_process_backorders_after_submit(doc)
 
 			_finalize_submitted_invoice(
 				doc,
@@ -1461,6 +1940,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 	try:
 		doc = frappe.get_doc("Sales Invoice", invoice_name)
 		tax_id = doc.tax_id
+		custom_customer_alias = doc.custom_customer_alias
 		if doc.docstatus != 0:
 			_apply_klik_invoice_flags(doc, is_submitted=True)
 			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], None)
@@ -1470,10 +1950,17 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
-		if tax_id:
-			doc.tax_id = tax_id
 		_apply_klik_invoice_flags(doc, is_submitted=True)
-		doc.submit()
+		# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
+		# immediate-submit path in queue_sales_invoice().
+		with reflect_walkin_pin_on_customer(doc.customer, tax_id):
+			doc.submit()
+
+		# Belt-and-suspenders: see the matching comment in queue_sales_invoice().
+		if tax_id:
+			doc.db_set("tax_id", tax_id)
+		if custom_customer_alias:
+			doc.db_set("custom_customer_alias", custom_customer_alias)
 		doc.reload()
 		try:
 			_cancel_sales_invoice_reservations(doc.name)
@@ -1482,6 +1969,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 				frappe.get_traceback(),
 				f"Failed to cancel reservations after submit for {doc.name}",
 			)
+		_process_backorders_after_submit(doc)
 		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
 		if hasattr(doc, "queue_error"):
 			doc.queue_error = ""
@@ -1499,6 +1987,10 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 
 	except Exception as e:
 		frappe.db.rollback()
+		# The invoice failed to submit - it's still just a draft, so whatever stock
+		# was reserved for it at queue time must be released, not left sitting
+		# against the item/warehouse indefinitely.
+		_revert_reservations_on_failure(invoice_name, context="background submit failed")
 		try:
 			doc = frappe.get_doc("Sales Invoice", invoice_name)
 			attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
@@ -1540,6 +2032,17 @@ def retry_failed_sales_invoice(invoice_name):
 		return {"success": True, "queue_status": doc.queue_status}
 
 	except Exception as e:
+		# Whatever the failure - validation, re-reserving, or enqueueing - this retry
+		# didn't result in a queued invoice, so any reservation it created (or
+		# partially created across items) must not be left behind.
+		_revert_reservations_on_failure(invoice_name, context="retry failed")
+		try:
+			doc = frappe.get_doc("Sales Invoice", invoice_name)
+			if doc.docstatus == 0:
+				_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(e))
+				doc.save(ignore_permissions=True)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Queue failure update error for {invoice_name}")
 		return {"success": False, "message": str(e)}
 
 
@@ -1565,8 +2068,10 @@ def create_draft_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		if target_draft_invoice_id:
@@ -1594,8 +2099,10 @@ def create_draft_invoice(data):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1614,16 +2121,22 @@ def create_draft_invoice(data):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 
 			validate_required_salesperson(doc)
+			_validate_change_payment_restrictions(doc)
 			_apply_klik_invoice_flags(doc, is_held=True, is_submitted=False)
 			doc.insert(ignore_permissions=True)
 
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
+
+		if custom_customer_alias:
+			doc.db_set("custom_customer_alias", custom_customer_alias)
 
 		return {"success": True, "invoice_name": doc.name, "invoice": doc}
 
@@ -1859,6 +2372,19 @@ def parse_invoice_data(data):
 	delivery_personnel = data.get("deliveryPersonnel")
 	salesperson = data.get("salesperson")
 	tax_id = data.get("tax_id")
+	custom_customer_alias = data.get("custom_customer_alias")
+
+	# Whole-invoice ("bill-level") discount, distinct from per-item discounts above.
+	# Percentage takes priority over a flat amount when both are sent; validated and
+	# permission-checked later in _set_bill_discount_fields, once pos_profile is in scope.
+	bill_discount = {
+		"additional_discount_percentage": flt(
+			data.get("billDiscountPercentage") or data.get("bill_discount_percentage") or 0
+		),
+		"discount_amount": flt(
+			data.get("billDiscountAmount") or data.get("bill_discount_amount") or 0
+		),
+	}
 
 	if not customer or not items:
 		frappe.throw(_("Customer and items are required"))
@@ -1878,8 +2404,10 @@ def parse_invoice_data(data):
 		due_date,
 		salesperson,
 		tax_id,
+		custom_customer_alias,
 		enable_background_submission,
 		loyalty_redemption,
+		bill_discount,
 	)
 
 
@@ -1899,9 +2427,11 @@ def build_sales_invoice_doc(
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
+	custom_customer_alias=None,
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	bill_discount=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1918,6 +2448,18 @@ def build_sales_invoice_doc(
 	# Set tax ID if provided
 	if tax_id:
 		doc.tax_id = tax_id
+		# Shadow copy on a plain custom field the eTIMS PIN override reads from
+		# (klik_pos/integrations/etims_walkin_pin.py) -- unlike tax_id itself,
+		# nothing in core ERPNext resets this during doc.submit(), so it's still
+		# correct by the time the on_submit hook chain runs.
+		doc.custom_walkin_tax_id = tax_id
+
+	# Walk-in-only per-transaction name (see TaxSection.tsx) -- same "only if
+	# provided" handling as tax_id right above, for the same reason: leaving it
+	# untouched here means an update path that doesn't send this key can't
+	# accidentally blank out a value set earlier.
+	if custom_customer_alias:
+		doc.custom_customer_alias = custom_customer_alias
 
 	# Set salesperson in sales team
 	if salesperson:
@@ -1932,6 +2474,12 @@ def build_sales_invoice_doc(
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_no_variant_templates(items)
+	# Oversells (cart qty > real available qty) are no longer fabricated here via a
+	# phantom Stock Reconciliation -- see the removal note above _split_oversold_items.
+	# ERPNext's own negative-stock support (Item/Stock Settings "Allow Negative
+	# Stock", plus the CustomSerialAndBatchBundle override for batch items) now lets
+	# this invoice post a real negative stock movement instead, so nothing needs to
+	# run here before _validate_and_autofetch_batch_and_serial.
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
 	_validate_product_bundle_components(items, pos_profile)
 
@@ -1947,6 +2495,10 @@ def build_sales_invoice_doc(
 	# Set taxes and charges
 	_set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile)
 	force_inclusive_tax = _is_pos_profile_tax_included_in_basic_rate(pos_profile)
+
+	# Whole-invoice discount (e.g. "give full discount for the bill"), separate from
+	# the per-item discounts handled inside _populate_invoice_items below.
+	_set_bill_discount_fields(doc, bill_discount, pos_profile)
 
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
@@ -1996,8 +2548,10 @@ def _update_existing_draft_invoice(
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
+	custom_customer_alias=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	bill_discount=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -2015,9 +2569,11 @@ def _update_existing_draft_invoice(
 		due_date=due_date,
 		salesperson=salesperson,
 		tax_id=tax_id,
+		custom_customer_alias=custom_customer_alias,
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
+		bill_discount=bill_discount,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -2026,6 +2582,8 @@ def _update_existing_draft_invoice(
 	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 	invoice_doc.tax_id = rebuilt_doc.tax_id
+	invoice_doc.custom_walkin_tax_id = rebuilt_doc.custom_walkin_tax_id
+	invoice_doc.custom_customer_alias = rebuilt_doc.custom_customer_alias
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company
 	invoice_doc.currency = rebuilt_doc.currency
@@ -2042,6 +2600,9 @@ def _update_existing_draft_invoice(
 	invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 	invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+	invoice_doc.additional_discount_percentage = rebuilt_doc.additional_discount_percentage
+	invoice_doc.discount_amount = rebuilt_doc.discount_amount
+	invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
 	invoice_doc.set("items", [])
 	for item_row in rebuilt_doc.get("items", []):
 		invoice_doc.append("items", item_row.as_dict())
@@ -2066,6 +2627,7 @@ def _update_existing_draft_invoice(
 	invoice_doc.calculate_taxes_and_totals()
 
 	validate_required_salesperson(invoice_doc)
+	_validate_change_payment_restrictions(invoice_doc)
 	_apply_klik_invoice_flags(invoice_doc, is_held=True, is_submitted=False)
 	invoice_doc.save(ignore_permissions=True)
 
@@ -2191,6 +2753,38 @@ def _create_batch_and_serial_bundle(items, doc):
 		used_rows.add(row.name)
 
 
+def _clone_bundle_for_new_voucher(source_bundle_name, voucher_type, warehouse):
+	"""Copy a Serial and Batch Bundle's batch/serial + qty entries into a fresh bundle
+	scoped to a different voucher type (e.g. a Delivery Note issued after the fact for
+	an invoice that never actually moved stock itself). Reusing the source bundle's
+	`name` directly would be wrong -- it's tied to whichever document created it, and
+	Frappe expects one bundle per stock-moving transaction, not one shared across two.
+	"""
+	source = frappe.get_doc("Serial and Batch Bundle", source_bundle_name)
+
+	bundle = frappe.new_doc("Serial and Batch Bundle")
+	bundle.item_code = source.item_code
+	bundle.company = source.company
+	bundle.warehouse = warehouse or source.warehouse
+	bundle.has_batch_no = source.has_batch_no
+	bundle.has_serial_no = source.has_serial_no
+	bundle.type_of_transaction = "Outward"
+	bundle.voucher_type = voucher_type
+
+	for entry in source.entries:
+		bundle.append(
+			"entries",
+			{
+				"batch_no": entry.batch_no,
+				"serial_no": entry.serial_no,
+				"qty": -abs(flt(entry.qty)),
+			},
+		)
+
+	bundle.insert()
+	return bundle.name
+
+
 def _get_active_pos_profile():
 	"""Get the active POS profile from current session or fallback to default."""
 	selected_pos_profile_name = None
@@ -2261,6 +2855,19 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 		if not item_code:
 			continue
 
+		# A backorder row (see _split_oversold_items) carries no real stock behind it --
+		# it is deliberately stripped of any batch/serial selection at split time and must
+		# never be forced through batch/serial auto-fetch here. Without this, a fully
+		# backordered line (zero real stock at all) would hit _autofetch_batch_fifo, find
+		# nothing available, and throw -- aborting a sale the oversell feature exists
+		# specifically to allow. A partially-backordered line would be worse: auto-fetch
+		# would happily find and re-assign the SAME physical batch stock already claimed
+		# by this item's real, stock-backed line a moment earlier in this same loop, since
+		# nothing has actually been posted to the ledger yet for either line to reflect
+		# that the first line already spoken for it.
+		if item.get("klik_backorder_qty"):
+			continue
+
 		item_db_data = item_data_map.get(item_code, {}) or {}
 		is_stock_item = int(item_db_data.get("is_stock_item") or 0)
 		if not is_stock_item:
@@ -2294,7 +2901,17 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 							"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
 						).format(item_code, pos_profile.warehouse)
 					)
-				item["batchNumber"] = auto_batch
+				# A single batch that alone covers the qty comes back as a bare batch name
+				# (unchanged, common-case behaviour). When it took more than one batch to
+				# cover it, _autofetch_batch_fifo returns a list of {batch_no, qty} entries
+				# instead -- hand those to the same Serial and Batch Bundle machinery a
+				# cashier's own multi-batch selection already goes through (see
+				# _create_batch_and_serial_bundle), rather than requiring one batch to
+				# cover the whole line.
+				if isinstance(auto_batch, list):
+					item["bundle_entries"] = auto_batch
+				else:
+					item["batchNumber"] = auto_batch
 			else:
 				frappe.throw(
 					_(
@@ -2390,49 +3007,438 @@ def _validate_product_bundle_components(items, pos_profile):
 				or 0
 			)
 			if available_qty < required_qty:
-				frappe.throw(
-					_(
-						"Insufficient stock for Product Bundle {0}. Component {1} requires {2}, but only {3} is available in warehouse {4}."
-					).format(
-						bundle_item_code,
-						component_name,
-						required_qty,
-						available_qty,
-						pos_profile.warehouse,
-					)
+				# Klik POS allows every stock item to oversell now (see
+				# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and
+				# the Stock Settings negative-stock patch) -- a bundle component being short
+				# is no exception, so this only logs instead of blocking the sale.
+				frappe.logger("klik_pos.negative_stock").info(
+					f"Oversell allowed for Product Bundle {bundle_item_code} component "
+					f"{component_name}: required {required_qty}, available {available_qty} "
+					f"in warehouse {pos_profile.warehouse}."
 				)
 
-def _autofetch_batch_fifo(item_code, warehouse, qty):
+def _is_oversell_allowed_for_item(item_db_data, pos_profile):
+	"""Whether stock is allowed to run out for this item on this sale.
+
+	POS Profile.custom_allow_out_of_stock_sale (or, if Customize Form saved it without
+	the custom_ prefix, allow_out_of_stock_sale) is the GLOBAL switch: when it's on, every
+	stock item on this profile is oversellable regardless of the item's own setting. When
+	it's off, the per-item Item.custom_allow_oversell checkbox decides -- items without it
+	still hard-block at zero stock exactly as before.
+	"""
+	allow_out_of_stock_sale = cint(
+		getattr(pos_profile, "custom_allow_out_of_stock_sale", 0)
+		or getattr(pos_profile, "allow_out_of_stock_sale", 0)
+		or 0
+	)
+	if allow_out_of_stock_sale:
+		return True
+	return bool(cint((item_db_data or {}).get("custom_allow_oversell") or 0))
+
+
+# --- Removed: the fabricated-stock oversell mechanism ---------------------------
+# This file used to top up real stock via an auto-submitted Stock Reconciliation
+# (and, for batch items, a fabricated provisional Batch with a hardcoded 3-month
+# expiry) whenever a cart line outsold what was actually on hand -- see
+# _generate_provisional_batch_id / _get_provisioning_rate / _create_stock_reconciliation
+# / _ensure_stock_for_item / _auto_provision_stock_for_items in git history.
+#
+# That approach had two real problems: (1) it ran from validate_checkout_invoice,
+# which is supposed to be a side-effect-free preview -- so simply opening the
+# payment screen on an oversold cart permanently inflated stock even if the sale
+# was then abandoned or the cart cleared, with nothing anywhere to reverse it;
+# (2) it fabricated batches/expiry dates instead of using real ones.
+#
+# Klik POS now allows every sale to oversell -- batch-tracked or not -- via
+# ERPNext's own negative-stock support (Stock Settings/Item "Allow Negative
+# Stock") instead of fabricating documents. Item.allow_negative_stock and
+# Stock Settings.allow_negative_stock/allow_negative_stock_for_batch are
+# backfilled by klik_pos.patches.v16_0.enable_negative_stock_for_all_items.
+# For batch-tracked items, ERPNext 16's own SerialAndBatchBundle.validate()
+# does NOT actually honor those settings when deciding whether to block a
+# negative batch qty (it calls self.set_incoming_rate() with no arguments,
+# which hardcodes allow_negative_stock=False -- confirmed by ERPNext's own
+# test suite needing to monkeypatch validate_negative_batch to exercise this
+# scenario). klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle
+# (registered in hooks.py's extend_doctype_class) closes that gap so the
+# setting is actually honored for batch items too.
+# ----------------------------------------------------------------------------------
+
+
+def _split_oversold_items(items, pos_profile):
+	"""Split any cart line that outsells real available stock into two lines: one for
+	the qty actually on the shelf (unchanged, still hits real stock as normal), and a
+	second synthetic line carrying just the shortfall, marked so downstream code (see
+	_prepare_item_data) can flag it as a backorder row instead of touching stock ledger.
+
+	Nothing is fabricated here -- no phantom Stock Reconciliation, no fake batch. A
+	shortfall only survives this function if oversell is allowed for that item (see
+	_is_oversell_allowed_for_item); otherwise the existing "insufficient stock" error
+	is raised exactly as before, unchanged for items that were never marked oversellable.
+
+	Mutates `items` in place. Returns True if at least one line was split, so the caller
+	knows to build this invoice with update_stock = 0 (see build_sales_invoice_doc) and
+	hand the deferred stock movement to _process_backorders_after_submit once it's live.
+
+	Serial-tracked items are left out of scope, same as before: a serial number can't be
+	backordered, since it doesn't exist yet.
+	"""
+	if not items:
+		return False
+
+	warehouse = getattr(pos_profile, "warehouse", None)
+	if not warehouse:
+		return False
+
+	item_codes = [item.get("id") for item in items if item.get("id")]
+	if not item_codes:
+		return False
+
+	item_data_map = _batch_fetch_item_data(item_codes)
+
+	required_by_item = {}
+	for item in items:
+		item_code = item.get("id")
+		if not item_code:
+			continue
+		item_db_data = item_data_map.get(item_code, {}) or {}
+		if not int(item_db_data.get("is_stock_item") or 0):
+			continue
+		if int(item_db_data.get("has_serial_no") or 0):
+			continue
+		required_by_item[item_code] = flt(required_by_item.get(item_code, 0)) + flt(item.get("quantity") or 0)
+
+	if not required_by_item:
+		return False
+
+	reserved_map = get_reserved_stock_map(item_codes=list(required_by_item.keys()), warehouse=warehouse)
+	shortfall_by_item = {}
+	for item_code, required_qty in required_by_item.items():
+		if required_qty <= 0:
+			continue
+		actual_qty = flt(
+			frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty") or 0
+		)
+		available_qty = flt(actual_qty - reserved_map.get((item_code, warehouse), 0))
+		shortfall = flt(required_qty) - available_qty
+		if shortfall <= 1e-6:
+			continue
+
+		item_db_data = item_data_map.get(item_code, {}) or {}
+		if not _is_oversell_allowed_for_item(item_db_data, pos_profile):
+			frappe.throw(
+				_(
+					"Insufficient stock to sell item {0} in warehouse {1}. Required: {2}, Available: {3}."
+				).format(
+					frappe.bold(item_code),
+					frappe.bold(warehouse),
+					flt(required_qty),
+					flt(max(available_qty, 0)),
+				)
+			)
+		shortfall_by_item[item_code] = min(shortfall, required_qty)
+
+	if not shortfall_by_item:
+		return False
+
+	# shortfall_by_item is one aggregate number per item_code, but the cart can in
+	# principle carry more than one line for the same item (e.g. distinct batch/serial
+	# selections). Consume the shortfall out of a running remainder as lines are walked,
+	# instead of subtracting the full aggregate from every matching line -- otherwise a
+	# duplicated item_code would have its shortfall applied once per line and vastly
+	# overstate the backorder.
+	remaining_shortfall = dict(shortfall_by_item)
+	has_backorder = False
+	new_lines = []
+	for item in items:
+		item_code = item.get("id")
+		shortfall_left = remaining_shortfall.get(item_code)
+		if not shortfall_left:
+			continue
+
+		line_qty = flt(item.get("quantity") or 0)
+		line_shortfall = min(shortfall_left, line_qty)
+		if line_shortfall <= 1e-6:
+			continue
+		remaining_shortfall[item_code] = shortfall_left - line_shortfall
+
+		available_portion = line_qty - line_shortfall
+		if available_portion <= 1e-6:
+			item["quantity"] = 0
+		else:
+			item["quantity"] = available_portion
+
+		backorder_line = dict(item)
+		backorder_line["quantity"] = line_shortfall
+		# A backorder row has no real stock behind it yet -- it can't carry a specific
+		# batch/serial selection, so drop anything the cart attached to the source line.
+		backorder_line.pop("batchNumber", None)
+		backorder_line.pop("batch_no", None)
+		backorder_line.pop("serialNumber", None)
+		backorder_line["klik_backorder_qty"] = line_shortfall
+		new_lines.append(backorder_line)
+		has_backorder = True
+
+	# Drop any line whose available portion hit zero (fully backordered) -- a qty=0 row
+	# would otherwise still take up an invoice line for stock it never touches.
+	items[:] = [item for item in items if flt(item.get("quantity") or 0) > 1e-6 or item.get("klik_backorder_qty")]
+	items.extend(new_lines)
+
+	return has_backorder
+
+
+def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
+	"""FIFO-based batch auto-selection for a batch-tracked item with no batch chosen yet.
+
+	Walks non-expired batches oldest-first (by expiry_date, then creation) and
+	accumulates across as many of them as it takes to cover `qty`, consuming each
+	batch's available stock in full before moving to the next. A single line's
+	stock is not guaranteed to sit in one batch -- the previous version of this
+	function only ever checked one batch at a time and required THAT ONE to cover
+	the whole qty, throwing "no batch with sufficient stock" the moment stock was
+	split across batches even when the item's total available stock was more than
+	enough. It also skipped straight to whichever batch happened to have enough on
+	its own, which could skip over an older batch's partial stock entirely --
+	consuming out of order for a FIFO/FEFO costing item.
+
+	Returns a single batch name (str) when exactly one batch covers the full qty --
+	this keeps the existing single-batch call site's behaviour completely unchanged
+	in the common case. Returns a list of {"batch_no": ..., "qty": ...} entries when
+	covering it took more than one batch, for the caller to hand to the existing
+	Serial and Batch Bundle multi-batch machinery (see _create_batch_and_serial_bundle)
+	-- the exact same mechanism already used when a cashier manually selects more than
+	one batch for a line in the cart.
+
+	If no non-expired batch (or combination of them) has enough real stock to cover
+	`qty` -- the zero-stock and partial-stock oversell cases -- the remainder is
+	assigned to the oldest eligible non-expired batch instead of raising, driving its
+	qty negative. That's intentional: Klik POS allows every stock item to oversell,
+	and CustomSerialAndBatchBundle (see klik_pos/overrides/serial_and_batch_bundle.py)
+	is what lets ERPNext actually post that negative qty instead of blocking it.
+
+	If the item has NO batch at all -- not even an expired one, i.e. it has never been
+	received via a Purchase Receipt/Invoice, Stock Entry, or manual Batch entry -- there
+	is no batch_no left to record the sale under, so one is auto-created on the spot by
+	_create_placeholder_batch_for_item() (see its docstring for exactly what it
+	fabricates, and why). This is deliberately different from the item having batches
+	that are ALL expired: that's real, existing physical stock past its expiry, and is
+	left blocking below -- a fresh sale should not be silently assigned to expired
+	inventory just because it's the only batch on file.
+
+	`exclude_batch`, when given, is left out of the candidate list entirely.
+	"""
 	from erpnext.stock.doctype.batch.batch import get_batch_qty
 	from frappe.utils import getdate, nowdate
 
 	today = nowdate()
 	required_qty = flt(qty or 0)
+	if required_qty <= 0:
+		return None
 
-	# Walk batches in FIFO order and return the first usable batch.
+	batch_filters = {
+		"item": item_code,
+		"disabled": 0,
+	}
+	if exclude_batch:
+		batch_filters["name"] = ["!=", exclude_batch]
+
 	batches = frappe.get_all(
 		"Batch",
-		filters={
-			"item": item_code,
-			"disabled": 0,
-		},
+		filters=batch_filters,
 		fields=["name", "batch_id", "expiry_date", "creation"],
 		order_by="expiry_date asc, creation asc",
 	)
 
+	remaining = required_qty
+	picked = []
+	non_expired_batches = []
 	for batch in batches:
 		if batch.expiry_date and getdate(batch.expiry_date) < getdate(today):
 			continue
+		non_expired_batches.append(batch)
+
+		if remaining <= 1e-6:
+			continue
 
 		available_qty = flt(get_batch_qty(batch_no=batch.name, warehouse=warehouse) or 0)
-		if available_qty >= required_qty:
-			return batch.name
+		if available_qty <= 1e-6:
+			continue
 
-	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
-	frappe.throw(
-		f"No batch with sufficient stock found for item {item_name} ({item_code}) "
-		f"in warehouse {warehouse}. Required: {qty}"
+		take_qty = min(available_qty, remaining)
+		picked.append({"batch_no": batch.name, "qty": take_qty})
+		remaining -= take_qty
+
+	if remaining > 1e-6:
+		# No non-expired batch (or combination of them) had enough real stock to
+		# cover the qty. Klik POS allows every item to oversell -- see
+		# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle,
+		# which lets a batch post negative stock -- so rather than block the sale
+		# here, assign the remainder to the oldest non-expired batch that isn't
+		# already fully picked above (FIFO/FEFO: the one that should be selling
+		# first), driving its qty negative instead of fabricating a new batch.
+		if not non_expired_batches:
+			if not batches:
+				# The item has literally never had a batch created for it at all --
+				# no Purchase Receipt/Invoice, Stock Entry, or manual Batch entry has
+				# ever happened. There is no expired-vs-not distinction to make here;
+				# there's simply nothing to sell against yet. Auto-create one so this
+				# never has to block a sale -- see that function's docstring for the
+				# fabricated-expiry-date trade-off this deliberately accepts.
+				new_batch = _create_placeholder_batch_for_item(item_code, warehouse)
+				non_expired_batches = [new_batch]
+			else:
+				# The item HAS batch history, but every batch on file is expired.
+				# That's real physical stock past its expiry date, not a "never
+				# stocked" item -- silently assigning a fresh sale to expired
+				# inventory would be a genuine safety issue for a pharmacy, so this
+				# case is left blocking, same as before.
+				item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+				frappe.throw(
+					_(
+						"Item {0} ({1}) only has expired batches in warehouse {2}. "
+						"Receive fresh stock (Purchase Receipt/Invoice, or a manual "
+						"Batch entry with a valid expiry date) before it can be sold."
+					).format(item_name, item_code, warehouse)
+				)
+
+		already_picked_batches = {entry["batch_no"] for entry in picked}
+		fallback_batch = next(
+			(b for b in non_expired_batches if b.name not in already_picked_batches),
+			non_expired_batches[0],
+		)
+		existing_entry = next((entry for entry in picked if entry["batch_no"] == fallback_batch.name), None)
+		if existing_entry:
+			existing_entry["qty"] = flt(existing_entry["qty"]) + remaining
+		else:
+			picked.append({"batch_no": fallback_batch.name, "qty": remaining})
+		remaining = 0
+
+	if len(picked) == 1:
+		return picked[0]["batch_no"]
+	return picked
+
+
+def _create_placeholder_batch_for_item(item_code, warehouse):
+	"""Auto-creates a real Batch record for an item that has never had one --
+	no Purchase Receipt/Invoice, Stock Entry, or manual Batch entry has ever
+	been recorded for it -- so _autofetch_batch_fifo always has a batch_no to
+	sell against instead of blocking the sale.
+
+	This is a deliberate, explicit trade-off, not a revival of the old
+	fabricated-stock mechanism this whole rework removed (see the removal note
+	above _split_oversold_items). The important distinction:
+
+	  - The OLD mechanism fabricated Stock Reconciliations -- i.e. it invented
+	    actual stock QUANTITY out of thin air, silently, as a side effect of
+	    just opening the checkout screen, and never reversed it if the cart
+	    was abandoned. That was the original bug report.
+	  - This function creates a Batch record with ZERO real qty impact of its
+	    own -- a Batch document with no Stock Ledger Entries against it has no
+	    stock or valuation effect. The actual sale that follows is what drives
+	    it negative, exactly the same way it would for any other item that
+	    already happens to have a batch on file. Nothing is fabricated here
+	    except the batch's identity and (see below) its expiry date.
+
+	The one real trade-off: ERPNext's own Batch.before_save() (see
+	erpnext/stock/doctype/batch/batch.py: set_expiry_date) refuses to save a
+	batch for an item with Item.has_expiry_date=1 unless it has an expiry_date,
+	and can only compute one automatically from a manufacturing_date +
+	Item.shelf_life_in_days -- which is 0/unset for items that have never been
+	received (there's no shelf life on file yet either). With no real receipt
+	to derive a real expiry from, the only way to let this item sell at all is
+	to supply a placeholder expiry date ourselves. This was an explicit,
+	informed choice (not a silent default) -- see the round-5 conversation for
+	the trade-off as presented to and chosen by the pharmacy's own team:
+	auto-create over requiring a manual one-time Batch entry per never-stocked
+	item, accepting that the placeholder expiry is NOT a real manufacturer
+	expiry until a real Purchase Receipt/Invoice corrects it.
+
+	To keep that placeholder auditable rather than indistinguishable from a
+	real batch:
+	  - The batch_id is prefixed "AUTO-" and is never mistakable for a real
+	    manufacturer/lot batch number.
+	  - The batch's description field states plainly that it's an
+	    auto-created placeholder with an unverified expiry date, pending a
+	    real receipt.
+	  - Every creation is logged via frappe.logger("klik_pos.negative_stock"),
+	    the same channel used everywhere else in this oversell mechanism, so
+	    these are all discoverable in one place for a periodic compliance
+	    review.
+	  - The placeholder expiry is 2 years out from today -- long enough that
+	    it won't itself start silently blocking sales again a few weeks later
+	    by rolling into "expired", short enough that it won't sit unnoticed
+	    for a decade. It still needs correcting (or the batch replacing) the
+	    first time this item is genuinely received.
+
+	Returns a frappe._dict shaped like the rows _autofetch_batch_fifo already
+	works with (`.name`, `.batch_id`, `.expiry_date`, `.creation`).
+	"""
+	from frappe.utils import add_days, now_datetime
+
+	item = frappe.db.get_value(
+		"Item",
+		item_code,
+		["item_name", "has_expiry_date", "stock_uom"],
+		as_dict=True,
+	) or frappe._dict()
+
+	batch_id = None
+	for _attempt in range(5):
+		candidate = f"AUTO-{frappe.generate_hash(length=8).upper()}"
+		if not frappe.db.exists("Batch", candidate):
+			batch_id = candidate
+			break
+	if not batch_id:
+		# Astronomically unlikely (5 collisions in a row), but never leave
+		# batch_id unset -- fall back to a timestamp-suffixed name instead of
+		# failing the sale outright.
+		batch_id = f"AUTO-{frappe.generate_hash(length=8).upper()}-{cint(now_datetime().timestamp())}"
+
+	placeholder_expiry = None
+	if cint(item.get("has_expiry_date")):
+		placeholder_expiry = add_days(nowdate(), 730)  # ~2 years out; see docstring above
+
+	batch_doc = frappe.get_doc(
+		{
+			"doctype": "Batch",
+			"item": item_code,
+			"batch_id": batch_id,
+			"item_name": item.get("item_name") or item_code,
+			"stock_uom": item.get("stock_uom"),
+			"expiry_date": placeholder_expiry,
+			"description": (
+				"AUTO-CREATED placeholder batch: no Purchase Receipt/Invoice, Stock "
+				"Entry, or manual Batch entry existed for this item before this sale "
+				"in warehouse "
+				f"{warehouse}. "
+				+ (
+					f"Expiry date ({placeholder_expiry}) is a PLACEHOLDER, not a real "
+					"manufacturer expiry -- correct it (or replace this batch) as soon "
+					"as this item is genuinely received."
+					if placeholder_expiry
+					else "This item is not expiry-tracked."
+				)
+			),
+		}
 	)
+	batch_doc.flags.ignore_permissions = True
+	batch_doc.insert(ignore_permissions=True)
+
+	frappe.logger("klik_pos.negative_stock").info(
+		f"Auto-created placeholder batch {batch_doc.name} for item {item_code} in "
+		f"warehouse {warehouse} (no prior batch history); placeholder expiry_date="
+		f"{placeholder_expiry}."
+	)
+
+	return frappe._dict(
+		{
+			"name": batch_doc.name,
+			"batch_id": batch_doc.batch_id,
+			"expiry_date": batch_doc.expiry_date,
+			"creation": batch_doc.creation,
+		}
+	)
+
 
 # def _autofetch_batch_fifo(item_code, warehouse, qty):
 # 	"""
@@ -2523,6 +3529,47 @@ def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
 		doc.taxes_and_charges = sales_and_tax_charges
 	else:
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
+
+
+def _set_bill_discount_fields(doc, bill_discount, pos_profile):
+	"""Apply a whole-invoice ("bill-level") discount, distinct from per-item discounts.
+
+	`bill_discount` is a dict shaped like:
+	    {"additional_discount_percentage": <float>, "discount_amount": <float>}
+	Percentage takes priority over a flat amount when both are sent (mirrors how the
+	standard ERPNext desk Sales Invoice/POS form treats the two fields). Setting these
+	on the doc before calculate_taxes_and_totals() is enough - core ERPNext already
+	knows how to fold Additional Discount into the grand total via apply_discount_on.
+	"""
+	if not bill_discount:
+		return
+
+	percentage = flt(bill_discount.get("additional_discount_percentage") or 0)
+	amount = flt(bill_discount.get("discount_amount") or 0)
+
+	if not percentage and not amount:
+		return
+
+	if not cint(getattr(pos_profile, "allow_discount_change", 0) or 0):
+		frappe.throw(
+			_(
+				"You are not allowed to apply a bill discount. Enable 'Allow User to Edit "
+				"Discount' on POS Profile {0} first."
+			).format(pos_profile.name)
+		)
+
+	if percentage:
+		if percentage < 0 or percentage > 100:
+			frappe.throw(_("Bill discount percentage must be between 0 and 100."))
+		doc.additional_discount_percentage = percentage
+		doc.discount_amount = 0
+	elif amount:
+		if amount < 0:
+			frappe.throw(_("Bill discount amount cannot be negative."))
+		doc.additional_discount_percentage = 0
+		doc.discount_amount = amount
+
+	doc.apply_discount_on = getattr(pos_profile, "apply_discount_on", None) or "Grand Total"
 
 
 def _upsert_delivery_charge_service_item(doc, pos_profile, delivery_charge):
@@ -2625,7 +3672,7 @@ def _batch_fetch_item_data(item_codes):
 
 	placeholders, params = _sql_in_clause(item_codes)
 	item_query = """
-		SELECT name, has_batch_no, has_serial_no, is_stock_item
+		SELECT name, has_batch_no, has_serial_no, is_stock_item, custom_allow_oversell
 		FROM `tabItem`
 		WHERE name IN ({})
 	""".format(placeholders)
@@ -2767,6 +3814,14 @@ def _prepare_item_data(doc, item, item_data_map, pos_profile):
 		"warehouse": pos_profile.warehouse,
 		"cost_center": pos_profile.cost_center,
 	}
+
+	# Stamped by _split_oversold_items on the synthetic shortfall line it creates for an
+	# oversold item. This row is billed like any other but carries no stock behind it yet,
+	# so every stock/reservation check downstream must skip it, and it's how
+	# _process_backorders_after_submit finds which rows to turn into a Klik POS Backorder
+	# once the invoice is actually live.
+	if item.get("klik_backorder_qty"):
+		item_data["custom_is_backorder_row"] = 1
 
 	# Resolve per-item tax fields using ERPNext item selection logic.
 	item_tax_template, item_tax_rate = _resolve_item_tax_details_for_line(doc, item, pos_profile)
@@ -3186,6 +4241,17 @@ class CustomSalesInvoice(SalesInvoice):
 		self.validate_full_payment()
 
 	def validate_reserved_stock_availability(self):
+		# Klik POS: every stock item may be sold past zero/available stock (see the
+		# removal note above _split_oversold_items, and the log-only conversions of
+		# _validate_reserved_stock_for_items / _validate_product_bundle_components,
+		# for the full history). This method is a fourth, independent copy of that
+		# same availability check -- it duplicates _validate_reserved_stock_for_items
+		# almost exactly, but runs at submit time via before_submit rather than being
+		# called explicitly from queue_sales_invoice, which is why it was missed in
+		# earlier passes and kept blocking submissions ("Reserved stock protection...")
+		# after the other three checks had already been converted to log-only. Log
+		# the shortfall instead of blocking it, consistent with the rest of the
+		# oversell mechanism.
 		if not _should_reserve_stock(self):
 			return
 		if not self.update_stock or getattr(self, "is_return", 0):
@@ -3230,15 +4296,10 @@ class CustomSalesInvoice(SalesInvoice):
 			available_qty = flt(actual_qty - reserved_qty + flt(own_reserved_map.get((row.item_code, row.warehouse), 0)))
 
 			if required_qty > available_qty + 1e-9:
-				frappe.throw(
-					_(
-						"Reserved stock protection: item {0} in warehouse {1} has only {2} available after reservations, but {3} is required."
-					).format(
-						frappe.bold(row.item_code),
-						frappe.bold(row.warehouse),
-						flt(available_qty),
-						flt(required_qty),
-					)
+				frappe.logger("klik_pos.negative_stock").info(
+					f"Reserved stock protection bypassed: item {row.item_code} in warehouse "
+					f"{row.warehouse} has only {available_qty} available after reservations, "
+					f"but {required_qty} is required (Sales Invoice {self.name})."
 				)
 
 	def validate_full_payment(self):
@@ -3802,8 +4863,23 @@ def create_multi_invoice_return(return_data):
 
 def delete_draft_invoices_for_opening_entry(opening_entry_name):
 	"""
-	Delete all draft Sales Invoices linked to the given POS Opening Entry (session).
-	Called on POS close when POS Profile has custom_clear_draft_invoices enabled.
+	VOID (not delete) every leftover draft Sales Invoice linked to the given
+	POS Opening Entry (session). Called on POS close when POS Profile has
+	custom_clear_draft_invoices enabled.
+
+	Kenyan tax record-keeping (KRA/eTIMS) expects every generated invoice
+	number to stay traceable -- physically deleting the row removes its
+	number from the table entirely, which is indistinguishable from a hidden
+	sale during an audit, even though this row was only ever an abandoned
+	cart that was never submitted (a Draft never posts GL or Stock Ledger
+	entries in the first place). So instead of doc.delete(), this flags the
+	draft via custom_pos_voided/custom_pos_void_reason/custom_pos_voided_by/
+	custom_pos_voided_on (added by the add_draft_invoice_void_fields patch --
+	run `bench migrate` before deploying this) and leaves the full document
+	-- customer, items, amounts, invoice number -- in the Sales Invoice table
+	permanently. It stays docstatus=0/status "Draft"; voiding only marks it
+	as resolved so it stops being counted as something the cashier still
+	needs to act on (see draftInvoicesForSession on the Closing Shift page).
 	"""
 	try:
 		drafts = frappe.get_all(
@@ -3811,24 +4887,33 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 			filters={
 				"docstatus": 0,
 				"custom_pos_opening_entry": opening_entry_name,
+				"custom_pos_voided": ("!=", 1),
 			},
 			pluck="name",
 		)
-		deleted = 0
+		voided = 0
 		for name in drafts:
 			try:
-				doc = frappe.get_doc("Sales Invoice", name)
-				if doc.docstatus == 0:
-					_cancel_sales_invoice_reservations(doc.name)
-					doc.delete()
-					deleted += 1
+				_cancel_sales_invoice_reservations(name)
+				frappe.db.set_value(
+					"Sales Invoice",
+					name,
+					{
+						"custom_pos_voided": 1,
+						"custom_pos_void_reason": "Left open at POS close",
+						"custom_pos_voided_by": frappe.session.user,
+						"custom_pos_voided_on": frappe.utils.now_datetime(),
+					},
+					update_modified=True,
+				)
+				voided += 1
 			except Exception as e:
-				frappe.logger().error(f"Error deleting draft invoice {name}: {e}")
-		if deleted:
-			frappe.logger().info(f"Cleared {deleted} draft invoice(s) for opening entry {opening_entry_name}")
-		return deleted
+				frappe.logger().error(f"Error voiding draft invoice {name}: {e}")
+		if voided:
+			frappe.logger().info(f"Voided {voided} draft invoice(s) for opening entry {opening_entry_name}")
+		return voided
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Clear draft invoices on POS close")
+		frappe.log_error(frappe.get_traceback(), "Void draft invoices on POS close")
 		# Do not raise - closing entry already succeeded
 		return 0
 
@@ -3836,32 +4921,106 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 @frappe.whitelist()
 def delete_draft_invoice(invoice_id):
 	"""
-	Delete a draft sales invoice.
-	Only allows deletion of Draft status invoices.
+	VOID (not delete) a single draft sales invoice. Only allows voiding
+	Draft status invoices. See delete_draft_invoices_for_opening_entry()
+	above for why this no longer physically deletes the row -- KRA/eTIMS
+	record-keeping expects invoice numbers to stay traceable, so the row is
+	kept forever and just flagged as voided/resolved. Endpoint name and
+	response shape are unchanged so the existing frontend call sites (single
+	Delete button, InvoiceViewPage) keep working without any change on their
+	end.
 	"""
 	try:
-		# Get the invoice document
 		invoice_doc = frappe.get_doc("Sales Invoice", invoice_id)
 
 		if invoice_doc.status != "Draft":
 			return {
 				"success": False,
-				"error": f"Cannot delete invoice {invoice_id}. Only Draft invoices can be deleted. Current status: {invoice_doc.status}",
+				"error": f"Cannot void invoice {invoice_id}. Only Draft invoices can be voided. Current status: {invoice_doc.status}",
+			}
+
+		if invoice_doc.get("custom_pos_voided"):
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} was already voided",
 			}
 
 		_cancel_sales_invoice_reservations(invoice_doc.name)
-		invoice_doc.delete()
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_doc.name,
+			{
+				"custom_pos_voided": 1,
+				"custom_pos_void_reason": "Voided by cashier",
+				"custom_pos_voided_by": frappe.session.user,
+				"custom_pos_voided_on": frappe.utils.now_datetime(),
+			},
+			update_modified=True,
+		)
 
 		return {
 			"success": True,
-			"message": f"Draft invoice {invoice_id} deleted successfully",
+			"message": f"Draft invoice {invoice_id} voided successfully",
 		}
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}
 	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), f"Error deleting draft invoice {invoice_id}")
+		frappe.log_error(frappe.get_traceback(), f"Error voiding draft invoice {invoice_id}")
 		return {"success": False, "error": str(e)}
+
+
+def _reassign_opening_entry_if_shift_closed(invoice_doc):
+	"""
+	A draft can sit around long enough that its original POS session (POS
+	Opening Entry) gets closed before the draft is finally submitted. That
+	session's Closing Entry is an immutable snapshot taken at close time
+	(see _populate_sales_invoices_to_closing_entry / _calculate_closing_entry_totals,
+	which only look at invoices linked to that specific opening entry at the
+	moment of closing), so an invoice submitted after the fact can never be
+	picked up by it -- the sale would otherwise be a valid, Paid invoice that
+	silently never appears in any shift's payment reconciliation.
+
+	To avoid that, if the draft's original session is no longer open, this
+	re-links custom_pos_opening_entry to whichever session is open right now
+	for the current user, so the sale is swept into that (still-open) shift's
+	reconciliation instead. If no session is open at all, submission is
+	blocked until the cashier opens one, since there would be nowhere valid
+	to reconcile the sale into.
+
+	Returns an error dict (same shape as this module's other whitelisted
+	responses) if submission should be blocked, or None if it's fine to
+	proceed.
+	"""
+	opening_entry_name = invoice_doc.get("custom_pos_opening_entry")
+	if not opening_entry_name:
+		return None
+
+	current_status = frappe.db.get_value("POS Opening Entry", opening_entry_name, "status")
+	if current_status == "Open":
+		return None  # original session is still open, nothing to do
+
+	current_opening_entry = get_current_pos_opening_entry()
+	if not current_opening_entry:
+		return {
+			"success": False,
+			"error": (
+				"The POS session this draft was created under has already been closed, "
+				"and you don't have an open POS session right now. Please open a POS "
+				"session before submitting this invoice, so the sale can be reconciled "
+				"correctly."
+			),
+		}
+
+	if current_opening_entry != opening_entry_name:
+		frappe.logger().info(
+			f"Invoice {invoice_doc.name}: original session {opening_entry_name} is no "
+			f"longer open; re-linking to currently open session {current_opening_entry} "
+			f"so it is included in that session's closing reconciliation."
+		)
+		invoice_doc.custom_pos_opening_entry = current_opening_entry
+
+	return None
 
 
 @frappe.whitelist()
@@ -3879,6 +5038,10 @@ def submit_draft_invoice(invoice_id, data=None):
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
 
+		reassign_error = _reassign_opening_entry_if_shift_closed(invoice_doc)
+		if reassign_error:
+			return reassign_error
+
 		if data:
 			(
 				customer,
@@ -3895,8 +5058,10 @@ def submit_draft_invoice(invoice_id, data=None):
 				due_date,
 				salesperson,
 				tax_id,
+				custom_customer_alias,
 				enable_background_submission,
 				loyalty_redemption,
+				bill_discount,
 			) = parse_invoice_data(data)
 
 			rebuilt_doc = build_sales_invoice_doc(
@@ -3915,9 +5080,11 @@ def submit_draft_invoice(invoice_id, data=None):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -3926,6 +5093,7 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
+			invoice_doc.custom_customer_alias = rebuilt_doc.custom_customer_alias
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile
 			invoice_doc.company = rebuilt_doc.company
 			invoice_doc.currency = rebuilt_doc.currency
@@ -3942,6 +5110,9 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 			invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+			invoice_doc.additional_discount_percentage = rebuilt_doc.additional_discount_percentage
+			invoice_doc.discount_amount = rebuilt_doc.discount_amount
+			invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
 			invoice_doc.set("items", [])
 			for item_row in rebuilt_doc.get("items", []):
 				invoice_doc.append("items", item_row.as_dict())
@@ -3957,6 +5128,17 @@ def submit_draft_invoice(invoice_id, data=None):
 
 			invoice_doc.set_taxes()
 			invoice_doc.set_missing_values()
+
+			# set_missing_values() re-populates invoice_doc.tax_id from the
+			# Customer master (blank for the shared walk-in "Cash Customer"
+			# record), silently erasing the value assigned above from the
+			# checkout payload a few lines up. Re-apply both walk-in fields
+			# right after, before totals are calculated and the doc is saved.
+			if tax_id:
+				invoice_doc.tax_id = tax_id
+			if custom_customer_alias:
+				invoice_doc.custom_customer_alias = custom_customer_alias
+
 			invoice_doc.calculate_taxes_and_totals()
 
 			# Payments must be applied after the first totals pass, then totals are recalculated
@@ -3968,6 +5150,7 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.save(ignore_permissions=True)
 
 		validate_required_salesperson(invoice_doc)
+		_validate_change_payment_restrictions(invoice_doc)
 
 		if enable_background_submission:
 			_mark_invoice_queued(invoice_doc, frappe.session.user)
@@ -3997,8 +5180,37 @@ def submit_draft_invoice(invoice_id, data=None):
 				"invoice": invoice_doc,
 			}
 		else:
-			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
-			invoice_doc.submit()
+			# Same failure mode as queue_sales_invoice()'s direct-submit branch
+			# (see the comment there): invoice_doc.submit() can leave docstatus=1
+			# written to this row before ERPNext's own on_submit-time stock/batch
+			# validation throws, and without a savepoint that half-submitted
+			# state is never undone -- this function's except block below
+			# swallows the exception and returns a normal {"success": False},
+			# so nothing stops Frappe from committing it at end of request.
+			# This path (submit_draft_invoice) has no checkout_request_id
+			# idempotency ledger of its own -- it's used for M-Pesa draft
+			# submission and held-invoice submission, both of which retry by
+			# invoice_id, not a fresh request id -- so guarding against a
+			# phantom-submitted draft here matters just as much.
+			submit_savepoint = f"klik_draft_submit_{frappe.generate_hash(length=10)}"
+			frappe.db.savepoint(submit_savepoint)
+			try:
+				_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
+				# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
+				# immediate-submit path in queue_sales_invoice().
+				with reflect_walkin_pin_on_customer(invoice_doc.customer, tax_id):
+					invoice_doc.submit()
+			except Exception:
+				frappe.db.rollback(save_point=submit_savepoint)
+				raise
+
+			# Belt-and-suspenders: see the matching comment in queue_sales_invoice().
+			if tax_id:
+				invoice_doc.db_set("tax_id", tax_id)
+			if custom_customer_alias:
+				invoice_doc.db_set("custom_customer_alias", custom_customer_alias)
+
+			invoice_doc.reload()
 			try:
 				_cancel_sales_invoice_reservations(invoice_doc.name)
 			except Exception:
@@ -4006,6 +5218,7 @@ def submit_draft_invoice(invoice_id, data=None):
 					frappe.get_traceback(),
 					f"Failed to cancel reservations after submit for {invoice_doc.name}",
 				)
+			_process_backorders_after_submit(invoice_doc)
 
 			return {
 				"success": True,

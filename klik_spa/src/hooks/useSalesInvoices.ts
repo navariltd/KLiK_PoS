@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback } from "react";
 import type { SalesInvoice, SalesInvoiceItem } from "../../types";
 
@@ -146,6 +145,8 @@ export function useSalesInvoices(
           notes: invoice.remarks || "",
           posProfile: invoice.pos_profile || "",
           custom_pos_opening_entry: invoice.custom_pos_opening_entry || "",
+          custom_pos_voided: Boolean(invoice.custom_pos_voided),
+          custom_pos_void_reason: (invoice.custom_pos_void_reason as string) || "",
           queueStatus: (invoice.queue_status as string) || "",
           queueError: (invoice.queue_error as string) || "",
           queueAttempts: Number(invoice.queue_attempts) || 0,

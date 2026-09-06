@@ -253,6 +253,11 @@ export interface SalesInvoice {
   posting_time: string
   posProfile?: string
   custom_pos_opening_entry?: string
+  // Set when a leftover draft invoice was voided instead of deleted (kept
+  // permanently for audit/KRA record-keeping -- see klik_pos.api.sales_invoice
+  // .delete_draft_invoice). Still status "Draft"; this just marks it resolved.
+  custom_pos_voided?: boolean | number
+  custom_pos_void_reason?: string
   invoice: []
   cashier_name: string
   customer_email: string

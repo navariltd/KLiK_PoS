@@ -248,7 +248,12 @@ export const CustomerSearchSection = ({
       const defaultCustomer = posDetails.default_customer as any;
       checkCustomerPermission(defaultCustomer.id).then(async (result) => {
         if (result.success && result.has_permission) {
-          const fullCustomer = await fetchCustomerInfo(defaultCustomer.name);
+          // Use the unique Customer document ID here, not the display name --
+          // defaultCustomer.name can collide with another Customer record's
+          // own document ID when two customers share a display name (see
+          // fetchCustomerInfo below), silently pulling in the wrong record's
+          // walk-in/tax data with no visible error.
+          const fullCustomer = await fetchCustomerInfo(defaultCustomer.id);
           if (fullCustomer) {
             await handleSelect(fullCustomer);
           }
@@ -279,7 +284,13 @@ export const CustomerSearchSection = ({
     
     setIsLoading(true);
     try {
-      const fullCustomer = await fetchCustomerInfo(customer.name);
+      // Use the unique Customer document ID (customer.id), not customer.name
+      // (the display name). Two Customer records can share a display name --
+      // e.g. two "1 Cash Customer" walk-in records with different document
+      // IDs -- and passing the display name through can resolve against the
+      // wrong record, or fail silently for Administrators too, since it's a
+      // data-lookup ambiguity rather than a permissions issue.
+      const fullCustomer = await fetchCustomerInfo(customer.id);
       if (fullCustomer) {
         onCustomerSelect(fullCustomer);
         setProductCustomer(fullCustomer);

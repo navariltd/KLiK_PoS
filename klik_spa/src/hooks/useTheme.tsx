@@ -11,7 +11,13 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<"light" | "dark">("light")
+  // Default theme for the KLiK POS profile is Dark, not Light -- this is
+  // hardcoded (not derived from the OS/browser's prefers-color-scheme) so a
+  // fresh install or a browser with no saved preference yet always opens in
+  // Dark. A cashier who explicitly switches to Light via the theme toggle
+  // still has that choice remembered via localStorage on their next visit --
+  // this only changes what a user who has never toggled it sees.
+  const [theme, setTheme] = useState<"light" | "dark">("dark")
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -22,11 +28,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (!mounted) return
 
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null
-    if (savedTheme) {
-      setTheme(savedTheme)
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      setTheme("dark")
-    }
+    setTheme(savedTheme || "dark")
   }, [mounted])
 
   useEffect(() => {

@@ -20,34 +20,38 @@ export default function PaymentMethods({
 }: PaymentMethodsProps) {
   return (
     <div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Payment Methods</h3>
-      <div className="flex space-x-4 overflow-x-auto pb-2">
-        {paymentMethods.map((method) => (
-          <div
-            key={method.id}
-            className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[300px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}
-          >
-            <div className="flex items-center space-x-3 mb-3">
-              <div className={`w-8 h-6 rounded-md ${method.color} text-white flex items-center justify-center`}>
-                <div className="scale-75">{method.icon}</div>
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-gray-900 dark:text-white text-sm">{method.name}</p>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Amount</label>
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => onAutoFill(method.id)}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`p-1 rounded text-xs ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : "hover:bg-beveren-100 text-beveren-600"}`}
-                    title="Auto-fill with grand total"
-                  >
-                    <CheckCircle size={16} />
-                  </button>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Payment Methods</h3>
+      {/* Grid instead of a horizontally-scrolling flex row: every payment method
+          (Cash, M-Pesa, Cheque, Credit, Credit Card, ...) wraps onto as many rows
+          as needed at a fixed column width, so the cashier never has to drag/scroll
+          sideways to find one -- everything stays on the page. Card padding and
+          font sizes are trimmed to keep the extra rows this creates from costing
+          too much vertical space. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {paymentMethods.map((method) => {
+          const isLocked = method.enabled === false;
+          const isDisabled = invoiceSubmitted || isProcessingPayment || isLocked;
+          return (
+            <div
+              key={method.id}
+              className={`border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 transition-colors ${isLocked ? "opacity-50" : "hover:border-beveren-300"} ${invoiceSubmitted || isProcessingPayment || isLocked ? "bg-gray-50 dark:bg-gray-800" : ""}`}
+              title={isLocked ? "This customer settles on credit -- only the Credit method is available at checkout" : undefined}
+            >
+              <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className={`w-6 h-5 shrink-0 rounded-md ${method.color} text-white flex items-center justify-center`}>
+                    <div className="scale-[0.6]">{method.icon}</div>
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-white text-xs truncate">{method.name}</p>
                 </div>
+                <button
+                  onClick={() => onAutoFill(method.id)}
+                  disabled={isDisabled}
+                  className={`p-0.5 rounded shrink-0 ${isDisabled ? "cursor-not-allowed opacity-50" : "hover:bg-beveren-100 text-beveren-600"}`}
+                  title="Auto-fill with grand total"
+                >
+                  <CheckCircle size={14} />
+                </button>
               </div>
               <input
                 type="number"
@@ -68,12 +72,12 @@ export default function PaymentMethods({
                   }
                 }}
                 placeholder="0.00"
-                disabled={invoiceSubmitted || isProcessingPayment}
-                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                disabled={isDisabled}
+                className={`w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${isDisabled ? "cursor-not-allowed opacity-50" : ""}`}
               />
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

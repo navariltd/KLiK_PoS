@@ -588,7 +588,9 @@ const getStatusBadge = (status: string) => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                    <span className={getStatusBadge(invoice.status)}>
+                      {invoice.status === "Draft" && invoice.custom_pos_voided ? "Voided" : invoice.status}
+                    </span>
                   </td>
                   {posDetails?.is_zatca_enabled && (
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -605,7 +607,7 @@ const getStatusBadge = (status: string) => {
                         <Eye className="w-4 h-4" />
                         <span>View</span>
                       </button>
-                      {invoice.status === "Draft" && (
+                      {invoice.status === "Draft" && !invoice.custom_pos_voided && (
                         <>
                           <button
                             onClick={() => void handleGoToCart(invoice)}
@@ -661,7 +663,9 @@ const getStatusBadge = (status: string) => {
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
-                <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                <span className={getStatusBadge(invoice.status)}>
+                  {invoice.status === "Draft" && invoice.custom_pos_voided ? "Voided" : invoice.status}
+                </span>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
@@ -692,7 +696,7 @@ const getStatusBadge = (status: string) => {
                 >
                   View
                 </button>
-                {invoice.status === "Draft" && (
+                {invoice.status === "Draft" && !invoice.custom_pos_voided && (
                   <>
                     <button
                       onClick={() => void handleGoToCart(invoice)}

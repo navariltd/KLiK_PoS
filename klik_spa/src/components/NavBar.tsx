@@ -4,7 +4,8 @@ import { useI18n } from "../hooks/useI18n"
 import { useAuth } from "../hooks/useAuth"
 import { useTheme } from "../hooks/useTheme"
 import { usePOSProfileStore } from "../stores/posProfileStore";
-import { Search, Settings, LogOut, Moon, Sun, Store } from "lucide-react"
+import { Search, Settings, LogOut, Moon, Sun, Store, RefreshCw } from "lucide-react"
+import { clearCacheAndReload } from "../utils/clearCache"
 
 export default function NavBar() {
   const { language, setLanguage } = useI18n()
@@ -153,6 +154,18 @@ export default function NavBar() {
                     >
                       <span className="mr-3 text-gray-500">🌐</span>
                       <span>{language === "en" ? "Switch to Arabic" : "Switch to English"}</span>
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        await clearCacheAndReload()
+                        setShowUserMenu(false)
+                      }}
+                      className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      type="button"
+                    >
+                      <RefreshCw size={16} className="mr-3 text-gray-500" />
+                      <span>Clear Cache</span>
                     </button>
 
                     <div className="border-t border-gray-100 my-1"></div>

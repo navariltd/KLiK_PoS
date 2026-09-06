@@ -84,6 +84,10 @@ export interface Customer {
   loyaltyProgram?: string | null
   loyaltyTier?: string | null
   redeemableValue?: number
+  /** Customer.is_credit_customer -- account customer who settles via the "Credit"
+   *  Mode of Payment at checkout, with actual payment collected later through the
+   *  separate Receive Payment flow instead of Cash/M-Pesa/etc. at the till. */
+  isCreditCustomer?: boolean
 }
 
 export interface LoyaltySummary {

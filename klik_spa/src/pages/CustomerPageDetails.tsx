@@ -4,7 +4,7 @@ import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import {
   FileText,
-  DollarSign,
+  Wallet,
   TrendingUp,
 
   Search,
@@ -19,6 +19,7 @@ import {
   Clock,
   AlertCircle,
   Banknote,
+  ShoppingCart,
 
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ import PaymentDialog from "../components/dialog/PaymentDialog";
 import { useCustomerDetails } from "../hooks/useCustomers";
 import EditDraftInvoiceDialog from "../components/EditDraftInvoiceDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
+import { reorderInvoiceToCart } from "../utils/reorderInvoiceToCart.ts";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
@@ -69,7 +71,14 @@ export default function CustomerDetailsPage() {
   const { id: customerId } = useParams();
   // @ts-expect-error just ignore
   const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
-  const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
+  // customer.id is the Customer doctype's real id (e.g. "CUST-2026-00061"); customer.name
+  // is only the display label (customer_name, e.g. "GLOVO"). Sales Invoice.customer always
+  // stores the id, so filtering by customer.name silently matched nothing for any customer
+  // whose id differs from its label -- which is effectively every non-walk-in customer under
+  // the CUST-####-##### naming series. That's why invoices/revenue/outstanding/avg order all
+  // showed empty here even though the Customers list (backed by the Customer doc's own
+  // custom_total_orders/custom_total_spent fields) showed real totals for the same customer.
+  const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.id || "");
   const { posDetails } = usePOSProfileStore();
 
 
@@ -186,6 +195,27 @@ export default function CustomerDetailsPage() {
     }
     setDraftInvoiceToEdit(invoice);
     setShowEditDraftDialog(true);
+  };
+
+  // Reorder a past submitted invoice: adds its items to the current cart, freshly re-priced
+  // and re-checked against current stock (see utils/reorderInvoiceToCart.ts) rather than
+  // reusing the old invoice's frozen rate/batch numbers -- batch/serial assignment still
+  // happens the normal way at checkout.
+  const handleReorderToCart = async (invoice: SalesInvoice) => {
+    try {
+      // @ts-expect-error name is the Frappe doc id here (see useCustomerInvoices)
+      const result = await reorderInvoiceToCart(invoice, customer?.id);
+      if (result.addedCount > 0) {
+        toast.success(`${result.addedCount} item(s) added to cart from ${invoice.id}`);
+        navigate("/");
+      } else if (result.skippedItemCodes.length === 0) {
+        toast.error("Nothing could be added to the cart from this invoice");
+      }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      console.error("Error reordering invoice to cart:", error);
+      toast.error(extractErrorFromException(error, "Failed to add items to cart"));
+    }
   };
 
   const handleGoToCart = async (invoice: SalesInvoice) => {
@@ -448,7 +478,12 @@ export default function CustomerDetailsPage() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => navigate(`/customers/${customer.id}/payments`)}
+              title="View this customer's payment history"
+              className="text-left bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
@@ -456,11 +491,16 @@ export default function CustomerDetailsPage() {
                     {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
                   </p>
                 </div>
-                <DollarSign className="w-6 h-6 text-green-600" />
+                <Wallet className="w-6 h-6 text-green-600" />
               </div>
-            </div>
+            </button>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => navigate(`/customers/${customer.id}/payments`)}
+              title="View this customer's payment history"
+              className="text-left bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
@@ -470,7 +510,7 @@ export default function CustomerDetailsPage() {
                 </div>
                 <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
               </div>
-            </div>
+            </button>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
@@ -611,6 +651,17 @@ export default function CustomerDetailsPage() {
                                 className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300"
                               >
                                 Return
+                              </button>
+                            )}
+                                                  {/* @ts-expect-error just ignore */}
+                            {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
+                              <button
+                                onClick={() => handleReorderToCart(invoice)}
+                                title="Add this invoice's items to the cart, re-priced from the current price list"
+                                className="flex items-center gap-1 text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300"
+                              >
+                                <ShoppingCart className="w-3.5 h-3.5" />
+                                Reorder
                               </button>
                             )}
                           </div>
@@ -859,7 +910,12 @@ export default function CustomerDetailsPage() {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => navigate(`/customers/${customer.id}/payments`)}
+                title="View this customer's payment history"
+                className="text-left bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
@@ -867,11 +923,16 @@ export default function CustomerDetailsPage() {
                       {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
                     </p>
                   </div>
-                  <DollarSign className="w-8 h-8 text-green-600" />
+                  <Wallet className="w-8 h-8 text-green-600" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => navigate(`/customers/${customer.id}/payments`)}
+                title="View this customer's payment history"
+                className="text-left bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
@@ -881,7 +942,7 @@ export default function CustomerDetailsPage() {
                   </div>
                   <AlertCircle className={`w-8 h-8 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
                 </div>
-              </div>
+              </button>
 
               <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
@@ -1054,6 +1115,17 @@ export default function CustomerDetailsPage() {
                                   className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300"
                                 >
                                   Return
+                                </button>
+                              )}
+                                                    {/* @ts-expect-error just ignore */}
+                              {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
+                                <button
+                                  onClick={() => handleReorderToCart(invoice)}
+                                  title="Add this invoice's items to the cart, re-priced from the current price list"
+                                  className="flex items-center gap-1 text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300"
+                                >
+                                  <ShoppingCart className="w-3.5 h-3.5" />
+                                  Reorder
                                 </button>
                               )}
                             </div>

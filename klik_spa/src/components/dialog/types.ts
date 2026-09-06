@@ -57,4 +57,7 @@ export interface BackendTaxPreview {
   grand_total: number;
   rounded_total: number;
   disable_rounded_total: number;
+  /** Whole-invoice ("bill") discount actually applied to the grand total, in currency. */
+  discount_amount?: number;
+  additional_discount_percentage?: number;
 }

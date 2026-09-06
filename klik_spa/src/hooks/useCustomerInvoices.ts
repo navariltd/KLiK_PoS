@@ -29,10 +29,15 @@ export function useCustomerInvoices(customerName: string) {
     try {
       const start = page * LIMIT;
 
-      // Search for invoices by customer name
-      const searchParam = `&search=${encodeURIComponent(customerName)}`;
+      // customerName here must be the Customer *doctype id* (e.g. "CUST-2026-00061"),
+      // not its display label -- Sales Invoice.customer always stores the id. Use the
+      // backend's dedicated exact-match `customer` filter rather than the fuzzy
+      // `search` param, and skip the opening-entry/POS-profile scoping that
+      // get_sales_invoices otherwise applies for the live checkout screens, so this
+      // page shows the customer's whole invoice history, not just the current shift/till.
+      const customerParam = `&customer=${encodeURIComponent(customerName)}`;
       const response = await fetch(
-        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}`,
+        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${customerParam}&skip_opening_entry_filter=true`,
         {
           method: 'GET',
           headers: {

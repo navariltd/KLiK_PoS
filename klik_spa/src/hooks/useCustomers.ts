@@ -17,6 +17,7 @@ interface ERPCustomer {
   custom_total_spent?: number;
   custom_last_visit?: string;
   is_walkin?: number;
+  is_credit_customer?: number | boolean;
   tax_id?: string;
   contact?: {
     first_name?: string;
@@ -397,6 +398,7 @@ export function useCustomers(searchQuery?: string) {
           tags: [],
           status: "active",
           is_walkin: customer.is_walkin,
+          isCreditCustomer: Boolean(customer.is_credit_customer),
           taxId: customer.tax_id || "",
           createdAt: new Date().toISOString(),
           lastVisit: customer.custom_last_visit || undefined,
@@ -496,6 +498,7 @@ export function useCustomerDetails(customerId: string | null) {
           tags: [],
           status: "active",
           is_walkin: apiCustomer.is_walkin,
+          isCreditCustomer: Boolean(apiCustomer.is_credit_customer),
           createdAt: apiCustomer.creation || new Date().toISOString(),
           lastVisit: undefined,
           avatar: undefined,

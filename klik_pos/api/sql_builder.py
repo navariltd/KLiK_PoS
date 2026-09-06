@@ -87,6 +87,19 @@ def apply_sql_permissions(sql: str):
                     permission_conditions.append(f"({rule})")
 
             except frappe.PermissionError:
+                # Callers build `sql` with a fixed number of %s placeholders
+                # and later execute it with a params tuple sized to match.
+                # A bare "SELECT 1 WHERE 1=0" has zero placeholders, so as
+                # soon as a caller passes any params at all, Python's %
+                # formatting blows up with "not all arguments converted
+                # during bytes formatting" instead of just returning no
+                # rows. Keep the same placeholder count in the no-match
+                # fallback so it stays safe to execute with whatever params
+                # the caller already built for the original query.
+                placeholder_count = sql.count("%s")
+                if placeholder_count:
+                    noop_conditions = " AND ".join(["%s IS NULL"] * placeholder_count)
+                    return f"SELECT 1 WHERE 1=0 AND {noop_conditions}"
                 return "SELECT 1 WHERE 1=0"
 
         if not permission_conditions:

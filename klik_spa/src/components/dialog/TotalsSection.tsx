@@ -33,6 +33,10 @@ export default function TotalsSection({
 }: TotalsSectionProps) {
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  // Whole-invoice "Bill Discount" entered on the checkout screen (distinct from a
+  // coupon), reported back by the tax-preview endpoint once it has been applied to
+  // the grand total, so it doesn't just disappear silently into the total.
+  const billDiscountAmount = Number(backendTaxPreview?.discount_amount || 0);
   const amountDue = checkoutPayableTotal ?? checkoutGrandTotal;
   const changeDue = totalPaidAmount > amountDue ? subtractCurrency(totalPaidAmount, amountDue) : 0;
 
@@ -54,6 +58,12 @@ export default function TotalsSection({
               <div className="flex justify-between text-green-600 dark:text-green-400">
                 <span>Coupon Discount</span>
                 <span>-{formatCurrencyWithSymbol(calculations.couponDiscount, displayCurrencySymbol)}</span>
+              </div>
+            )}
+            {billDiscountAmount > 0 && (
+              <div className="flex justify-between text-green-600 dark:text-green-400">
+                <span>Bill Discount</span>
+                <span>-{formatCurrencyWithSymbol(billDiscountAmount, displayCurrencySymbol)}</span>
               </div>
             )}
             <div className="flex justify-between">

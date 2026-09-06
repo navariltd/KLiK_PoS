@@ -32,6 +32,7 @@ import {
 
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
+import EditWalkinInfoModal from "../components/dialog/EditWalkinInfoModal";
 import { useInvoiceDetails } from "../hooks/useInvoiceDetails";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { usePOSProfileStore } from "../stores/posProfileStore";
@@ -78,6 +79,9 @@ export default function InvoiceViewPage() {
   const [customerData, setCustomerData] = useState<any>(null)
   const [isLoadingCustomer, setIsLoadingCustomer] = useState(false)
 
+  // Walk-in customer name/Tax ID edit modal state (works on draft AND submitted invoices)
+  const [showEditWalkinModal, setShowEditWalkinModal] = useState(false)
+
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false)
@@ -119,7 +123,11 @@ export default function InvoiceViewPage() {
 
   const isDraftInvoiceStatus = (status?: string) => status === "Draft" || status === "Pending"
 
-  // Delete invoice handlers
+  // Void invoice handlers (still named/called as "delete" at the API layer --
+  // deleteDraftInvoice() -- but the backend now VOIDS the draft, flagging it
+  // and keeping the row forever, instead of physically deleting it. KRA/
+  // eTIMS record-keeping expects invoice numbers to stay traceable. See
+  // klik_pos.api.sales_invoice.delete_draft_invoice.
   const handleDeleteClick = () => {
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(handleDeleteClick)
@@ -128,7 +136,7 @@ export default function InvoiceViewPage() {
 
     if (!invoice) return;
     if (!isDraftInvoiceStatus(invoice.status)) {
-      toast.error("Only draft invoices can be deleted");
+      toast.error("Only draft invoices can be voided");
       return;
     }
     setShowDeleteConfirm(true);
@@ -144,13 +152,13 @@ export default function InvoiceViewPage() {
 
     try {
       await deleteDraftInvoice(invoice.name || invoice.id);
-      toast.success(`Draft invoice ${invoice.name || invoice.id} deleted successfully`);
+      toast.success(`Draft invoice ${invoice.name || invoice.id} voided successfully`);
       setShowDeleteConfirm(false);
       navigate('/invoice');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error("Delete error:", error);
-      toast.error(error.message || "Failed to delete invoice");
+      console.error("Void error:", error);
+      toast.error(error.message || "Failed to void invoice");
     }
   };
 
@@ -350,7 +358,10 @@ export default function InvoiceViewPage() {
     queue_status?: string;
     queue_error?: string;
   };
-  const isDraftInvoice = isDraftInvoiceStatus(invoice.status);
+  // A voided draft is still status "Draft" underneath (voiding only flags it
+  // and keeps the row for audit purposes -- see delete_draft_invoice), but it
+  // should no longer be treated as an active, resumable cart.
+  const isDraftInvoice = isDraftInvoiceStatus(invoice.status) && !invoice.custom_pos_voided;
 
   const handleGoToCart = async () => {
     if (!invoice) return
@@ -596,12 +607,34 @@ export default function InvoiceViewPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.address_line1}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.email_id}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.phone}</p>
-                        {invoice.tax_id && (
+                        {invoice.customer_is_walkin ? (
                           <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Tax ID:</h4>
-                            <p className="text-sm text-gray-900 dark:text-white font-medium">{invoice.tax_id}</p>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                                Customer Name / Tax ID:
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => setShowEditWalkinModal(true)}
+                                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-beveren-600 dark:hover:bg-gray-800"
+                                title="Edit customer name / Tax ID"
+                              >
+                                <Edit size={14} />
+                              </button>
+                            </div>
+                            {invoice.custom_customer_alias && (
+                              <p className="text-sm text-gray-900 dark:text-white font-medium">
+                                {invoice.custom_customer_alias}
+                              </p>
+                            )}
+                            {invoice.tax_id && (
+                              <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.tax_id}</p>
+                            )}
+                            {!invoice.custom_customer_alias && !invoice.tax_id && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Not captured yet</p>
+                            )}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                       <div className="text-right">
                         <div className="space-y-2">
@@ -1143,11 +1176,11 @@ export default function InvoiceViewPage() {
         isOpen={showDeleteConfirm}
         onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
-        title="Delete Draft Invoice"
-        message={`Are you sure you want to delete draft invoice ${invoice?.name || invoice?.id}? This action cannot be undone.`}
-        confirmText="Delete"
+        title="Void Draft Invoice"
+        message={`Void draft invoice ${invoice?.name || invoice?.id}? It will no longer be resumable, but the record itself is kept permanently for your accounting/KRA audit trail -- nothing is deleted.`}
+        confirmText="Void"
         cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        confirmButtonClass="bg-orange-600 hover:bg-orange-700 text-white"
       />
 
       <SalespersonAuthModal
@@ -1161,6 +1194,25 @@ export default function InvoiceViewPage() {
         title="Verify salesperson"
         description="Verify the salesperson before continuing this invoice action."
       />
+
+      {invoice && (
+        <EditWalkinInfoModal
+          isOpen={showEditWalkinModal}
+          onClose={() => setShowEditWalkinModal(false)}
+          invoiceName={invoice.name || invoice.id}
+          initialAlias={invoice.custom_customer_alias || ""}
+          initialTaxId={invoice.tax_id || ""}
+          initialChangeLog={(() => {
+            try {
+              const parsed = JSON.parse(invoice.custom_walkin_info_change_log || "[]");
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })()}
+          onSaved={() => refetch()}
+        />
+      )}
 
       </div>
     </div>

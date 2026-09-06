@@ -431,3 +431,46 @@ def _clear_draft_invoices_on_close_if_enabled(opening_entry):
 			delete_draft_invoices_for_opening_entry(opening_entry_name)
 	except Exception as e:
 		frappe.logger().warning("Failed to clear draft invoices on close: %s", e, exc_info=True)
+
+
+@frappe.whitelist()
+def delete_all_draft_invoices_for_current_session():
+	"""
+	Bulk-delete every Draft Sales Invoice linked to the current user's open POS
+	Opening Entry (i.e. this cashier's current session), on explicit request.
+
+	This is the cashier-initiated counterpart to _clear_draft_invoices_on_close_if_enabled
+	above: that one is a silent, all-or-nothing POS Profile setting
+	(custom_clear_draft_invoices) applied automatically on every close, with no
+	visibility into how many drafts existed or a chance to reconsider. This
+	endpoint backs a visible "N draft invoices will be left behind -- Delete all
+	drafts" banner on the Closing Shift screen instead: the cashier sees the count
+	first and clicks to clear them, every time, rather than it happening invisibly
+	(or not at all, if the POS Profile setting was never turned on).
+
+	Reuses delete_draft_invoices_for_opening_entry() -- the exact same routine the
+	POS Profile setting already calls -- so both paths behave identically (same
+	Stock Reservation Entry cleanup via _cancel_sales_invoice_reservations, same
+	skip-if-not-actually-Draft safety check per invoice).
+	"""
+	try:
+		open_entry_name = frappe.db.exists(
+			"POS Opening Entry",
+			{
+				"user": frappe.session.user,
+				"docstatus": 1,
+				"status": "Open",
+			},
+		)
+		if not open_entry_name:
+			return {"success": False, "error": "No open POS Opening Entry found for user."}
+
+		deleted = delete_draft_invoices_for_opening_entry(open_entry_name)
+		return {
+			"success": True,
+			"deleted_count": deleted,
+			"message": f"Deleted {deleted} draft invoice(s) for the current session.",
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Bulk delete draft invoices for current session failed")
+		return {"success": False, "error": str(e)}

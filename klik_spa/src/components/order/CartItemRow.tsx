@@ -9,6 +9,7 @@ import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { UOMSelectField } from "./UOMSelectField";
 import { SerialBatchBundleModal } from "./SerialBatchBundleSelector";
 import { useCartStore } from "../../stores/cartStore";
+import { isOversellAllowedForItem } from "../../stores/posProfileStore";
 import ProductDetailsModal from "../ProductDetailsModal";
 import { getEffectiveDisplayRate, getEffectiveItemRate, getExclusiveTaxRateForItem } from "../../utils/cartPricing";
 import { roundCurrency } from "../../utils/currencyMath";
@@ -461,7 +462,7 @@ export const CartItemRow = ({
                 onChange={(e) => setLocalQty(parseInt(e.target.value, 10) || 0)}
                 onBlur={() => {
                   const available = item.available;
-                  if (available > 0 && localQty > available) {
+                  if (available > 0 && localQty > available && !isOversellAllowedForItem(item)) {
                     setLocalQty(available);
                     onUpdateQuantity(item.id, available);
                     toast.warning(`Only ${available} units available. Quantity set to ${available}.`);
@@ -476,7 +477,7 @@ export const CartItemRow = ({
               <button
                 onClick={() => {
                   const next = item.quantity + 1;
-                  if (item.available > 0 && next > item.available) {
+                  if (item.available > 0 && next > item.available && !isOversellAllowedForItem(item)) {
                     toast.warning(`Only ${item.available} units available.`);
                   } else {
                     onUpdateQuantity(item.id, next);

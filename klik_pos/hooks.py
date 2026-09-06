@@ -33,7 +33,10 @@ add_to_apps_screen = [
 
 doc_events = {
     "Sales Invoice": {
-        "before_submit": "klik_pos.overrides.sales_invoice.validate_sales_person_on_submit",
+        "before_submit": [
+            "klik_pos.overrides.sales_invoice.validate_sales_person_on_submit",
+            "klik_pos.overrides.sales_invoice.block_submit_of_voided_draft",
+        ],
         # "before_save": [
         # 	"klik_pos.api.sales_invoice.sync_return_payments_before_save",
         # ],
@@ -49,11 +52,21 @@ doc_events = {
     "POS Profile": {
         "validate": "klik_pos.overrides.pos_profile.remove_duplicate_sales_persons"
     },
+    "Purchase Receipt": {
+        "on_submit": "klik_pos.klik_pos.backorder.fulfill_backorders_on_purchase_receipt",
+    },
+    "Purchase Invoice": {
+        "on_submit": "klik_pos.klik_pos.backorder.fulfill_backorders_on_purchase_invoice",
+    },
 }
 
 extend_doctype_class = {
     "Sales Invoice": "klik_pos.api.sales_invoice.CustomSalesInvoice",
     "POS Opening Entry": "klik_pos.overrides.pos_opening_entry.CustomPOSOpeningEntry",
+    # Makes Stock Settings/Item "Allow Negative Stock" actually apply to batch-tracked
+    # items -- see klik_pos/overrides/serial_and_batch_bundle.py for why core's own
+    # SerialAndBatchBundle.validate() doesn't honor those settings on its own.
+    "Serial and Batch Bundle": "klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle",
 }
 
 # Migration hooks
@@ -203,6 +216,11 @@ before_install = "klik_pos.setup.install.before_install"
 
 # Scheduled Tasks
 # ---------------
+scheduler_events = {
+    "hourly_long": [
+        "klik_pos.klik_pos.tasks.payment_reconciliation.hourly_customer_payment_reconciliation",
+    ],
+}
 
 # scheduler_events = {
 # 	"all": [

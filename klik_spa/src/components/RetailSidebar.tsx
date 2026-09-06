@@ -2,6 +2,7 @@ import { Receipt, Grid3X3, BarChart3, Users, MonitorX, Banknote } from "lucide-r
 import { useNavigate, useLocation } from "react-router-dom"
 import { useUserInfo } from "../hooks/useUserInfo"
 import { usePOSProfileStore } from "../stores/posProfileStore";
+import { useProductStore } from "../stores/productStore";
 
 // Inside your component
 export default function RetailSidebar() {
@@ -9,6 +10,7 @@ export default function RetailSidebar() {
   const location = useLocation()
   const { userInfo } = useUserInfo()
   const {posDetails} = usePOSProfileStore()
+  const clearSearch = useProductStore((state) => state.clearSearch)
 
   const canAccessSalesDashboard = userInfo?.is_admin_user ?? false
 
@@ -31,6 +33,11 @@ export default function RetailSidebar() {
 
   const handleNav = (item: (typeof menuItems)[0]) => {
     if (item.requiresSalesDashboard && !canAccessSalesDashboard) return
+    // Returning to the POS screen should always start from a clean product
+    // list, not whatever search term was left over from a previous order.
+    if (item.path === "/pos") {
+      clearSearch()
+    }
     navigate(item.path)
   }
 

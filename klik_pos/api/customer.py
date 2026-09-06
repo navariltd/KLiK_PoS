@@ -51,6 +51,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         if has_customer_group_permissions and not permitted_customer_group_names:
             return {"success": True, "data": [], "total_count": 0}
 
+
         try:
             limit_val = int(limit) if limit else 100
         except Exception:
@@ -86,9 +87,9 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
             search_term = f"%{search}%"
             where_conditions.append("(c.customer_name LIKE %s OR c.name LIKE %s OR c.email_id LIKE %s OR c.mobile_no LIKE %s)")
             params.extend([search_term, search_term, search_term, search_term])
-        
+
         where_clause = " AND ".join(where_conditions)
-        
+
         count_query = f"""
             SELECT COUNT(c.name) as total
             FROM `tabCustomer` c
@@ -97,9 +98,20 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         count_query = apply_sql_permissions(count_query)
         total_count_result = frappe.db.sql(count_query, tuple(params), as_dict=True)
         total_count = total_count_result[0]["total"] if total_count_result else 0
-        
+
+        # is_credit_customer is a site-specific custom field (not shipped by this
+        # app), so only select it where it actually exists -- otherwise the raw
+        # SQL below would fail with an "Unknown column" error on every site that
+        # doesn't have it.
+        has_is_credit_customer = any(
+            df.fieldname == "is_credit_customer" for df in frappe.get_meta("Customer").fields
+        )
+        is_credit_customer_column = (
+            "c.is_credit_customer," if has_is_credit_customer else "0 as is_credit_customer,"
+        )
+
         data_query = f"""
-            SELECT 
+            SELECT
                 c.name,
                 c.customer_name,
                 c.customer_type,
@@ -110,6 +122,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
                 c.mobile_no,
                 c.tax_id,
                 c.custom_is_walkin as is_walkin,
+                {is_credit_customer_column}
                 COALESCE((
                     SELECT COUNT(*)
                     FROM `tabSales Invoice` si
@@ -142,7 +155,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
                 ) as custom_last_visit
             FROM `tabCustomer` c
             WHERE {where_clause}
-            ORDER BY c.creation DESC
+            ORDER BY c.custom_is_walkin DESC, custom_total_orders DESC, c.creation DESC
             LIMIT %s OFFSET %s
         """
         
@@ -262,33 +275,78 @@ def get_currency_exchange_rate(
 
 @frappe.whitelist(allow_guest=True)
 def get_customer_info(customer_name: str):
-    """Fetch comprehensive customer document by customer name or ID."""
+    """Fetch comprehensive customer document by customer ID (preferred) or display name.
+
+    IMPORTANT: `customer_name` here is whatever identifier the caller passed
+    (ideally the unique Customer document ID, e.g. "CUST-2026-00001" -- ID
+    lookups from the frontend should always send that, not the display
+    name). It is NOT guaranteed to be the Customer doctype's `customer_name`
+    field.
+
+    Customer.name (the document ID) is unique. Customer.customer_name (the
+    display name, e.g. "1 Cash Customer") is NOT -- two different Customer
+    records can share the same display name (a duplicate "walk-in" record
+    created on more than one site/at different times is a common way this
+    happens). The previous version of this function called
+    get_party_details() with the raw, unresolved identifier BEFORE checking
+    which of those two cases applied, and separately picked whichever
+    customer_name match came back first from an unordered query. That let it
+    silently resolve to the WRONG Customer record whenever a display name
+    collided with another record's document ID (or when two records shared
+    a customer_name), pulling in that other record's tax/walk-in/account
+    data -- or raising an error if that record had incomplete master data --
+    with nothing in the UI to explain why (this is why it looked identical
+    for an Administrator: it's a data-lookup ambiguity, not a permissions
+    issue).
+
+    Fix: resolve to a single, unambiguous Customer document ID FIRST -- an
+    exact ID match always wins over a customer_name match, since IDs are
+    guaranteed unique -- and use that same resolved ID for every subsequent
+    lookup.
+    """
     try:
         # URL decode the customer name to handle special characters like +
         import urllib.parse
 
         customer_name = urllib.parse.unquote(customer_name)
         pos_profile = get_current_pos_profile()
-        party_details = get_party_details(party=customer_name, party_type="Customer", pos_profile=pos_profile.name)  # This will raise if customer doesn't exist
-        # First try to find by customer_name
-        customers = frappe.get_all(
-            "Customer", filters={"customer_name": customer_name}, fields=["name"]
-        )
 
-        # If not found by customer_name, try by name (ID)
-        if not customers:
-            customers = frappe.get_all(
-                "Customer", filters={"name": customer_name}, fields=["name"]
+        resolved_id = None
+        if frappe.db.exists("Customer", customer_name):
+            # Exact document ID match -- unambiguous, always prefer this.
+            resolved_id = customer_name
+        else:
+            # Fall back to display-name lookup only when the identifier
+            # isn't itself a valid document ID. Still not guaranteed unique,
+            # but at least deterministic and logged so a mismatch is
+            # traceable instead of silent.
+            matches = frappe.get_all(
+                "Customer",
+                filters={"customer_name": customer_name},
+                fields=["name"],
+                order_by="creation asc",
             )
+            if matches:
+                resolved_id = matches[0]["name"]
+                if len(matches) > 1:
+                    frappe.logger().info(
+                        f"Multiple Customer records share customer_name '{customer_name}': "
+                        f"{[m['name'] for m in matches]}. Resolved to '{resolved_id}' "
+                        "(oldest by creation). Consider disabling or renaming the duplicates."
+                    )
 
-        if not customers:
-            # Log the search attempt for debugging
+        if not resolved_id:
             frappe.logger().info(
-                f"Customer not found: '{customer_name}'. Searched by customer_name and name."
+                f"Customer not found: '{customer_name}'. Searched by name (ID) and customer_name."
             )
             return {"success": False, "error": f"Customer not found: {customer_name}"}
 
-        customer = frappe.get_doc("Customer", customers[0]["name"])
+        # This will raise if the resolved customer is missing required master
+        # data -- but now it's always being asked about the SAME record that
+        # the rest of this function goes on to use, not a coincidental match.
+        party_details = get_party_details(party=resolved_id, party_type="Customer", pos_profile=pos_profile.name)
+
+        customer = frappe.get_doc("Customer", resolved_id)
 
         # Get primary contact details
         contact_data = None
@@ -332,6 +390,7 @@ def get_customer_info(customer_name: str):
             "contact_data": contact_data,
             "address_data": address_data,
             "is_walkin": getattr(customer, "custom_is_walkin", 0),
+            "is_credit_customer": getattr(customer, "is_credit_customer", 0),
             "tax_id": customer.tax_id,
             "loyalty": get_customer_loyalty_summary(
                 customer.name,
