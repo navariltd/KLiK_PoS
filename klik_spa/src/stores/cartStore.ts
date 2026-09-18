@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 // stores/cartStore.ts
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -77,7 +78,7 @@ const fetchItemTaxDetails = async (
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
     const message: ItemTaxDetailsPayload & { success?: boolean } = result?.message || {};
 
     if (!message.success) {
@@ -180,7 +181,7 @@ export const useCartStore = create<CartState>()(
             throw new Error(`HTTP ${response.status}`);
           }
 
-          const result = await response.json();
+          const result = await parseAPIResponse(response);
           const pricingData = result.message;
 
           if (pricingData?.items) {

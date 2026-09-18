@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 interface ERPNextConfig {
   baseUrl: string;
   apiKey: string;
@@ -151,7 +152,7 @@ class ERPNextAPI {
         };
       }
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
 
       // Frappe 2FA challenge response
       if (data?.tmp_id && data?.verification) {
@@ -302,7 +303,7 @@ async logout(): Promise<void> {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data.message;
     } catch (error) {
       console.error('Get current user error:', error);
@@ -323,7 +324,7 @@ async logout(): Promise<void> {
         throw new Error(`Failed to fetch logged user: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       const username = data.message;
 
       if (!username) {
@@ -341,7 +342,7 @@ async logout(): Promise<void> {
         throw new Error(`Failed to fetch user profile: ${userResponse.status}`);
       }
 
-      const userData = await userResponse.json();
+      const userData = await parseAPIResponse(userResponse);
       // console.log('Full user profile data:', userData.data);
       return userData.data;
     } catch (error) {
@@ -376,7 +377,7 @@ async logout(): Promise<void> {
       }
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await parseAPIResponse(response);
         return {
           success: true,
           message: 'Connection successful',
@@ -448,7 +449,7 @@ async logout(): Promise<void> {
         body: JSON.stringify(params)
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data;
     } catch (error) {
       console.error(`API call error (${method}):`, error);
@@ -467,7 +468,7 @@ async logout(): Promise<void> {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data.data;
     } catch (error) {
       console.error(`Get ${doctype} list error:`, error);
@@ -483,7 +484,7 @@ async logout(): Promise<void> {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data.data;
     } catch (error) {
       console.error(`Get ${doctype} document error:`, error);
@@ -500,7 +501,7 @@ async logout(): Promise<void> {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data.data;
     } catch (error) {
       console.error(`Create ${doctype} document error:`, error);
@@ -517,7 +518,7 @@ async logout(): Promise<void> {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       return data.data;
     } catch (error) {
       console.error(`Update ${doctype} document error:`, error);
@@ -535,7 +536,7 @@ async logout(): Promise<void> {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await parseAPIResponse(response);
         return !!data.message; // Return true if we get a username
       }
       return false;

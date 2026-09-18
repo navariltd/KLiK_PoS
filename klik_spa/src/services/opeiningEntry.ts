@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import {  useState} from "react";
 
 // HOOK 2: Create POS Opening Entry
@@ -41,7 +42,7 @@ export function useCreatePOSOpeningEntry(): UseCreateOpeningReturn {
         credentials: "include"
       });
 
-      const data = await res.json();
+      const data = await parseAPIResponse(res);
 
       if (res.ok && data.message) {
         setSuccess(true);

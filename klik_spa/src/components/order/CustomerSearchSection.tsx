@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../../utils/apiResponse";
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -87,7 +88,7 @@ export const CustomerSearchSection = ({
         const response = await fetch("/api/method/klik_pos.api.item.pricing.get_selling_price_lists", {
           credentials: "include",
         });
-        const data = await response.json();
+        const data = await parseAPIResponse(response);
         if (!cancelled) {
           setPriceLists(data?.message?.price_lists || []);
         }
@@ -107,7 +108,7 @@ export const CustomerSearchSection = ({
   const fetchCustomerInfo = async (customerName: string): Promise<Customer | null> => {
     try {
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(customerName)}`);
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (!resData.message || resData.message.success === false) {
         throw new Error(resData.message?.error || "Failed to fetch customer info");
@@ -425,7 +426,7 @@ export const CustomerSearchSection = ({
           `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`
         );
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const resData = await response.json();
+        const resData = await parseAPIResponse(response);
         if (resData.message) {
           const fullCustomer = await fetchCustomerInfo(newCustomer.customer_name);
           if (fullCustomer) {

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 
 import { extractErrorMessage } from "../utils/errorExtraction";
 
@@ -21,7 +22,7 @@ export async function getCustomerLoyalty(customer: string, company?: string, loy
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, result.message?.error || 'Failed to fetch loyalty details');
@@ -56,7 +57,7 @@ export async function previewLoyaltyRedemption(
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, result.message?.error || 'Failed to preview loyalty redemption');
@@ -79,7 +80,7 @@ const csrfToken = window.csrf_token;
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, 'Failed to create invoice');
@@ -103,7 +104,7 @@ export async function createSalesInvoice(data: any) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
 
   if (!response.ok || !result.message || result.message.success === false) {
@@ -130,7 +131,7 @@ export async function getCheckoutRequestStatus(checkoutRequestId: string) {
       credentials: 'include',
     },
   );
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, 'Failed to recover checkout status'));
   }
@@ -151,7 +152,7 @@ export async function validateCheckoutInvoice(data: any) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, 'Checkout validation failed');
@@ -174,7 +175,7 @@ export async function retryQueuedInvoice(invoiceId: string) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, result.message?.message || 'Failed to retry queued invoice');
@@ -197,7 +198,7 @@ export async function createSalesReturn(invoiceName: string) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const serverMsg = result._server_messages
@@ -220,7 +221,7 @@ export async function getInvoiceDetails(invoiceName: string) {
       credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
     // console.log('Invoice details response:', data);
 
     if (!response.ok) {
@@ -254,7 +255,7 @@ export async function deleteDraftInvoice(invoiceId: string) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   // console.log("Delete invoice result:", result);
 
   if (!response.ok || !result.message || result.message.success === false) {
@@ -276,7 +277,7 @@ export async function getDraftInvoiceItems(invoiceId: string) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   // console.log("Draft invoice items result:", result);
 
   if (!response.ok || !result.message) {
@@ -306,7 +307,7 @@ export async function markInvoiceAsPrinted(invoiceName: string) {
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(result.message?.error || 'Failed to mark invoice as printed');
@@ -328,7 +329,7 @@ export async function submitDraftInvoice(invoiceId: string, data?: unknown) {
     credentials: 'include'
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, result.message?.error || 'Failed to submit draft invoice');

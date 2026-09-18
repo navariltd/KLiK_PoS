@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../../utils/apiResponse";
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -158,7 +159,7 @@ export const CartItemRow = ({
       const response = await fetch(
         `/api/method/klik_pos.api.item.item_details.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.item_code || item.id)}&warehouse=${encodeURIComponent(warehouse)}`
       );
-      const res = await response.json();
+      const res = await parseAPIResponse(response);
       if (res?.message) {
         setFullItemData(res.message);
       }
@@ -201,7 +202,7 @@ export const CartItemRow = ({
       });
 
       const response = await fetch(`/api/method/klik_pos.api.item.bundle.get_available_batches_and_serials?${params.toString()}`);
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (result.message) {
         const data = result.message;
@@ -219,7 +220,7 @@ export const CartItemRow = ({
 
       if (qty > 0) {
         const autoDataResponse = await fetch(`/api/method/erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle.get_auto_data?${params.toString()}`);
-        const autoDataResult = await autoDataResponse.json();
+        const autoDataResult = await parseAPIResponse(autoDataResponse);
 
         if (autoDataResult.message && Array.isArray(autoDataResult.message) && autoDataResult.message.length > 0) {
           const autoEntries = autoDataResult.message.map((row: any) => ({
