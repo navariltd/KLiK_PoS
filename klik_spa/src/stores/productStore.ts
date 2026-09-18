@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { MenuItem, Customer, ItemGroup } from '../../types';
@@ -185,7 +186,7 @@ export const useProductStore = create<ProductStoreState>()(
           const response = await fetch(`/api/method/klik_pos.api.item.item_listing.get_items?${params.toString()}`, { signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
           const message = data?.message || data;
           
           return {
@@ -214,7 +215,7 @@ export const useProductStore = create<ProductStoreState>()(
           );
           
           if (response.ok) {
-            const data = await response.json();
+            const data = await parseAPIResponse(response);
             return data?.message || {};
           }
           return {};
@@ -499,7 +500,7 @@ export const useProductStore = create<ProductStoreState>()(
           );
           
           if (response.ok) {
-            const data = await response.json();
+            const data = await parseAPIResponse(response);
             const stockUpdates = data?.message || {};
             
             set(state => ({
@@ -529,7 +530,7 @@ export const useProductStore = create<ProductStoreState>()(
           
           if (!response.ok) throw new Error('Failed to fetch customers');
           
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
           const customers = data?.message?.customers || [];
           
           set({ customers, isLoadingCustomers: false });

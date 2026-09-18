@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "./apiResponse";
 /**
  * Utility functions for API calls with enhanced error handling
  */
@@ -92,7 +93,7 @@ export async function apiCall<T = Record<string, unknown>>(
       ...options
     });
 
-    const data = await response.json() as T;
+    const data = await parseAPIResponse(response) as T;
 
     if (!response.ok) {
       throw new Error(
@@ -119,7 +120,7 @@ export async function getAPICall<T = Record<string, unknown>>(
       ...options
     });
 
-    const data = await response.json() as T;
+    const data = await parseAPIResponse(response) as T;
 
     if (!response.ok) {
       throw new Error(

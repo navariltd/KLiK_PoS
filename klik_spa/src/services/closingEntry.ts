@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState } from "react";
 
 // HOOK: Create POS Closing Entry
@@ -42,7 +43,7 @@ export function useCreatePOSClosingEntry(): UseCreateClosingReturn {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
-      const data = await res.json();
+      const data = await parseAPIResponse(res);
 
       if (data.message) {
         setSuccess(true);

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState } from 'react'
 import { useProducts } from './useProducts'
 import type { MenuItem } from '../../types'
@@ -45,7 +46,7 @@ export function useBarcodeScanner(onAddToCart: (item: MenuItem) => void): UseBar
       try {
         // First try combined identifier endpoint (barcode/batch/serial)
         const response = await fetch(`/api/method/klik_pos.api.item.item_search.get_item_by_identifier?code=${encodeURIComponent(barcode)}`)
-        const data = await response.json()
+        const data = await parseAPIResponse(response)
 
         if (data.message && data.message.item_code) {
           // Convert API response to MenuItem format

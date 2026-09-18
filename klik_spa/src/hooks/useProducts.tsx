@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import type { MenuItem } from "../../types";
 import { useEffect, useState } from "react";
 import { useProduct } from "../providers/ProductProvider";
@@ -84,7 +85,7 @@ export function useBatchData(itemCode: string, warehouse: string): UseBatchRetur
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (resData?.message && Array.isArray(resData.message)) {
         setBatches(resData.message);
@@ -118,7 +119,7 @@ export function useBatchData(itemCode: string, warehouse: string): UseBatchRetur
         throw new Error(`HTTP ${response.status}`);
       }
       
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (resData?.message && Array.isArray(resData.message)) {
         setBatches(resData.message);

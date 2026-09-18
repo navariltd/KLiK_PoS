@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 interface CustomerAddress {
   addressType?: string;
   street: string;
@@ -41,7 +42,7 @@ export const useCustomerActions = () => {
         credentials: 'include'
       });
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (!result.message || !result.message.success) {
         throw new Error(result.message?.error || "Customer creation failed");
@@ -71,7 +72,7 @@ export const useCustomerActions = () => {
 
       });
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (!result.message || !result.message.success) {
         throw new Error(result.message?.error || "Customer update failed");
@@ -94,7 +95,7 @@ export const useCustomerActions = () => {
         credentials: 'include'
       });
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (!result.message || !result.message.success) {
         throw new Error(result.message?.error || "Failed to fetch customer groups");
@@ -117,7 +118,7 @@ export const useCustomerActions = () => {
         credentials: 'include'
       });
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (!result.message || !result.message.success) {
         throw new Error(result.message?.error || "Failed to fetch territories");

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -167,7 +168,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             return;
           }
           
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
           
           if (!response.ok) {
             throw new Error(data._server_messages || "Failed to fetch POS profiles");
@@ -215,7 +216,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             return;
           }
           
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
           
           if (!response.ok) {
             throw new Error(data._server_messages || "Failed to fetch POS details");
@@ -275,7 +276,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             return;
           }
           
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
           
           if (!response.ok) {
             throw new Error(data._server_messages || "Failed to check opening entry status");
@@ -326,7 +327,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             return;
           }
 
-          const data = await response.json();
+          const data = await parseAPIResponse(response);
 
           if (response.ok && data.message?.success) {
             set({

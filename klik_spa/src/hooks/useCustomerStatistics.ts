@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useEffect } from 'react';
 
 interface CustomerStatistics {
@@ -34,7 +35,7 @@ export function useCustomerStatistics(customerId: string | null): UseCustomerSta
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (result?.message?.success) {
         setStatistics(result.message.data);
