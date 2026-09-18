@@ -40,7 +40,7 @@ export async function parseAPIResponse<T = unknown>(response: Response): Promise
   const contentType = response.headers.get("content-type") || "";
 
   try {
-    return JSON.parse(body) as T;
+    return response.json()
   } catch {
     const responsePreview = getResponsePreview(body);
     const isHtml = /<!doctype\s+html|<html[\s>]/i.test(body);
