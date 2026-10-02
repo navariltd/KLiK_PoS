@@ -14,6 +14,11 @@ def clear_backend_cache():
 		# Clear POS profile cache
 		clear_pos_profile_cache()
 
+		# Clear the user's get_items rate limit counter in Redis
+		user = frappe.session.user
+		identity = user if user and user != "Guest" else frappe.session.sid
+		frappe.cache.delete_value(f"klik_pos:get_items:{identity}")
+
 		frappe.logger().info("🧹 Backend cache cleared successfully")
 
 		return {"success": True, "message": "Backend cache cleared successfully"}

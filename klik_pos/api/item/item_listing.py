@@ -391,10 +391,10 @@ def _enforce_get_items_rate_limit():
         frappe.throw(_("A valid authenticated session is required."), frappe.AuthenticationError)
 
     cache_key = frappe.cache.make_key(f"klik_pos:get_items:{identity}")
-    if not frappe.cache.get(cache_key):
-        frappe.cache.setex(cache_key, GET_ITEMS_RATE_WINDOW, 0)
-
-    request_count = frappe.cache.incrby(cache_key, 1)
+    pipe = frappe.cache.pipeline()
+    pipe.incr(cache_key)
+    pipe.expire(cache_key, GET_ITEMS_RATE_WINDOW, nx=True)
+    request_count = pipe.execute()[0]
     if request_count > GET_ITEMS_RATE_LIMIT:
         frappe.throw(
             _("Too many product requests. Please try again shortly."),
