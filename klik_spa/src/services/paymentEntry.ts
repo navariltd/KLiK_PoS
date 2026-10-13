@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { extractErrorMessage } from "../utils/errorExtraction";
 
 export interface CustomerPaymentEntryRequest {
@@ -83,7 +84,7 @@ export async function createCustomerPaymentEntry(
     credentials: "include",
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, "Failed to receive customer payment"));
@@ -114,7 +115,7 @@ export async function getOutstandingSalesInvoices(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, "Failed to fetch outstanding invoices"));
@@ -145,7 +146,7 @@ export async function getUnallocatedCustomerPaymentEntries(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, "Failed to fetch payment entries"));
@@ -178,7 +179,7 @@ export async function reconcilePaymentEntryWithInvoice(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.success === false) {
     throw new Error(extractErrorMessage(result, "Failed to reconcile payment"));

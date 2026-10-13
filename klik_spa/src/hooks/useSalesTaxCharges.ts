@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 // hooks/useTaxCategories.ts
 import { useEffect, useState } from "react"
 
@@ -26,7 +27,7 @@ export function useSalesTaxCharges() {
       setIsLoading(true)
       try {
         const res = await fetch("/api/method/klik_pos.api.tax.get_sales_tax_categories")
-        const data = await res.json()
+        const data = await parseAPIResponse(res)
 
         if (!data.message?.success) {
           throw new Error(data.message?.error || "Failed to fetch tax categories")

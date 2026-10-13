@@ -1,3 +1,5 @@
+import { parseAPIResponse } from "../utils/apiResponse";
+
 export interface WhatsAppTemplate {
   name: string;
   template_name: string;
@@ -33,7 +35,7 @@ export async function fetchWhatsAppTemplates(): Promise<WhatsAppTemplate[]> {
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       throw new Error('Failed to fetch WhatsApp templates');
@@ -62,7 +64,7 @@ export async function getDefaultWhatsAppTemplate(): Promise<string | null> {
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       throw new Error('Failed to fetch POS profile details');
@@ -92,7 +94,7 @@ export async function getWhatsAppTemplate(templateName: string): Promise<WhatsAp
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       return null;

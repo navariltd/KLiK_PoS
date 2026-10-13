@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useEffect, useCallback } from "react";
 import type { SalesInvoice } from "../../types";
 
@@ -31,7 +32,7 @@ export function useInvoiceDetails(invoiceId: string | null) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const resData = await response.json();
+        const resData = await parseAPIResponse(response);
 
         if (!resData.message || !resData.message.success) {
           throw new Error(resData.message?.error || resData.error || "Failed to fetch invoice");

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "./apiResponse";
 import { getDraftInvoiceItems } from '../services/salesInvoice';
 import { toast } from 'react-toastify';
 import { extractErrorFromException } from './errorExtraction';
@@ -173,7 +174,7 @@ async function getDraftCustomer(invoiceData: any): Promise<Customer | null> {
     const response = await fetch(
       `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(invoiceData.customer)}`
     );
-    const resData = await response.json();
+    const resData = await parseAPIResponse(response);
 
     if (!resData.message || resData.message.success === false) {
       throw new Error(resData.message?.error || 'Failed to fetch customer info');

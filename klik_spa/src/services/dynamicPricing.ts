@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 export interface PriceInfo {
   success: boolean;
   price: number;
@@ -23,7 +24,7 @@ export async function getItemPriceForCustomer(itemCode: string, customerId?: str
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
     return result.message || result;
   } catch (error) {
     console.error('Error fetching item price for customer:', error);
@@ -87,7 +88,7 @@ export async function applyPricingRulesToCart(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
     return result.message || cartItems; // Return original items if API fails
   } catch (error) {
     console.error('Error applying pricing rules to cart:', error);
