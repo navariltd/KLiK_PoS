@@ -1083,6 +1083,7 @@ def validate_checkout_invoice(data):
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			price_list=_get_requested_price_list(data),
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1316,6 +1317,7 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			price_list=_get_requested_price_list(data),
 		)
 
 		validate_required_salesperson(doc)
@@ -1596,6 +1598,7 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				price_list=_get_requested_price_list(data) or doc.selling_price_list,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1616,6 +1619,7 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				price_list=_get_requested_price_list(data),
 			)
 
 			validate_required_salesperson(doc)
@@ -1902,6 +1906,7 @@ def build_sales_invoice_doc(
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	price_list=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1928,7 +1933,9 @@ def build_sales_invoice_doc(
 
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
-	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
+	_set_pos_profile_fields(
+		doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment, price_list=price_list
+	)
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_no_variant_templates(items)
@@ -1998,6 +2005,7 @@ def _update_existing_draft_invoice(
 	tax_id=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	price_list=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -2018,6 +2026,7 @@ def _update_existing_draft_invoice(
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
+		price_list=price_list,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -2217,12 +2226,32 @@ def _get_active_pos_profile():
 		raise
 
 
-def _set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid=0.0, allow_partial_payment=False):
+def _get_requested_price_list(data):
+	"""Price list the cashier switched to in Klik, if the POS Profile allows switching."""
+	if isinstance(data, str):
+		data = json.loads(data)
+	price_list = (data or {}).get("priceList")
+	if not price_list:
+		return None
+	if not cint(getattr(get_current_pos_profile(), "allow_price_list_switching", 0) or 0):
+		return None
+	if not frappe.db.exists("Price List", {"name": price_list, "selling": 1, "enabled": 1}):
+		frappe.throw(_("Price List {0} is not an enabled selling price list.").format(price_list))
+	return price_list
+
+
+def _set_pos_profile_fields(
+	doc, pos_profile, customer, business_type, amount_paid=0.0, allow_partial_payment=False, price_list=None
+):
 	"""Set POS profile, company, currency and POS-specific fields."""
 	doc.pos_profile = pos_profile.name
 	doc.company = pos_profile.company
 	doc.currency = get_customer_billing_currency(customer)
-	price_list = get_price_list_with_customer_priority(customer) or getattr(pos_profile, "selling_price_list", None)
+	price_list = (
+		price_list
+		or get_price_list_with_customer_priority(customer)
+		or getattr(pos_profile, "selling_price_list", None)
+	)
 	if price_list:
 		doc.selling_price_list = price_list
 	doc.conversion_rate = 1.0
@@ -3163,6 +3192,21 @@ def return_sales_invoice(invoice_name):
 
 
 class CustomSalesInvoice(SalesInvoice):
+	def set_pos_fields(self, for_validate=False):
+		# ERPNext resets selling_price_list to the customer/POS default on every POS save;
+		# keep the list a Klik cashier switched to when the POS Profile allows switching.
+		chosen_price_list = self.selling_price_list
+		pos = super().set_pos_fields(for_validate)
+		if (
+			chosen_price_list
+			and chosen_price_list != self.selling_price_list
+			and cint(self.get("custom_is_created_from_klik"))
+			and self.pos_profile
+			and cint(frappe.get_cached_value("POS Profile", self.pos_profile, "allow_price_list_switching"))
+		):
+			self.selling_price_list = chosen_price_list
+		return pos
+
 	def validate_pos_opening_entry(self):
 		opening_entries = frappe.get_all(
 			"POS Opening Entry",
@@ -3918,6 +3962,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				price_list=_get_requested_price_list(data) or invoice_doc.selling_price_list,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
