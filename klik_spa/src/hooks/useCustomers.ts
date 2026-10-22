@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { type Customer } from "../types/customer";
 import { type CustomerFormData, type ExtendedCustomer } from "../types/customerForm";
@@ -366,7 +367,7 @@ export function useCustomers(searchQuery?: string) {
       const searchParam = `?${params.toString()}`;
 
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customers${searchParam}`);
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (!resData.message.success) {
         throw new Error(resData.error || "Failed to fetch customers");
@@ -464,7 +465,7 @@ export function useCustomerDetails(customerId: string | null) {
       setIsLoading(true);
       try {
         const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(customerId)}`);
-        const resData = await response.json();
+        const resData = await parseAPIResponse(response);
 
         if (!resData.message || resData.message.success === false) {
           throw new Error(resData.message?.error || "Failed to fetch customer");
@@ -552,7 +553,7 @@ export function useRequiredCustomerFields(existingFieldNames: string[], customer
         }
       });
       
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
       
       if (!result.message) {
         throw new Error('Failed to fetch required customer fields');

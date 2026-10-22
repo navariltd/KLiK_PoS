@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -213,7 +214,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
         const response = await fetch(
           `/api/method/klik_pos.api.item.item_details.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.id)}&warehouse=${encodeURIComponent(warehouse)}`
         )
-        const res = await response.json()
+        const res = await parseAPIResponse(response)
         if (res?.message) {
           
           setData(res.message)

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../../utils/apiResponse";
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -55,7 +56,7 @@ export const UOMSelectField = ({
       );
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await parseAPIResponse(response);
         if (data?.message) {
           const uomData = data.message as UOMPriceResponse;
           const rows = Array.isArray(uomData.uoms) ? uomData.uoms : [];

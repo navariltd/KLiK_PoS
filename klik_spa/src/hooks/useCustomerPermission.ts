@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useCallback } from 'react';
 
 interface CustomerPermissionResult {
@@ -45,7 +46,7 @@ export function useCustomerPermission() {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (!resData.message || resData.message.success === false) {
         throw new Error(resData.message?.error || "Failed to check customer permission");

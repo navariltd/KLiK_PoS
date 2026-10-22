@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -205,7 +206,7 @@ export default function InvoiceViewPage() {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result = await response.json();
+      const result = await parseAPIResponse(response);
 
       if (result?.message?.success !== false) {
         // Transform the API response to match the Customer interface expected by AddCustomerModal

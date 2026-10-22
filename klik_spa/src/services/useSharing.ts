@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function sendEmails(data: any) {
@@ -13,7 +14,7 @@ export async function sendEmails(data: any) {
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -40,7 +41,7 @@ export async function getAvailableOutgoingAccounts() {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -83,7 +84,7 @@ export async function getWhatsAppSetup() {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -110,7 +111,7 @@ export async function sendWhatsAppMessage(data: WhatsAppData) {
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -140,7 +141,7 @@ export async function sendTemplateWhatsApp(mobile: string, templateName: string,
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -168,7 +169,7 @@ export async function getSMSGateway() {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -195,7 +196,7 @@ export async function sendSMSMessage(data: { mobile_no: string; message: string;
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -222,7 +223,7 @@ export async function sendInvoiceSMS(data: { mobile_no: string; customer_name: s
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -252,7 +253,7 @@ export async function sendInvoiceWithPDF(mobile: string, invoiceNo: string, mess
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages
@@ -289,7 +290,7 @@ export async function sendInvoiceWhatsApp(data: {
     credentials: 'include',
   });
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok || !result.message || result.message.status !== "success") {
     const serverMsg = result._server_messages

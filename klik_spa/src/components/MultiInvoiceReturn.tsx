@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useEffect, useCallback } from "react";
 import {
   X,
@@ -75,7 +76,7 @@ export default function MultiInvoiceReturn({
   const loadCustomerAddresses = useCallback(async () => {
     try {
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_addresses?customer=${selectedCustomer}`);
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
 
       if (data.message && Array.isArray(data.message)) {
         setCustomerAddresses(data.message);
@@ -618,7 +619,7 @@ export default function MultiInvoiceReturn({
                           try {
                             // Load addresses
                             const addressResponse = await fetch(`/api/method/klik_pos.api.customer.get_customer_addresses?customer=${customerName}`);
-                            const addressData = await addressResponse.json();
+                            const addressData = await parseAPIResponse(addressResponse);
 
                             if (addressData.message && Array.isArray(addressData.message)) {
                               setCustomerAddresses(addressData.message);
