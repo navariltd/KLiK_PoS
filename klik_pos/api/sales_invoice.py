@@ -251,7 +251,7 @@ def _truncate_queue_error(error_message, max_length=900):
 
 
 def get_reserved_stock_map(item_codes=None, warehouse=None, exclude_invoice=None):
-	"""Return reserved stock from Stock Reservation Entries keyed by (item_code, warehouse)."""
+	"""Return active Stock Reservation Entries keyed by (item_code, warehouse)."""
 	conditions = [
 		"sre.docstatus = 1",
 		"sre.delivered_qty < sre.reserved_qty",
@@ -348,83 +348,66 @@ def _should_reserve_stock(doc):
 
 
 def _reserve_stock_for_queued_invoice(doc):
-	"""Create Stock Reservation Entry rows for queued Sales Invoice draft rows."""
+	"""Create submitted Stock Reservation Entries for a queued draft invoice."""
 	if not doc or doc.doctype != "Sales Invoice" or doc.docstatus != 0:
 		return
-	if not _should_reserve_stock(doc):
-		return
-	if getattr(doc, "is_return", 0):
+	if not _should_reserve_stock(doc) or getattr(doc, "is_return", 0):
 		return
 
 	_cancel_sales_invoice_reservations(doc.name)
-
 	item_codes = list({row.item_code for row in doc.items if row.item_code})
-	item_meta_map = {}
-	if item_codes:
-		item_meta_map = {
-			row.name: row
-			for row in frappe.get_all(
-				"Item",
-				filters={"name": ["in", item_codes]},
-				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom"],
-			)
-		}
+	item_meta_map = {
+		row.name: row
+		for row in frappe.get_all(
+			"Item",
+			filters={"name": ["in", item_codes]},
+			fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom"],
+		)
+	} if item_codes else {}
 
 	for row in doc.items:
 		if not row.item_code or not row.warehouse:
 			continue
-
 		item_meta = item_meta_map.get(row.item_code)
 		if not item_meta or not int(item_meta.is_stock_item or 0):
 			continue
 
-		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
-		if required_qty <= 0:
-			required_qty = flt(abs(getattr(row, "qty", 0) or 0))
+		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0)) or flt(abs(getattr(row, "qty", 0) or 0))
 		if required_qty <= 0:
 			continue
 
 		actual_qty = flt(
-			frappe.db.get_value(
-				"Bin",
-				{"item_code": row.item_code, "warehouse": row.warehouse},
-				"actual_qty",
-			)
-			or 0
+			frappe.db.get_value("Bin", {"item_code": row.item_code, "warehouse": row.warehouse}, "actual_qty") or 0
 		)
 		reserved_map = get_reserved_stock_map(
-			item_codes=[row.item_code],
-			warehouse=row.warehouse,
-			exclude_invoice=doc.name,
+			item_codes=[row.item_code], warehouse=row.warehouse, exclude_invoice=doc.name
 		)
 		available_to_reserve = flt(actual_qty - reserved_map.get((row.item_code, row.warehouse), 0))
-
 		if required_qty > available_to_reserve + 1e-9:
 			frappe.throw(
 				_(
 					"Insufficient stock to reserve for item {0} in warehouse {1}. Required: {2}, Available to reserve: {3}."
-				).format(
-					frappe.bold(row.item_code),
-					frappe.bold(row.warehouse),
-					flt(required_qty),
-					flt(available_to_reserve),
-				)
+				).format(frappe.bold(row.item_code), frappe.bold(row.warehouse), flt(required_qty), flt(available_to_reserve))
 			)
 
 		sre = frappe.new_doc("Stock Reservation Entry")
-		sre.item_code = row.item_code
-		sre.warehouse = row.warehouse
-		sre.has_serial_no = int(item_meta.has_serial_no or 0)
-		sre.has_batch_no = int(item_meta.has_batch_no or 0)
-		sre.voucher_type = "Sales Invoice"
-		sre.voucher_no = doc.name
-		sre.voucher_detail_no = row.name
-		sre.available_qty = available_to_reserve
-		sre.voucher_qty = required_qty
-		sre.reserved_qty = required_qty
-		sre.company = doc.company
-		sre.stock_uom = row.stock_uom or item_meta.stock_uom
-		sre.project = doc.project
+		sre.update(
+			{
+				"item_code": row.item_code,
+				"warehouse": row.warehouse,
+				"has_serial_no": int(item_meta.has_serial_no or 0),
+				"has_batch_no": int(item_meta.has_batch_no or 0),
+				"voucher_type": "Sales Invoice",
+				"voucher_no": doc.name,
+				"voucher_detail_no": row.name,
+				"available_qty": available_to_reserve,
+				"voucher_qty": required_qty,
+				"reserved_qty": required_qty,
+				"company": doc.company,
+				"stock_uom": row.stock_uom or item_meta.stock_uom,
+				"project": doc.project,
+			}
+		)
 		sre.save(ignore_permissions=True)
 		sre.submit()
 
@@ -1526,7 +1509,6 @@ def retry_failed_sales_invoice(invoice_name):
 
 		_validate_reserved_stock_for_items(doc, exclude_invoice=doc.name)
 		_reserve_stock_for_queued_invoice(doc)
-
 		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="")
 		doc.save(ignore_permissions=True)
 
