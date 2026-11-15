@@ -16,11 +16,17 @@ import frappe
 
 from klik_pos.api.item import item_listing, item_stock
 from klik_pos.api.item.item_price import get_price_list_with_customer_priority
+from klik_pos.testing import any_till_currency
 from klik_pos.tests import listing_fixtures as fx
 from klik_pos.tests.test_item_listing_query import ListingQueryCase
 
 
 class TestSmallerPageCosts(ListingQueryCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		any_till_currency(cls)
+
 	def test_one_bin_read_serves_stock_and_cost(self):
 		stock = item_listing._fetch_batch_stock([fx.STOCKED], fx.WAREHOUSE)
 		self.assertEqual(stock[fx.STOCKED], 5)

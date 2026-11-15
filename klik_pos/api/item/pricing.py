@@ -4,7 +4,7 @@ from frappe import _
 from frappe.utils import flt
 
 from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
-from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.klik_pos.utils import get_current_pos_profile, till_currency
 from ..sql_builder import apply_sql_permissions
 from .item_price import (
     allowed_price_list_sql,
@@ -108,6 +108,9 @@ def get_selling_price_lists():
     permissions, so the filter is applied here.
     """
     filters = {"selling": 1, "enabled": 1}
+    currency = till_currency()
+    if currency:
+        filters["currency"] = currency
     permitted = permitted_price_lists()
     if permitted is not None:
         if not permitted:

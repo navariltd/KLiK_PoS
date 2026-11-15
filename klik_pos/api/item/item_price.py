@@ -2,12 +2,21 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company
+from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company, till_currency
 
 from ..sql_builder import apply_sql_permissions
 
 # A disabled Price List is off the POS: its prices are neither offered nor used as a fallback.
-ENABLED_PRICE_LIST = "price_list IN (SELECT name FROM `tabPrice List` WHERE enabled = 1)"
+def _usable_lists_sql():
+    """SQL condition on `price_list`: enabled, and in the till's currency when on a till."""
+    currency = till_currency()
+    same = f" AND currency = {frappe.db.escape(currency)}" if currency else ""
+    return f"price_list IN (SELECT name FROM `tabPrice List` WHERE enabled = 1{same})"
+
+
+def in_till_currency(price_list):
+    currency = till_currency()
+    return not currency or frappe.get_cached_value("Price List", price_list, "currency") == currency
 
 
 def permitted_price_lists(user=None):
@@ -28,7 +37,7 @@ def is_enabled_price_list(price_list):
 
 def is_allowed_price_list(price_list):
     """Enabled, and not shut out by the user's Price List permissions."""
-    if not is_enabled_price_list(price_list):
+    if not is_enabled_price_list(price_list) or not in_till_currency(price_list):
         return False
     permitted = permitted_price_lists()
     return permitted is None or price_list in permitted
@@ -39,7 +48,7 @@ def checked_price_list(price_list):
     if not price_list:
         return None
     permitted = permitted_price_lists()
-    if permitted is not None and price_list not in permitted:
+    if (permitted is not None and price_list not in permitted) or not in_till_currency(price_list):
         frappe.throw(
             _("You cannot use price list {0} at this till.").format(price_list), frappe.PermissionError
         )
@@ -50,9 +59,9 @@ def allowed_price_list_sql():
     """SQL condition on `price_list`: enabled, and one of the user's permitted lists when restricted."""
     permitted = permitted_price_lists()
     if permitted is None:
-        return ENABLED_PRICE_LIST
+        return _usable_lists_sql()
     names = ", ".join(frappe.db.escape(name) for name in permitted)
-    return f"{ENABLED_PRICE_LIST} AND price_list IN ({names})"
+    return f"{_usable_lists_sql()} AND price_list IN ({names})"
 
 
 @frappe.whitelist()
@@ -477,7 +486,7 @@ def get_price_list_with_customer_priority(customer=None, pos_profile=None):
             return default
         return frappe.db.get_value(
             "Price List",
-            {"name": ["in", permitted], "enabled": 1, "selling": 1},
+            {"name": ["in", permitted], "enabled": 1, "selling": 1, **({"currency": till_currency()} if till_currency() else {})},
             "name",
             order_by="name asc",
         )
