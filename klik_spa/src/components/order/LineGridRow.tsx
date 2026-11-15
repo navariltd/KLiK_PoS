@@ -13,7 +13,7 @@ import type { PricePopupPick } from "../../utils/priceOptions";
 import { useEffect, useState } from "react";
 import { switchUom, uomMaps, type UomMaps } from "../../utils/uomSwitch";
 import { getItemDisplayName } from "../../utils/itemDisplayName";
-import { rateBoxMinimum } from "../../utils/priceFloor";
+import { lineListRate, rateBoxMinimum } from "../../utils/priceFloor";
 import { clampRateToFloor, discountAmountFromPct, discountPctFromAmount } from "../../utils/lineEdits";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -126,8 +126,11 @@ export default function LineGridRow({
       if (itemDiscount.selectedPriceList) onDiscountChange(item.id, "selectedPriceList", "");
       onCustomRateChange(item, undefined);
     } else {
-      // ponytail: floor uses the list rate; CartItemRow also honours a line price-list pick fetched on expand.
-      const minimum = rateBoxMinimum(posDetails as Record<string, unknown> | null, listRate);
+      // A line switched to another list is held to that list's price, not the cart list's.
+      const minimum = rateBoxMinimum(
+        posDetails as Record<string, unknown> | null,
+        lineListRate(listRate, itemDiscount.selectedPriceList, itemDiscount.selectedPriceListRate),
+      );
       const rate = clampRateToFloor(Math.max(0, n), minimum);
       if (rate !== Math.max(0, n)) {
         toast.warning(`${item.name}: can't sell below ${formatCurrencyWithSymbol(rate, currencySymbol)}. Rate reset to the minimum.`);
@@ -140,6 +143,7 @@ export default function LineGridRow({
   const pickPrice = (p: PricePopupPick) => {
     if (!("priceList" in p)) return commitRate(p.rate, String(p.rate));
     onDiscountChange(item.id, "selectedPriceList", p.priceList);
+    onDiscountChange(item.id, "selectedPriceListRate", p.rate);
     onCustomRateChange(item, p.rate, false);
     onDiscountChange(item.id, "discountAmount", 0);
   };

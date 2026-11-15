@@ -116,6 +116,35 @@ class TestPriceFloorCheckout(FrappeTestCase):
 		result = validate_checkout_invoice(self._payload(header=ELITE))
 		self.assertEqual(result["tax_preview"]["price_floor"]["rows"], [])
 
+	def _line_pick(self, rate):
+		"""The cart is on Retail (450); this line was switched to Elite (400) with the rate box's star."""
+		return {**self._payload(rate=rate), "itemDiscounts": {ITEM: {"selectedPriceList": ELITE}}}
+
+	def test_line_priced_from_a_lower_list_passes_at_that_lists_price(self):
+		result = validate_checkout_invoice(self._line_pick(400))
+		self.assertTrue(result["success"], result.get("message"))
+		self.assertEqual(result["tax_preview"]["price_floor"]["rows"], [])
+
+	def test_line_below_its_picked_list_is_judged_against_that_list(self):
+		(row,) = validate_checkout_invoice(self._line_pick(390))["tax_preview"]["price_floor"]["rows"]
+		self.assertEqual((row["minimum"], row["price_list"]), (400, ELITE))
+
+	def test_checkout_of_a_line_at_its_picked_lists_price_needs_no_authorisation(self):
+		result = queue_sales_invoice(self._line_pick(400))
+		self.assertTrue(result["success"], result.get("message"))
+
+	def test_held_line_at_its_picked_lists_price_is_not_sent_for_approval(self):
+		if not frappe.get_meta("Sales Order").has_field("powerpack_price_breach"):
+			self.skipTest("cecypo_powerpack price-approval fields are not installed")
+		frappe.set_user("Administrator")
+		settings = frappe.get_single("PowerPack Settings")
+		settings.msp_approval_sales_order = 1
+		settings.save()
+		frappe.set_user(CASHIER)
+		asked = create_held_order({**self._line_pick(400), "status": "held", "request_price_approval": True})
+		self.assertTrue(asked["success"], asked.get("message"))
+		self.assertFalse(asked["approval_requested"])
+
 	def test_unticked_till_preview_not_enforced(self):
 		frappe.db.set_value("POS Profile", self.till, ENFORCE_FIELD, 0)
 		result = validate_checkout_invoice(self._payload())

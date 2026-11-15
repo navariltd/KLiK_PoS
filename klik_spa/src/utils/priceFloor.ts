@@ -59,6 +59,15 @@ export function floorBlockMessage(floor: PriceFloor | null | undefined, auth: Fl
 }
 
 /**
+ * The list price a line's typed rate is held to: its own list's, when the line was switched to
+ * one (the rate box's star), else the cart list's. 0 when the picked list's price is not at
+ * hand (a resumed held line): the box then sets no minimum and the server judges at checkout.
+ */
+export function lineListRate(cartListRate: number, pickedList: string | undefined, pickedListRate: number | undefined): number {
+  return pickedList ? Number(pickedListRate) || 0 : cartListRate;
+}
+
+/**
  * The lowest rate the cashier may type in a line's rate box, or null when there is none: the
  * till must enforce the list floor and not allow discounts. `listRate` is the line's list price,
  * in the box's own tax terms. The server still judges every sale at checkout.

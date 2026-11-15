@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { authorisationStillValid, checkoutPriceList, floorBlockMessage, floorRowsKey, rateBoxMinimum, type FloorRow } from "./priceFloor";
+import { authorisationStillValid, checkoutPriceList, floorBlockMessage, floorRowsKey, lineListRate, rateBoxMinimum, type FloorRow } from "./priceFloor";
 
 const row = (over: Partial<FloorRow> = {}): FloorRow => ({
   idx: 1,
@@ -88,5 +88,19 @@ describe("rateBoxMinimum", () => {
     expect(rateBoxMinimum({ ...till, powerpack_enforce_list_floor: 0 }, 1050)).toBeNull();
     expect(rateBoxMinimum(till, 0)).toBeNull();
     expect(rateBoxMinimum(null, 1050)).toBeNull();
+  });
+});
+
+describe("lineListRate", () => {
+  it("is the cart list's price on a line that was not switched", () => {
+    expect(lineListRate(450, "", 400)).toBe(450);
+    expect(lineListRate(450, undefined, undefined)).toBe(450);
+  });
+  it("is the picked list's price on a line switched to another list, even a lower one", () => {
+    expect(lineListRate(450, "Distributor", 400)).toBe(400);
+  });
+  it("is unknown (no minimum) when the picked list's price is not at hand", () => {
+    expect(lineListRate(450, "Distributor", undefined)).toBe(0);
+    expect(rateBoxMinimum({ powerpack_enforce_list_floor: 1 }, lineListRate(450, "Distributor", undefined))).toBeNull();
   });
 });
