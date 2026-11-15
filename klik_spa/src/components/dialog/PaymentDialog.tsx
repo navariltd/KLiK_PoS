@@ -27,7 +27,7 @@ import { checkoutHeldOrder, createHeldOrder, HeldOrderGoneError } from "../../se
 import { buildOrderPayload, tillFlags } from "../../utils/heldOrderPayload";
 import { clearDraftInvoiceCache, forgetOriginalDraftInvoice, forgetOriginalHeldOrder, getOriginalDraftInvoiceId, getOriginalHeldOrderApproval, getOriginalHeldOrderId, getOriginalHeldOrderMpesa, getOriginalOrderDiscountAmount, getOriginalQuotationId } from "../../utils/draftInvoiceCache";
 import { priceApprovalMessage } from "../../utils/priceApproval";
-import { checkoutPriceList, floorBlockMessage, authorisationStillValid, type FloorAuthorisation } from "../../utils/priceFloor";
+import { checkoutPriceList, floorBlockMessage, authorisationStillValid, linePickedList, type FloorAuthorisation } from "../../utils/priceFloor";
 import PriceFloorPanel from "./PriceFloorPanel";
 import { heldOrderGoneMessage, staleDraftNotice } from "../../utils/staleDraft";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
@@ -1040,7 +1040,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           discountPercentage: discountData.discountPercentage || 0,
           discountAmount: discountData.discountAmount || 0,
           serial_batch_bundle: discountData.serial_batch_bundle || null,
-          selectedPriceList: discountData.selectedPriceList || "",
+          selectedPriceList: linePickedList(discountData, item),
         };
       }),
       customer: selectedCustomer,
@@ -1443,7 +1443,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           description: item.description || "",
           item_tax_template: item.item_tax_template || "",
           item_tax_rate: normalizedItemTaxRate,
-          selectedPriceList: discountData.selectedPriceList || "",
+          selectedPriceList: linePickedList(discountData, item),
         };
       }),
       selling_price_list: cartPriceList,
@@ -1522,7 +1522,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               description: item.description || "",
               item_tax_template: item.item_tax_template || "",
               item_tax_rate: item.item_tax_rate || {},
-              selectedPriceList: discountData.selectedPriceList || "",
+              selectedPriceList: linePickedList(discountData, item),
             };
           }),
           itemDiscounts,

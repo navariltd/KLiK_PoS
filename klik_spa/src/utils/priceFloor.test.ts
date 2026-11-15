@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { authorisationStillValid, checkoutPriceList, floorBlockMessage, floorRowsKey, lineListRate, rateBoxMinimum, type FloorRow } from "./priceFloor";
+import { authorisationStillValid, checkoutPriceList, floorBlockMessage, floorRowsKey, lineListRate, linePickedList, rateBoxMinimum, type FloorRow } from "./priceFloor";
 
 const row = (over: Partial<FloorRow> = {}): FloorRow => ({
   idx: 1,
@@ -102,5 +102,17 @@ describe("lineListRate", () => {
   it("is unknown (no minimum) when the picked list's price is not at hand", () => {
     expect(lineListRate(450, "Distributor", undefined)).toBe(0);
     expect(rateBoxMinimum({ powerpack_enforce_list_floor: 1 }, lineListRate(450, "Distributor", undefined))).toBeNull();
+  });
+});
+
+describe("linePickedList", () => {
+  it("is the line's own switch when the cart set one", () => {
+    expect(linePickedList({ selectedPriceList: "Elite" }, { selected_price_list: "Retail" })).toBe("Elite");
+  });
+  it("falls back to the list a held order's line came back with", () => {
+    expect(linePickedList({}, { selected_price_list: "Elite" })).toBe("Elite");
+  });
+  it("is empty when the line has no list of its own", () => {
+    expect(linePickedList({}, {})).toBe("");
   });
 });

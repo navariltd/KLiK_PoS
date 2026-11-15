@@ -156,8 +156,10 @@ class TestHeldOrderPriceApproval(SettingsSnapshot, FrappeTestCase):
 		# single test method — see tearDownClass for the cleanup and the guard).
 		_user(CASHIER)
 		user_doc = frappe.get_doc("User", CASHIER)
-		if not any(row.role == "Sales User" for row in user_doc.roles):
-			user_doc.append("roles", {"role": "Sales User"})
+		# Accounts User: ERPNext's get_pos_profile needs read on the till's POS Profile, as a real cashier has.
+		missing = {"Sales User", "Accounts User"} - {row.role for row in user_doc.roles}
+		if missing:
+			user_doc.extend("roles", [{"role": role} for role in sorted(missing)])
 			user_doc.flags.ignore_permissions = True
 			user_doc.save()
 

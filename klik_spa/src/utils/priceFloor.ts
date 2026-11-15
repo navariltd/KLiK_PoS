@@ -81,3 +81,9 @@ export function rateBoxMinimum(
   const allowance = Math.min(Math.max(Number(posDetails?.powerpack_list_floor_discount_allowance) || 0, 0), 100);
   return Math.round(listRate * (1 - allowance / 100) * 100) / 100;
 }
+
+/** A line's picked price list: the cart's per-line switch, else the list a held order's line came
+ * back with (checkout opened from Invoice History has no cart switches, only the held lines). */
+export function linePickedList(discountData: { selectedPriceList?: string }, item: object): string {
+  return discountData.selectedPriceList || (item as { selected_price_list?: string }).selected_price_list || "";
+}
