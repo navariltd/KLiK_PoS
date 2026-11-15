@@ -101,6 +101,30 @@ def get_current_pos_profile():
 	return pos_profile_doc
 
 
+def till_currency():
+	"""The currency the current till sells in: its first mode of payment's account currency, else
+	the till's own currency, else the company's. None off a till (desk, scripts): no filter then."""
+	try:
+		name = _resolve_pos_profile_name()
+	except frappe.ValidationError:
+		frappe.clear_last_message()
+		return None
+	profile = frappe.db.get_value("POS Profile", name, ["company", "currency"], as_dict=True)
+	if not profile:
+		return None
+	mode = frappe.db.get_value(
+		"POS Payment Method", {"parent": name, "parenttype": "POS Profile"}, "mode_of_payment", order_by="idx asc"
+	)
+	account = mode and frappe.db.get_value(
+		"Mode of Payment Account", {"parent": mode, "company": profile.company}, "default_account"
+	)
+	return (
+		(account and frappe.get_cached_value("Account", account, "account_currency"))
+		or profile.currency
+		or frappe.get_cached_value("Company", profile.company, "default_currency")
+	)
+
+
 def get_current_pos_profile_lite(fields):
 	"""Return only the requested POS Profile fields as a frappe._dict.
 

@@ -8,6 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from klik_pos.api.customer import get_customers
+from klik_pos.testing import any_till_currency
 
 PRIMARY = "_Test KLiK Town Primary"
 LINKED = "_Test KLiK Town Linked Only"
@@ -32,6 +33,11 @@ def _customer(name, city=None, primary=False):
 
 
 class TestCustomerRowTown(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		any_till_currency(cls)  # get_customers is patched to an INR company below
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		_customer(PRIMARY, "NAKURU", primary=True)

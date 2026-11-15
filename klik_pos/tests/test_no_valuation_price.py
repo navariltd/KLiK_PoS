@@ -10,6 +10,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import flt
 
 from klik_pos.api.item.item_details import get_item_uoms_and_prices
+from klik_pos.testing import any_till_currency
 from klik_pos.api.item.item_price import fetch_item_price
 
 ITEM = "_Klik Unpriced Item"
@@ -20,6 +21,7 @@ class TestAnUnpricedItem(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		any_till_currency(cls)
 		frappe.set_user("Administrator")
 		if not frappe.db.exists("Item", ITEM):
 			item = frappe.new_doc("Item")

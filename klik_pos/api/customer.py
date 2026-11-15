@@ -8,7 +8,7 @@ from frappe import _
 from frappe.utils import flt, getdate, today
 from frappe.utils.nestedset import get_descendants_of
 
-from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company
+from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company, till_currency
 from klik_pos.api.loyalty import get_customer_loyalty_summary
 from klik_pos.api.customer_summary import last_visit_sql, total_orders_sql, total_spent_sql
 from .sql_builder import apply_sql_permissions
@@ -65,6 +65,12 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 
         where_conditions = ["c.disabled = 0"]
         params = []
+
+        # Only customers billed in the till's currency; no billing currency means the company's.
+        currency = till_currency()
+        if currency:
+            where_conditions.append("COALESCE(NULLIF(c.default_currency, ''), %s) = %s")
+            params.extend([company_currency, currency])
 
         if business_type == "B2B":
             where_conditions.append("c.customer_type = 'Company'")

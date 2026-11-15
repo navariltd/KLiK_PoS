@@ -228,3 +228,18 @@ def purge_voucher(doctype, name):
 	if doctype == "Sales Invoice":
 		frappe.db.delete("Klik Checkout Request", {"sales_invoice": name})
 	frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+
+
+def any_till_currency(cls):
+	"""Switch off the till-currency filter for a test class about other price-list rules: its lists
+	are ERPNext's INR test lists, while the test user's till sells in KES."""
+	from unittest.mock import patch
+
+	for target in (
+		"klik_pos.api.item.item_price.till_currency",
+		"klik_pos.api.item.pricing.till_currency",
+		"klik_pos.api.customer.till_currency",
+	):
+		patcher = patch(target, return_value=None)
+		patcher.start()
+		cls.addClassCleanup(patcher.stop)

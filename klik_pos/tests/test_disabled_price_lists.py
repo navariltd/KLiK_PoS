@@ -6,6 +6,7 @@ from erpnext.stock.doctype.item.test_item import make_item
 from frappe.tests.utils import FrappeTestCase
 
 from klik_pos.api.item.item_details import get_full_pricing_and_batch_details
+from klik_pos.testing import any_till_currency
 from klik_pos.api.item.item_price import fetch_item_price, get_price_list_with_customer_priority
 
 ITEM = "_Test KLiK Disabled PL Item"
@@ -20,6 +21,7 @@ class TestDisabledPriceLists(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		any_till_currency(cls)
 		frappe.set_user("Administrator")
 		if not frappe.db.exists("UOM", "Box"):
 			frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert()
