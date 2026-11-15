@@ -139,6 +139,12 @@ class TestPriceListUserPermission(FrappeTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			fetch_item_price(ITEM, price_list=OTHER)
 
+	def test_the_switch_menu_lists_price_lists_alphabetically(self):
+		frappe.set_user(USER)
+		names = [p["price_list"] for p in get_full_pricing_and_batch_details(ITEM)["price_lists"]]
+		self.assertGreater(len(names), 1)
+		self.assertEqual(names, sorted(names, key=str.lower))
+
 	def test_the_switch_menu_leaves_out_lists_the_user_may_not_use(self):
 		frappe.set_user(USER)
 		offered = {p["price_list"] for p in get_full_pricing_and_batch_details(ITEM)["price_lists"]}
