@@ -34,6 +34,8 @@ interface DiscountDataLike {
   customRate?: number;
   customRateIncludesTax?: boolean;
   selectedPriceList?: string;
+  /** The picked list's price for this line, kept for the rate box's minimum. */
+  selectedPriceListRate?: number;
 }
 
 export type DiscountMapLike = Record<string, DiscountDataLike | undefined>;

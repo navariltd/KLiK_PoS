@@ -39,8 +39,10 @@ def _ensure_fixtures():
 			).insert(ignore_permissions=True)
 	_user(CASHIER)
 	user = frappe.get_doc("User", CASHIER)
-	if not any(row.role == "Sales User" for row in user.roles):
-		user.append("roles", {"role": "Sales User"})
+	# Accounts User: ERPNext's get_pos_profile needs read on the till's POS Profile, as a real cashier has.
+	missing = {"Sales User", "Accounts User"} - {row.role for row in user.roles}
+	if missing:
+		user.extend("roles", [{"role": role} for role in sorted(missing)])
 		user.save(ignore_permissions=True)
 	for price_list, is_default in ((RETAIL, 1), (ELITE, 0)):
 		if not frappe.db.exists("User Permission", {"user": CASHIER, "allow": "Price List", "for_value": price_list}):
