@@ -553,7 +553,7 @@ def get_full_pricing_and_batch_details(
         "stock_by_warehouse": stock_by_warehouse,
         "total_bal_qty": total_bal_qty,
         "total_bal_val": total_bal_val,
-        "price_lists": active_prices,
+        "price_lists": sorted(active_prices, key=lambda p: (p["price_list"] or "").lower()),
         "batches": result_batches if item_info.has_batch_no else [],
         "serials": serials_list,
         "warehouse_stock": [
