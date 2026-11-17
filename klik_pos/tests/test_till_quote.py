@@ -1,5 +1,6 @@
 """Quote mode: the till saves a Quotation, which is never limited by stock."""
 
+import json
 from unittest.mock import patch
 
 import frappe
@@ -255,6 +256,28 @@ class TestQuoteStates(FrappeTestCase):
 		self.assertTrue(res["copy"])
 		self.assertEqual((res["items"][0]["quantity"], res["items"][0]["price"]), (3, 120))
 		self.assertEqual(res["discount_amount"], 0)
+
+	def test_a_copy_takes_lines_and_customer_not_the_old_sales_charges(self):
+		"""A delivery charge, delivery person, shipping rule, remarks or PO of the old sale must
+		not land quietly on the new one."""
+		name = self._quote()
+		meta = json.loads(frappe.db.get_value("Quotation", name, "custom_klik_cart_meta") or "{}")
+		meta.update({"deliveryCharge": 500, "deliveryPersonnel": "Rider 1", "shipping_rule": "Courier",
+			"remarks": "Deliver Tuesday", "extra_fields": {"po_no": "PO-9"}, "walkin_name": "Jane"})
+		frappe.db.set_value("Quotation", name, {"custom_klik_cart_meta": json.dumps(meta), "status": "Lost"})
+
+		res = quotation.get_quote_details(name, as_copy=1)
+
+		self.assertTrue(res["success"], res)
+		for key in ("deliveryCharge", "deliveryPersonnel", "shipping_rule", "remarks", "extra_fields"):
+			self.assertNotIn(key, res["cart_meta"])
+		self.assertEqual((res["remarks"], res["shipping_rule"], res["extra_fields"]), ("", None, {}))
+		self.assertEqual(res["walkin_name"], "Jane")
+
+	def test_the_quote_link_on_invoices_is_indexed(self):
+		"""Every quote row looks its invoice up by this field."""
+		ensure_quote_fields()
+		self.assertTrue(frappe.db.sql("SHOW INDEX FROM `tabSales Invoice` WHERE Column_name = 'custom_klik_quotation'"))
 
 	def test_a_lost_quote_copies(self):
 		name = self._quote()

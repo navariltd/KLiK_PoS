@@ -275,6 +275,10 @@ def get_quote_details(quote_id, as_copy=0):
             except Exception:
                 pass
         expired = _is_expired(q.valid_till)
+        if as_copy:
+            # A new sale: the old one's delivery, shipping, remarks and PO stay with it.
+            for key in ("deliveryCharge", "deliveryPersonnel", "shipping_rule", "remarks", "extra_fields"):
+                cart_meta.pop(key, None)
 
         names = {
             r.name: r.item_name
@@ -327,7 +331,7 @@ def get_quote_details(quote_id, as_copy=0):
             "selling_price_list": q.selling_price_list,
             "items": items,
             "cart_meta": cart_meta,
-            "remarks": q.get("remarks") or "",
+            "remarks": "" if as_copy else (q.get("remarks") or ""),
             "grand_total": flt(q.grand_total),
             "currency": q.currency,
             "discount_amount": 0 if as_copy else flt(q.discount_amount or 0),
