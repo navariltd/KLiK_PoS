@@ -401,6 +401,9 @@ def _so_item_row(so, pos_profile, item, warehouse):
         "delivery_date": nowdate(),
         "warehouse": warehouse,
     }
+    # The cashier's own wording; set_missing_values fills the Item's otherwise.
+    if item.get("description"):
+        row["description"] = item["description"]
     set_line_price_list(row, "Sales Order Item", item.get("price_list"))
     item_tax_template, item_tax_rate = _resolve_item_tax_details_for_line(so, item, pos_profile)
     if item_tax_template:

@@ -44,6 +44,13 @@ class TestCreateQuote(FrappeTestCase):
 		expected = add_days(nowdate(), days) if days else add_months(nowdate(), 1)
 		self.assertEqual(str(q.valid_till), str(expected))
 
+	def test_line_description_lands_on_the_quote(self):
+		payload = _payload(ITEM, qty=1, rate=100)
+		payload["items"][0]["description"] = "Cut to 2.4m, blue"
+		res = quotation.create_quote(payload)
+		self.assertTrue(res["success"], res)
+		self.assertEqual(frappe.get_doc("Quotation", res["quote_name"]).items[0].description, "Cut to 2.4m, blue")
+
 	def test_los_qty_in_payload_is_folded_back(self):
 		res = quotation.create_quote(_payload(ITEM, qty=10, los_qty=5, rate=100))
 		self.assertTrue(res["success"], res)
