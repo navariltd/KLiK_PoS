@@ -189,55 +189,84 @@ def create_quote(data):
         return {"success": False, "message": str(e)}
 
 
+ORDERED = ("Ordered", "Partially Ordered")
+QUOTE_STATES = ("open", "converted", "closed", "all")
+
+
 @frappe.whitelist()
-def get_quotes(limit=50, start=0, search=""):
-    """Open quotes of the active till's company, newest first, for any till of that company."""
+def get_quotes(limit=50, start=0, search="", state="open"):
+    """Quotes of the active till's company, newest first, for any till of that company.
+
+    state: open (the default - loadable for sale), converted (invoiced, or ordered),
+    closed (Lost or cancelled), or all. Each row carries its state and, when invoiced, the
+    invoice.
+    """
     try:
+        if state not in QUOTE_STATES:
+            frappe.throw(frappe._("Unknown quote state {0}.").format(state))
         company = _get_active_pos_profile().company
         from frappe.query_builder import Order
         from pypika.terms import ExistsCriterion
 
         q, si = frappe.qb.DocType("Quotation"), frappe.qb.DocType("Sales Invoice")
-        invoiced = frappe.qb.from_(si).select(1).where((si.custom_klik_quotation == q.name) & si.docstatus.isin([0, 1]))
+        by_quote = (si.custom_klik_quotation == q.name) & si.docstatus.isin([0, 1])
+        invoice = frappe.qb.from_(si).select(si.name).where(by_quote).orderby(si.creation).limit(1)
+        invoiced = ExistsCriterion(frappe.qb.from_(si).select(1).where(by_quote))
+        converted = invoiced | ((q.docstatus == 1) & q.status.isin(ORDERED))
+        closed = converted.negate() & ((q.docstatus == 2) | (q.status == "Lost"))
+        is_open = converted.negate() & (q.docstatus == 1) & q.status.notin(["Lost", "Cancelled", *ORDERED])
+
         query = (
             frappe.qb.from_(q)
             .select(
                 q.name, q.party_name.as_("customer"), q.customer_name,
                 q.custom_walkin_customer_name.as_("walkin_name"), q.transaction_date, q.valid_till,
-                q.grand_total, q.currency,
+                q.grand_total, q.currency, q.status, q.docstatus, invoice.as_("invoice"),
             )
-            .where((q.docstatus == 1) & q.status.notin(["Lost", "Cancelled", "Ordered", "Partially Ordered"]) & (q.company == company))
-            .where(ExistsCriterion(invoiced).negate())
+            .where(q.docstatus.isin([1, 2]) & (q.company == company))
             .orderby(q.transaction_date, order=Order.desc)
             .orderby(q.creation, order=Order.desc)
             .offset(cint(start))
             .limit(cint(limit))
         )
+        if state != "all":
+            query = query.where({"open": is_open, "converted": converted, "closed": closed}[state])
         if search:
             like = f"%{search}%"
             query = query.where(q.name.like(like) | q.customer_name.like(like) | q.custom_walkin_customer_name.like(like))
         rows = query.run(as_dict=True)
-        data = []
         for r in rows:
+            r["state"] = (
+                "converted" if r.invoice or (r.docstatus == 1 and r.status in ORDERED)
+                else "closed" if r.docstatus == 2 or r.status == "Lost"
+                else "open"
+            )
             r["expired"] = _is_expired(r.valid_till)
-            data.append(r)
-        return {"success": True, "data": data}
+        return {"success": True, "data": rows}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Quotes Error")
         return {"success": False, "message": str(e)}
 
 
 @frappe.whitelist()
-def get_quote_details(quote_id):
+def get_quote_details(quote_id, as_copy=0):
     """Items, customer and cart metadata to load a quote into the cart; same shape as
-    sales_order.get_held_order_details. An expired quote loads at today's list prices."""
+    sales_order.get_held_order_details. An expired quote loads at today's list prices.
+
+    as_copy: a converted or closed quote too, as the lines of a new sale - at today's list
+    prices and without the quote's discounts; the cart is not linked to it.
+    """
     try:
+        as_copy = cint(as_copy)
         q = frappe.get_doc("Quotation", quote_id)
-        if q.docstatus != 1 or q.status in ("Lost", "Cancelled", "Ordered", "Partially Ordered") or q.company != _get_active_pos_profile().company:
+        if q.company != _get_active_pos_profile().company or q.docstatus not in ((1, 2) if as_copy else (1,)):
             return {"success": False, "message": frappe._("Quote {0} is not available.").format(quote_id)}
-        invoice = _quote_in_use(quote_id)
-        if invoice:
-            return {"success": False, "message": frappe._("Quote {0} has already been invoiced ({1}).").format(quote_id, invoice)}
+        if not as_copy:
+            if q.status in ("Lost", "Cancelled", *ORDERED):
+                return {"success": False, "message": frappe._("Quote {0} is not available.").format(quote_id)}
+            invoice = _quote_in_use(quote_id)
+            if invoice:
+                return {"success": False, "message": frappe._("Quote {0} has already been invoiced ({1}).").format(quote_id, invoice)}
 
         cart_meta = {}
         if q.custom_klik_cart_meta:
@@ -267,7 +296,7 @@ def get_quote_details(quote_id):
         items = []
         for i, (row, line) in enumerate(zip(q.items, lines)):
             d = line_meta(cart_meta, i, row.item_code)
-            fresh = expired
+            fresh = expired or as_copy
             items.append({
                 "item_code": row.item_code,
                 "item_name": names.get(row.item_code) or row.item_code,
@@ -301,9 +330,10 @@ def get_quote_details(quote_id):
             "remarks": q.get("remarks") or "",
             "grand_total": flt(q.grand_total),
             "currency": q.currency,
-            "discount_amount": flt(q.discount_amount or 0),
+            "discount_amount": 0 if as_copy else flt(q.discount_amount or 0),
             "apply_discount_on": q.apply_discount_on or "",
             "expired": expired,
+            "copy": bool(as_copy),
         }
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Quote Details Error")

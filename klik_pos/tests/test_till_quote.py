@@ -192,6 +192,76 @@ class TestListAndLoadQuotes(FrappeTestCase):
 		self.assertEqual(quotation.get_quote_details(name)["items"][0]["price"], 120)
 
 
+class TestQuoteStates(FrappeTestCase):
+	"""The Quotes tab lists every quote with its state; a converted or closed one copies into a
+	new sale at today's prices, never linked to it."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		ensure_quote_fields()
+		self.addCleanup(frappe.db.rollback)
+		_shift(_profile(), "Administrator")
+
+	def _quote(self, qty=2, rate=100):
+		res = quotation.create_quote(_payload(ITEM, qty=qty, rate=rate))
+		self.assertTrue(res["success"], res)
+		return res["quote_name"]
+
+	def _invoice(self, quote):
+		si = frappe.new_doc("Sales Invoice")
+		si.customer = CUSTOMER
+		si.company = frappe.db.get_value("Quotation", quote, "company")
+		si.append("items", {"item_code": ITEM, "qty": 1, "rate": 1})
+		si.custom_klik_quotation = quote
+		si.insert(ignore_permissions=True, ignore_mandatory=True)
+		return si.name
+
+	def _row(self, name, state):
+		res = quotation.get_quotes(limit=500, state=state)
+		self.assertTrue(res["success"], res)
+		return next((r for r in res["data"] if r["name"] == name), None)
+
+	def test_each_state_lists_only_its_quotes(self):
+		open_q, invoiced, lost = self._quote(), self._quote(), self._quote()
+		invoice = self._invoice(invoiced)
+		frappe.db.set_value("Quotation", lost, "status", "Lost")
+
+		self.assertEqual(self._row(open_q, "open")["state"], "open")
+		self.assertIsNone(self._row(invoiced, "open"))
+		row = self._row(invoiced, "converted")
+		self.assertEqual((row["state"], row["invoice"]), ("converted", invoice))
+		self.assertEqual(self._row(lost, "closed")["state"], "closed")
+		self.assertIsNone(self._row(lost, "converted"))
+		self.assertEqual({self._row(n, "all")["state"] for n in (open_q, invoiced, lost)}, {"open", "converted", "closed"})
+
+	def test_an_ordered_quote_is_converted(self):
+		name = self._quote()
+		frappe.db.set_value("Quotation", name, "status", "Ordered")
+		self.assertEqual(self._row(name, "converted")["state"], "converted")
+
+	def test_the_default_still_lists_open_quotes_only(self):
+		invoiced = self._quote()
+		self._invoice(invoiced)
+		self.assertNotIn(invoiced, [r["name"] for r in quotation.get_quotes(limit=500)["data"]])
+
+	def test_a_converted_quote_copies_at_todays_price_and_still_wont_load_linked(self):
+		name = self._quote(qty=3, rate=100)
+		self._invoice(name)
+		self.assertFalse(quotation.get_quote_details(name)["success"])
+
+		with patch.object(quotation, "_current_list_rate", return_value=120):
+			res = quotation.get_quote_details(name, as_copy=1)
+		self.assertTrue(res["success"], res)
+		self.assertTrue(res["copy"])
+		self.assertEqual((res["items"][0]["quantity"], res["items"][0]["price"]), (3, 120))
+		self.assertEqual(res["discount_amount"], 0)
+
+	def test_a_lost_quote_copies(self):
+		name = self._quote()
+		frappe.db.set_value("Quotation", name, "status", "Lost")
+		self.assertTrue(quotation.get_quote_details(name, as_copy=1)["success"])
+
+
 class TestQuoteLink(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
