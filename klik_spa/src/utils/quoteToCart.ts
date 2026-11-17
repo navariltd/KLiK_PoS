@@ -24,3 +24,23 @@ export async function addQuoteToCart(quoteId: string): Promise<boolean> {
   }
   return loaded;
 }
+
+/**
+ * A converted or closed quote's lines and customer, into the cart as a new sale at today's
+ * prices. Not linked to the quote: it keeps the one invoice it already has.
+ */
+export async function addQuoteCopyToCart(quoteId: string): Promise<boolean> {
+  const details = await getQuoteDetails(quoteId, true);
+  if (!details?.success) {
+    toast.error(details?.message || 'Failed to copy the quote');
+    return false;
+  }
+  useCartStore.getState().exitQuoteMode();
+  // A cache with no document behind it: the cart is a new sale.
+  const loaded = await fillCartFromOrder(details, (items, customer) => cacheQuote('', items, customer, 0));
+  if (loaded) {
+    await useCartStore.getState().refreshCartPricing();
+    toast.info(`Copied ${quoteId} as a new sale at today's prices`);
+  }
+  return loaded;
+}

@@ -22,6 +22,7 @@ import {
   MessageCirclePlus,
   ShoppingCart,
   FileSignature,
+  Copy,
 } from "lucide-react";
 
 import InvoiceViewModal from "../components/InvoiceViewModal";
@@ -49,7 +50,8 @@ import { addHeldOrderToCart, fetchHeldOrder, mergeHeldOrderIntoCart, mergeRefusa
 import { heldItemsToCart } from "../utils/heldOrderPayload";
 import { canCombine } from "../utils/mergeHeldOrder";
 import { ChoiceDialog } from "../components/ui/ChoiceDialog";
-import { addQuoteToCart } from "../utils/quoteToCart";
+import { addQuoteCopyToCart, addQuoteToCart } from "../utils/quoteToCart";
+import { quoteStatusLabel } from "../utils/quoteStatus";
 import { getQuotes } from "../services/quotation";
 import QuoteSavedDialog from "../components/dialog/QuoteSavedDialog";
 import DocShareButtons from "../components/DocShareButtons";
@@ -86,6 +88,9 @@ interface HeldOrderExtras {
   inStockTotal?: number;
   /** A saved Quotation (Quotes tab): print, WhatsApp, load to cart - nothing of an invoice's. */
   isQuote?: boolean;
+  /** A quote's state (get_quotes) and, once converted, the invoice it became. */
+  quoteState?: "open" | "converted" | "closed";
+  quoteInvoice?: string | null;
 }
 
 /** "Sh 450 in stock" under a held order's total, when not all of it is. */
@@ -288,9 +293,11 @@ export default function InvoiceHistoryPage() {
   // Open quotes of this company, from any till; mapped to the row shape like held orders.
   const [quotes, setQuotes] = useState<(SalesInvoice & HeldOrderExtras)[]>([]);
   const [quoteToShare, setQuoteToShare] = useState<{ name: string; customer: string } | null>(null);
+  // Which quotes the Quotes tab lists: open (loadable for sale), converted, closed, or all.
+  const [quoteState, setQuoteState] = useState<"open" | "converted" | "closed" | "all">("open");
   useEffect(() => {
     let live = true;
-    void getQuotes({ search: searchTerm, limit: 200 }).then((res) => {
+    void getQuotes({ search: searchTerm, limit: 200, state: quoteState }).then((res) => {
       if (!live) return;
       // Refused (no Quotation read, say): say so, rather than show an empty tab.
       if (!res.success && activeTab === "Quotes") toast.error(res.message || "Failed to load quotes");
@@ -308,14 +315,16 @@ export default function InvoiceHistoryPage() {
         totalAmount: Number(q.grand_total) || 0,
         giftCardDiscount: 0,
         paymentMethod: "-",
-        status: q.expired ? "Expired" : "Quote",
+        status: quoteStatusLabel(q),
         currency: q.currency,
         canReturn: false,
         isQuote: true,
+        quoteState: q.state,
+        quoteInvoice: q.invoice,
       })) as unknown as (SalesInvoice & HeldOrderExtras)[] : []);
     });
     return () => { live = false; };
-  }, [searchTerm, activeTab]);
+  }, [searchTerm, activeTab, quoteState]);
 
   const handleLoadQuote = async (quoteId: string) => {
     try {
@@ -323,6 +332,17 @@ export default function InvoiceHistoryPage() {
     } catch (error) {
       console.error("Error loading quote:", error);
       toast.error(error instanceof Error ? error.message : "Failed to load the quote");
+    }
+  };
+
+  const quoteExtras = (row: SalesInvoice) => row as SalesInvoice & HeldOrderExtras;
+
+  const handleCopyQuote = async (quoteId: string) => {
+    try {
+      if (await addQuoteCopyToCart(quoteId)) navigate("/pos");
+    } catch (error) {
+      console.error("Error copying quote:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to copy the quote");
     }
   };
 
@@ -337,11 +357,27 @@ export default function InvoiceHistoryPage() {
           onClick={() => setQuoteToShare({ name: quoteId, customer: invoice.customer })}>
           <MessageCirclePlus className={icon} />
         </button>
-        <button type="button" onClick={() => void handleLoadQuote(quoteId)}
-          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1">
-          <ShoppingCart className={icon} />
-          <span>Load to cart</span>
-        </button>
+        {quoteExtras(invoice).quoteInvoice ? (
+          <button type="button" onClick={() => navigate(`/invoice/${quoteExtras(invoice).quoteInvoice}`)}
+            title="Open the invoice this quote became"
+            className="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white text-xs underline">
+            {quoteExtras(invoice).quoteInvoice}
+          </button>
+        ) : null}
+        {quoteExtras(invoice).quoteState === "open" || !quoteExtras(invoice).quoteState ? (
+          <button type="button" onClick={() => void handleLoadQuote(quoteId)}
+            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1">
+            <ShoppingCart className={icon} />
+            <span>Load to cart</span>
+          </button>
+        ) : (
+          <button type="button" onClick={() => void handleCopyQuote(quoteId)}
+            title="Its lines and customer, as a new sale at today's prices"
+            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1">
+            <Copy className={icon} />
+            <span>Copy to cart</span>
+          </button>
+        )}
       </>
     );
   };
@@ -489,6 +525,11 @@ const getStatusBadge = (status: string) => {
       return `${baseClasses} bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400`;
     case "overdue":
     case "expired":
+      return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
+    case "converted":
+    case "ordered":
+      return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400`;
+    case "lost":
       return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
     case "draft":
     case "held":
@@ -759,6 +800,16 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
         </select>
         {!canViewOtherCashiers && (
           <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">Showing only your transactions</p>
+        )}
+        {activeTab === "Quotes" && (
+          <div role="group" aria-label="Quote state" className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden text-sm">
+            {(["open", "converted", "closed", "all"] as const).map((st) => (
+              <button key={st} type="button" aria-pressed={quoteState === st} onClick={() => setQuoteState(st)}
+                className={`px-3 py-1.5 capitalize ${quoteState === st ? "bg-beveren-600 text-white" : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"}`}>
+                {st}
+              </button>
+            ))}
+          </div>
         )}
         {/* Held orders and quotes have no payment yet, and the filter never applies to them. */}
         {activeTab !== "Held" && activeTab !== "Quotes" && (

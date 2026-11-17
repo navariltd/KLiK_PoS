@@ -39,13 +39,20 @@ export interface QuoteListRow {
   grand_total: number;
   currency: string;
   expired: boolean;
+  /** open: loadable for sale; converted: invoiced or ordered; closed: Lost or cancelled. */
+  state: "open" | "converted" | "closed";
+  /** The invoice a converted quote became. */
+  invoice: string | null;
+  status: string;
+  docstatus: number;
 }
 
-export async function getQuotes(params: { limit?: number; start?: number; search?: string } = {}) {
+export async function getQuotes(params: { limit?: number; start?: number; search?: string; state?: "open" | "converted" | "closed" | "all" } = {}) {
   const qs = new URLSearchParams({
     limit: String(params.limit ?? 50),
     start: String(params.start ?? 0),
     search: params.search ?? "",
+    state: params.state ?? "open",
   }).toString();
   return getMessage(`/api/method/klik_pos.api.quotation.get_quotes?${qs}`, "Failed to load quotes") as Promise<{
     success: boolean;
@@ -67,9 +74,10 @@ async function getMessage(url: string, fallback: string) {
 }
 
 /** Same shape as getHeldOrderDetails, plus whether the quote is past its valid-till date. */
-export async function getQuoteDetails(quoteId: string) {
+/** asCopy: a converted or closed quote too, as a new sale's lines at today's prices. */
+export async function getQuoteDetails(quoteId: string, asCopy = false) {
   return getMessage(
-    `/api/method/klik_pos.api.quotation.get_quote_details?quote_id=${encodeURIComponent(quoteId)}`,
+    `/api/method/klik_pos.api.quotation.get_quote_details?quote_id=${encodeURIComponent(quoteId)}${asCopy ? "&as_copy=1" : ""}`,
     "Failed to load the quote",
   ) as Promise<{
     success: boolean;
