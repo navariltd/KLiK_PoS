@@ -118,3 +118,18 @@ class TestPaymentDetailsEdges(MpesaFirstCase):
 			res = get_invoice_details(invoice.name)
 		self.assertTrue(res["success"], res)
 		self.assertIsNone(res["data"]["payment_details"])
+
+
+class TestInvoiceReturnLinks(MpesaFirstCase):
+	def test_the_sale_lists_its_submitted_returns(self):
+		from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+
+		invoice = create_sales_invoice(company=COMPANY, customer=CUSTOMER, rate=100, qty=2)
+		ret = make_sales_return(invoice.name)
+		ret.items[0].qty = -1
+		ret.insert(ignore_permissions=True)
+		ret.submit()
+
+		data = get_invoice_details(invoice.name)["data"]
+		self.assertEqual([r["name"] for r in data["returns"]], [ret.name])
+		self.assertEqual(get_invoice_details(ret.name)["data"]["return_against"], invoice.name)

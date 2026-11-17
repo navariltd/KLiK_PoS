@@ -51,6 +51,7 @@ import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { MULTI_INVOICE_RETURN_ENABLED } from "../utils/featureFlags";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { PaymentDetails } from "../components/invoice/PaymentDetails";
+import { ReturnLinks } from "../components/invoice/ReturnLinks";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import { useCartStore } from "../stores/cartStore";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
@@ -430,6 +431,7 @@ export default function InvoiceViewPage() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     {invoice.posting_date} at {invoice.posting_time}
                   </p>
+                  <ReturnLinks invoice={invoice} />
                 </div>
                 <div className={getStatusBadge(invoice.status)}>
                   <CheckCircle size={16} />

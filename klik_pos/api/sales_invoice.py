@@ -2092,6 +2092,13 @@ def get_invoice_details(invoice_id):
 		)
 		invoice_data["payment_methods"] = payments
 		invoice_data["mode_of_payment"] = mode_label(payments)
+		# The credit notes against this sale, for the page to link to (a return links back by return_against).
+		invoice_data["returns"] = frappe.get_all(
+			"Sales Invoice",
+			filters={"return_against": invoice.name, "is_return": 1, "docstatus": 1},
+			fields=["name", "posting_date", "grand_total"],
+			order_by="posting_date, creation",
+		)
 		# A detail panel: if it cannot be read, the page still shows the sale, with the mode label.
 		from klik_pos.api import payment_rows
 
