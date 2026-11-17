@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { toast } from "react-toastify";
 import type { CartItem } from "../../../types";
 import type { POSDetails } from "../../stores/posProfileStore";
-import type { GridCol } from "../../utils/lineGridKeys";
+import { qtyCommit, type GridCol } from "../../utils/lineGridKeys";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { getEffectiveDisplayRate, getEffectiveItemRate, getExclusiveTaxRateForItem, getPreDiscountRate, type DiscountMapLike } from "../../utils/cartPricing";
 import { roundCurrency } from "../../utils/currencyMath";
@@ -116,7 +116,8 @@ export default function LineGridRow({
   const listRate = Number(item.original_price || 0) || item.price;
 
   const commitQty = (n: number | undefined) => {
-    if (n !== undefined && Number.isFinite(n) && n > 0 && n !== item.quantity) onUpdateQuantity(item.id, n);
+    const q = qtyCommit(n, item.quantity);
+    if (q !== null) onUpdateQuantity(item.id, q === "remove" ? 0 : q); // the cart drops a line at 0
   };
   // As CartItemRow.handleRateChange: empty resets to the list rate; any rate change clears the line discount.
   const commitRate = (n: number | undefined, text: string) => {

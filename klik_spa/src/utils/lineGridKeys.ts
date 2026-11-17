@@ -63,3 +63,10 @@ export function gridKeyAction(c: GridKeyCtx): GridAction {
   }
   return NONE;
 }
+
+/** A committed qty cell: a typed 0 removes the line, as in the card view; a new positive qty sets it. */
+export function qtyCommit(n: number | undefined, current: number): number | "remove" | null {
+  if (n === undefined || !Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return "remove";
+  return n === current ? null : n;
+}

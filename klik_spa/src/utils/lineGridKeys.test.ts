@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gridKeyAction, type GridKeyCtx } from "./lineGridKeys";
+import { gridKeyAction, qtyCommit, type GridKeyCtx } from "./lineGridKeys";
 
 // 3 lines (0..2) + entry row at 3 (Bottom)
 const base: GridKeyCtx = {
@@ -96,5 +96,16 @@ describe("gridKeyAction", () => {
   });
   it("any other key is none", () => {
     expect(act({ key: "a" })).toEqual({ type: "none" });
+  });
+});
+
+describe("qtyCommit", () => {
+  it("a typed 0 removes the line; a new positive qty sets it; anything else is ignored", () => {
+    expect(qtyCommit(0, 3)).toBe("remove");
+    expect(qtyCommit(5, 3)).toBe(5);
+    expect(qtyCommit(3, 3)).toBeNull();
+    expect(qtyCommit(-2, 3)).toBeNull();
+    expect(qtyCommit(undefined, 3)).toBeNull();
+    expect(qtyCommit(NaN, 3)).toBeNull();
   });
 });
