@@ -33,6 +33,9 @@ def _quote_item_row(q, pos_profile, item, warehouse):
         "uom": item.get("uom") or "",
         "warehouse": warehouse,
     }
+    # The cashier's own wording; set_missing_values fills the Item's otherwise.
+    if item.get("description"):
+        row["description"] = item["description"]
     set_line_price_list(row, "Quotation Item", item.get("price_list"))
     item_tax_template, item_tax_rate = _resolve_item_tax_details_for_line(q, item, pos_profile)
     if item_tax_template:

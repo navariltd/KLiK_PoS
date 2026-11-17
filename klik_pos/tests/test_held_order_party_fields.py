@@ -69,3 +69,12 @@ class TestHeldOrderKeepsTheCheckout(FrappeTestCase):
 		self.assertEqual(details["cart_meta"]["deliveryPersonnel"], self.personnel)
 		self.assertIn("deliveryCharge", details["cart_meta"])
 		self.assertIn("SalesTaxCharges", details["cart_meta"])
+
+
+class TestHeldOrderKeepsLineDescription(FrappeTestCase):
+	def test_line_description_lands_on_the_order(self):
+		payload = _payload(qty=1)
+		payload["items"][0]["description"] = "Cut to 2.4m, blue"
+		result = create_held_order(payload)
+		self.assertTrue(result["success"], msg=result.get("message"))
+		self.assertEqual(frappe.get_doc("Sales Order", result["order_name"]).items[0].description, "Cut to 2.4m, blue")
