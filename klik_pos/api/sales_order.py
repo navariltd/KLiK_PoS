@@ -473,6 +473,8 @@ def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta, 
     warehouse = getattr(pos_profile, "warehouse", "") or ""
 
     _set_customer(so, customer)
+    # Held again today, so dated today: the order is the cart as it stands now.
+    so.transaction_date = nowdate()
     so.delivery_date = nowdate()
     # Whoever holds it now owns where it lives. A cashier may take over an order held on
     # another shift; left stamped with that shift, its close would delete the order from

@@ -11,6 +11,7 @@ klik_spa/src/utils/draftInvoiceCache.test.ts.
 """
 
 import frappe
+from frappe.utils import add_days, nowdate
 from frappe.tests.utils import FrappeTestCase
 
 from klik_pos.api.sales_order import create_held_order
@@ -54,6 +55,15 @@ class TestReHoldingReplaces(FrappeTestCase):
 		self.assertEqual(second["order_name"], first["order_name"], "a second order was created")
 		self.assertEqual(_held_count(), before, "the held-order count grew")
 		self.assertEqual(frappe.db.get_value("Sales Order", first["order_name"], "total_qty"), 5)
+
+	def test_holding_again_dates_the_order_today(self):
+		first = create_held_order(_payload(qty=1))
+		# Held on an earlier day, recalled and held again today.
+		frappe.db.set_value("Sales Order", first["order_name"], {"transaction_date": add_days(nowdate(), -3), "delivery_date": add_days(nowdate(), -3)})
+
+		create_held_order(_payload(qty=2, held_order_id=first["order_name"]))
+
+		self.assertEqual(str(frappe.db.get_value("Sales Order", first["order_name"], "transaction_date")), nowdate())
 
 	def test_holding_without_an_id_creates_a_second_order(self):
 		"""The other side of the contract, and exactly what the expired cache was causing."""
