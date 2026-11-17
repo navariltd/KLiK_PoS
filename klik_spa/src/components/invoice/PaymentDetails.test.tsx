@@ -45,4 +45,9 @@ describe("PaymentDetails", () => {
     const html = renderToStaticMarkup(<PaymentDetails payments={[cash, mpesa]} {...base} />);
     expect(html.match(/<details/g)).toHaveLength(1);
   });
+
+  it("Paid adds up the payments shown: an M-Pesa advance leaves the invoice's paid_amount at 0", () => {
+    const html = renderToStaticMarkup(<PaymentDetails payments={[{ ...mpesa, amount: 855 }]} {...base} paidAmount={0} />);
+    expect(html).toMatch(/Paid <\/span><span[^>]*>KES\s*855\.00/);
+  });
 });
