@@ -235,6 +235,9 @@ export interface SalesInvoiceItem {
 }
 
 export interface SalesInvoice {
+  /** get_invoice_details: each payment with what identifies it; null when it could not be read. */
+  payment_details?: import("../src/components/invoice/PaymentDetails").PaymentDetail[] | null;
+  due_date?: string | null;
   id: string
   date: string
   name: string

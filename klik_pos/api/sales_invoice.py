@@ -2092,6 +2092,14 @@ def get_invoice_details(invoice_id):
 		)
 		invoice_data["payment_methods"] = payments
 		invoice_data["mode_of_payment"] = mode_label(payments)
+		# A detail panel: if it cannot be read, the page still shows the sale, with the mode label.
+		from klik_pos.api import payment_rows
+
+		try:
+			invoice_data["payment_details"] = payment_rows.payment_details(invoice)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Invoice Payment Details Error: {invoice.name}")
+			invoice_data["payment_details"] = None
 
 		return {
 			"success": True,
