@@ -2463,6 +2463,14 @@ def _queue_sales_invoice(data, source_order=None):
 			return _checkout_request_response(existing_checkout)
 		state.mark_claimed(checkout_request_id)
 
+		# Held orders merged into this cart, retired with the sale - every checkout route
+		# that queues an invoice comes through here, a plain sale included. Deleted before
+		# the invoice is written: a failure until then rolls the deletion back with it, and
+		# from then on the invoice (even one kept as Failed, to retry) carries their lines.
+		from klik_pos.api.sales_order import _claim_merged_orders, _delete_merged_orders
+
+		_delete_merged_orders(_claim_merged_orders(data, source_order))
+
 		(
 			customer,
 			items,

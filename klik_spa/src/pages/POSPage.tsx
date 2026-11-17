@@ -12,7 +12,7 @@ import { usePOSOpeningStatus } from '../hooks/usePOSOpeningEntry'
 import RetailPOSLayout from "../components/RetailPOSLayout"
 import POSOpeningModal from '../components/PosOpeningEntryDialog'
 import erpnextAPI from '../services/erpnext-api'
-import { loadCachedItemsToCart, hasCachedDraftInvoiceItems } from '../utils/draftInvoiceCache'
+import { loadCachedItemsToCart, hasCachedDraftInvoiceItems, takeCartAlreadyLoaded } from '../utils/draftInvoiceCache'
 import { usePOSProfileStore } from '../stores/posProfileStore'
 
 export default function MainPOSScreen() {
@@ -159,7 +159,8 @@ export default function MainPOSScreen() {
     if (posReady && !cacheLoaded && isMountedRef.current) {
       setTimeout(async () => {
         if (!isMountedRef.current) return
-        const hasCached = hasCachedDraftInvoiceItems()
+        // A merge has just set the cart and the cache alike: reloading would clear coupons and the sale type.
+        const hasCached = !takeCartAlreadyLoaded() && hasCachedDraftInvoiceItems()
         if (hasCached) {
           await loadCachedItemsToCart()
         }

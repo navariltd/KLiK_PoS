@@ -24,6 +24,7 @@ import {
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
 import { checkoutHeldOrder, createHeldOrder, HeldOrderGoneError } from "../../services/salesOrder";
+import { mergedOrderIds } from "../../utils/mergeHeldOrder";
 import { buildOrderPayload, tillFlags } from "../../utils/heldOrderPayload";
 import { clearDraftInvoiceCache, forgetOriginalDraftInvoice, forgetOriginalHeldOrder, getOriginalDraftInvoiceId, getOriginalHeldOrderApproval, getOriginalHeldOrderId, getOriginalHeldOrderMpesa, getOriginalOrderDiscountAmount, getOriginalQuotationId } from "../../utils/draftInvoiceCache";
 import { priceApprovalMessage } from "../../utils/priceApproval";
@@ -1846,6 +1847,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       : buildPaymentData(deliveryPersonnel);
     const originalHeldOrderId = getOriginalHeldOrderId();
     const originalDraftInvoiceId = getOriginalDraftInvoiceId();
+    // Held orders merged into this cart: the sale deletes them, once it succeeds.
+    const merged = mergedOrderIds(cartItems, originalHeldOrderId || mpesaOrderName);
     let activeCheckoutRequestId: string | null = null;
     try {
       let response;
@@ -1855,7 +1858,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         // from (when it is not that order itself) is finished with it.
         response = await submitMpesaOrder(
           mpesaOrderName,
-          { ...paymentData, enable_background_invoice_submission: enableBackgroundSubmission },
+          { ...paymentData, enable_background_invoice_submission: enableBackgroundSubmission, merged_held_order_ids: merged },
           originalHeldOrderId,
           remarks.trim(),
         );
@@ -1865,6 +1868,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         const checkoutPayload = {
           ...paymentData,
           enable_background_invoice_submission: enableBackgroundSubmission,
+          merged_held_order_ids: merged,
         };
         const attempt = getOrCreateCheckoutAttempt(
           getCheckoutCartFingerprint(
@@ -1892,6 +1896,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         const checkoutPayload = {
           ...paymentData,
           enable_background_invoice_submission: enableBackgroundSubmission,
+          // The cart's own order may be gone (sold at another till) while lines merged from
+          // other orders remain: the sale still retires those orders.
+          merged_held_order_ids: merged,
         };
         const attempt = getOrCreateCheckoutAttempt(
           getCheckoutCartFingerprint(
@@ -2091,6 +2098,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         }),
         // The M-Pesa order (its push failed) becomes the held order, rather than a copy.
         held_order_id: getOriginalHeldOrderId() || mpesaOrderName,
+        // Held orders merged into this cart: the hold deletes them.
+        merged_held_order_ids: mergedOrderIds(cartItems, getOriginalHeldOrderId() || mpesaOrderName),
         request_price_approval: askingManager,
       };
 

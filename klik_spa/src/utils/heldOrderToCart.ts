@@ -1,5 +1,7 @@
 import { getHeldOrderDetails } from '../services/salesOrder';
-import { cacheHeldOrder, loadCachedItemsToCart } from './draftInvoiceCache';
+import { cacheHeldOrder, getOriginalDraftInvoiceId, getOriginalHeldOrderId, getOriginalQuotationId, loadCachedItemsToCart, markCartAlreadyLoaded, setCachedItems } from './draftInvoiceCache';
+import { mergeCartLines, mergedOrderIds } from './mergeHeldOrder';
+import { PRICE_APPROVAL_PENDING } from './priceApproval';
 import { transformCustomerInfo } from './transformCustomerInfo';
 import { useCartStore } from '../stores/cartStore';
 import { usePOSProfileStore } from '../stores/posProfileStore';
@@ -12,11 +14,55 @@ import type { CartItem, Customer } from '../../types';
 // `types/index` Customer. They are structurally compatible at runtime — bridge here.
 type CacheCustomer = Customer;
 
-export async function addHeldOrderToCart(orderId: string): Promise<boolean> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchHeldOrder(orderId: string): Promise<any> {
   const orderData = await getHeldOrderDetails(orderId);
   if (!orderData?.success) {
     throw new Error(orderData?.message || 'Failed to load held order');
   }
+  return orderData;
+}
+
+/** Why the cart can't take this order's lines by merging, or null when it can. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mergeRefusal(orderId: string, orderData: any): string | null {
+  if (getOriginalDraftInvoiceId()) return 'The cart is a draft invoice: it can only be replaced.';
+  if (getOriginalQuotationId()) return 'The cart is a quote: it can only be replaced.';
+  if (mergedOrderIds(useCartStore.getState().cartItems, null).includes(orderId)) return `${orderId} is already merged into the cart.`;
+  if (orderData.mpesa_order) return `${orderId} is an M-Pesa order: it can only be opened on its own.`;
+  if (orderData.approval_state === PRICE_APPROVAL_PENDING) return `${orderId} is waiting for price approval: it can only be opened on its own.`;
+  return null;
+}
+
+/**
+ * Add a held order's lines to the cart. The cart keeps its own customer and checkout details;
+ * the merged order is deleted when the sale is held again or checked out. A cart with no held
+ * order behind it becomes this order, so a hold updates it instead of making another.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mergeHeldOrderIntoCart(orderId: string, orderData: any, combine: boolean): void {
+  const cart = useCartStore.getState();
+  const items = mergeCartLines(cart.cartItems, heldItemsToCart(orderData.items), orderId, combine);
+  const customer = (cart.selectedCustomer ?? orderData.customer_data ?? null) as CacheCustomer | null;
+  if (getOriginalHeldOrderId()) {
+    setCachedItems(items, customer);
+  } else {
+    // No approval or M-Pesa state carried: they were given for the order's lines alone.
+    cacheHeldOrder(orderId, items, customer);
+  }
+  markCartAlreadyLoaded();
+  useCartStore.setState({ cartItems: items, selectedCustomer: customer as never });
+
+  const dropped: string[] = [];
+  if (cart.selectedCustomer && orderData.customer && orderData.customer !== cart.selectedCustomer.id) dropped.push(`its customer (${orderData.customer})`);
+  if (Number(orderData.discount_amount) > 0) dropped.push('its order discount');
+  if (Number(orderData.cart_meta?.deliveryCharge) > 0) dropped.push('its delivery charge');
+  toast.success(`${orderId} merged into the cart.`);
+  if (dropped.length) toast.info(`Not carried over from ${orderId}: ${dropped.join(', ')}.`);
+}
+
+export async function addHeldOrderToCart(orderId: string): Promise<boolean> {
+  const orderData = await fetchHeldOrder(orderId);
   return fillCartFromOrder(orderData, (items, customer) => cacheHeldOrder(
     orderId,
     items,

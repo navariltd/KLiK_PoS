@@ -148,6 +148,42 @@ def _hold_mpesa_order(so):
     so.custom_is_klik_held = 1
 
 
+MERGED_ORDERS_KEY = "merged_held_order_ids"
+
+
+def _claim_merged_orders(data, *finishing):
+    """Lock the held orders whose lines were merged into this sale, before any of it is done.
+
+    The caller deletes them once the sale (or re-hold) succeeds. One that is gone, at another
+    till, or waiting on an M-Pesa push refuses the whole sale: its lines may already be sold.
+    Plain errors, never held_order_gone - that code makes the POS drop the cart's own order.
+    """
+    ids = (data or {}).get(MERGED_ORDERS_KEY) if isinstance(data, dict) else None
+    ids = [i for i in dict.fromkeys(ids or []) if i and i not in finishing]
+    for order_id in ids:
+        why = _held_order_gone(order_id)
+        if not why:
+            try:
+                _lock_held_order(order_id)
+            except frappe.DoesNotExistError as e:
+                why = str(e)
+        if why:
+            frappe.throw(_("{0} Its lines were merged into this sale: remove them and try again.").format(why))
+        so = frappe.get_doc("Sales Order", order_id)
+        _assert_held_order_access(so)
+        if so.get("custom_klik_mpesa_order"):
+            frappe.throw(_("Order {0} is an M-Pesa order and can't be merged into another sale.").format(order_id))
+    return ids
+
+
+def _delete_merged_orders(ids):
+    """Delete claimed merged orders. Unlike the cart's own order, a failure raises: swallowed,
+    the sale would commit with the order still held and its lines already sold."""
+    for order_id in ids:
+        with _keeping_naming_series():
+            frappe.delete_doc("Sales Order", order_id, ignore_permissions=True)
+
+
 def _remove_checked_out_order(order_id):
     """The order is now an invoice: take it off the Held tab."""
     try:
@@ -572,14 +608,18 @@ def create_held_order(data):
             _assert_held_order_access(so)
             if so.docstatus != 0:
                 frappe.throw(_("Cannot update held order {0}: it is no longer a draft.").format(target_order_id))
+            merged = _claim_merged_orders(data, target_order_id)
             _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta, order_discount_amount)
             so.custom_klik_cart_meta = json.dumps(cart_meta)
             so.flags.powerpack_request_list_approval = ask_manager
             so.save(ignore_permissions=True)
         else:
+            merged = _claim_merged_orders(data)
             so = _build_sales_order_doc(customer, items, sales_and_tax_charges, cart_meta, order_discount_amount)
             so.flags.powerpack_request_list_approval = ask_manager
             so.insert(ignore_permissions=True)
+
+        _delete_merged_orders(merged)
 
         # Sales Order.tax_id is fetched from Customer.tax_id on every save, which wipes the
         # walk-in buyer's PIN the cashier typed. Put it back, as the invoice path does.
