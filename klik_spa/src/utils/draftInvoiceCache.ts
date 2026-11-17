@@ -224,6 +224,12 @@ export function hasCachedDraftInvoiceItems(): boolean {
   }
 }
 
+/** A merge changed the cart's lines: POS reloads the cache on mount, so it must carry them too. */
+export function setCachedItems(items: CartItem[]): void {
+  const cache = readCacheIgnoringAge();
+  if (cache) localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, items, timestamp: Date.now() }));
+}
+
 export function getOriginalDraftInvoiceId(): string | null {
   return readCacheIgnoringAge()?.originalDraftInvoiceId || null;
 }

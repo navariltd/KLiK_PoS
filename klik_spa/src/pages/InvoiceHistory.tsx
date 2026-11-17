@@ -45,7 +45,10 @@ import { createSalesReturn, retryQueuedInvoice } from "../services/salesInvoice"
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
-import { addHeldOrderToCart } from "../utils/heldOrderToCart";
+import { addHeldOrderToCart, fetchHeldOrder, mergeHeldOrderIntoCart, mergeRefusal } from "../utils/heldOrderToCart";
+import { heldItemsToCart } from "../utils/heldOrderPayload";
+import { canCombine } from "../utils/mergeHeldOrder";
+import { ChoiceDialog } from "../components/ui/ChoiceDialog";
 import { addQuoteToCart } from "../utils/quoteToCart";
 import { getQuotes } from "../services/quotation";
 import QuoteSavedDialog from "../components/dialog/QuoteSavedDialog";
@@ -54,7 +57,7 @@ import {
   applyHeldOrderAction,
   getHeldOrders,
 } from "../services/salesOrder";
-import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { getOriginalHeldOrderId, loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { approvalBadge, PRICE_APPROVED, WITHDRAW_APPROVAL } from "../utils/priceApproval";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { handlePrintInvoice } from "../utils/printHandler";
@@ -221,6 +224,10 @@ export default function InvoiceHistoryPage() {
   // can route through the Sales Order flow instead of the (now empty) draft-SI flow.
   const [heldOrders, setHeldOrders] = useState<(SalesInvoice & HeldOrderExtras)[]>([]);
   const [withdrawTarget, setWithdrawTarget] = useState<string | null>(null);
+  // Edit on a held order while the cart holds something else: replace or merge, then (if the
+  // same items are in both) separate lines or combined quantities.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [mergeAsk, setMergeAsk] = useState<{ id: string; data: any; step: "how" | "combine" } | null>(null);
   const [isWithdrawingApproval, setIsWithdrawingApproval] = useState(false);
   const refetchHeldOrders = useCallback(async () => {
     try {
@@ -1235,19 +1242,33 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
 
     try {
       const isHeldOrder = !!(invoice as SalesInvoice & { isHeldOrder?: boolean }).isHeldOrder;
-      const success = isHeldOrder
-        ? await addHeldOrderToCart(draftInvoiceId)
-        : await addDraftInvoiceToCart(draftInvoiceId);
-      if (success) {
-        setTimeout(() => {
-          navigate('/pos'); // Navigate directly to POS page
-        }, 500);
+      // Items already in the cart from something else: replace them, or merge this order in.
+      if (isHeldOrder && cartItems.length > 0 && getOriginalHeldOrderId() !== draftInvoiceId) {
+        setMergeAsk({ id: draftInvoiceId, data: await fetchHeldOrder(draftInvoiceId), step: "how" });
+        return;
       }
+      await openInCart(draftInvoiceId, isHeldOrder);
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error going to cart:", error);
       toast.error(error.message || "Failed to add items to cart");
     }
+  };
+
+  const openInCart = async (id: string, isHeldOrder: boolean) => {
+    const success = isHeldOrder ? await addHeldOrderToCart(id) : await addDraftInvoiceToCart(id);
+    if (success) {
+      setTimeout(() => {
+        navigate('/pos'); // Navigate directly to POS page
+      }, 500);
+    }
+  };
+
+  const finishMerge = (combine: boolean) => {
+    if (!mergeAsk) return;
+    mergeHeldOrderIntoCart(mergeAsk.id, mergeAsk.data, combine);
+    setMergeAsk(null);
+    navigate('/pos');
   };
 
   const handleSubmitDirect = async (invoice: SalesInvoice) => {
@@ -1792,6 +1813,44 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
           allowDismiss
           title="Verify salesperson"
           description="Verify the salesperson before continuing this invoice action."
+        />
+
+        <ChoiceDialog
+          isOpen={mergeAsk?.step === "how"}
+          onClose={() => setMergeAsk(null)}
+          title={`Open ${mergeAsk?.id ?? ""}`}
+          message={`The cart already has ${cartItems.length} line${cartItems.length === 1 ? "" : "s"}. Replace them with ${mergeAsk?.id ?? "this order"}, or merge its lines into the cart?`}
+          choices={[
+            {
+              label: "Replace",
+              onChoose: () => {
+                const id = mergeAsk!.id;
+                setMergeAsk(null);
+                openInCart(id, true).catch((e) => toast.error(e?.message || "Failed to add items to cart"));
+              },
+            },
+            {
+              label: "Merge",
+              primary: true,
+              disabledReason: mergeAsk ? mergeRefusal(mergeAsk.id, mergeAsk.data) : null,
+              onChoose: () => {
+                if (!mergeAsk) return;
+                if (canCombine(cartItems, heldItemsToCart(mergeAsk.data.items))) setMergeAsk({ ...mergeAsk, step: "combine" });
+                else finishMerge(false);
+              },
+            },
+          ]}
+        />
+
+        <ChoiceDialog
+          isOpen={mergeAsk?.step === "combine"}
+          onClose={() => setMergeAsk(null)}
+          title="Same items in both"
+          message={`Some items in ${mergeAsk?.id ?? "this order"} are already in the cart. Keep them as separate lines, or add their quantities to the cart's lines (at the cart's prices)?`}
+          choices={[
+            { label: "Keep separate lines", onChoose: () => finishMerge(false) },
+            { label: "Combine quantities", primary: true, onChoose: () => finishMerge(true) },
+          ]}
         />
 
         <ConfirmDialog
