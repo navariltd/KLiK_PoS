@@ -28,6 +28,8 @@ QUOTE_FIELDS = {
 			"fieldtype": "Link",
 			"options": "Quotation",
 			"read_only": 1,
+			# The Quotes tab looks each quote's invoice up by it.
+			"search_index": 1,
 			"no_copy": 1,
 			"allow_on_submit": 0,
 			"insert_after": "customer",

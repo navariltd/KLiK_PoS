@@ -49,6 +49,13 @@ describe("createQuote", () => {
 });
 
 describe("quote lookups", () => {
+  it("getQuotes asks for the state the tab is on", async () => {
+    const fetchMock = reply({ success: true, data: [] });
+    vi.stubGlobal("fetch", fetchMock);
+    await getQuotes({ state: "converted" });
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("state=converted");
+  });
+
   it("getQuotes passes paging and search", async () => {
     const fetchMock = reply({ success: true, data: [{ name: "SAL-QTN-0001" }] });
     vi.stubGlobal("fetch", fetchMock);
@@ -57,7 +64,7 @@ describe("quote lookups", () => {
 
     expect(result.data).toEqual([{ name: "SAL-QTN-0001" }]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/method/klik_pos.api.quotation.get_quotes?limit=20&start=40&search=acme",
+      "/api/method/klik_pos.api.quotation.get_quotes?limit=20&start=40&search=acme&state=open",
       { credentials: "include" },
     );
   });
