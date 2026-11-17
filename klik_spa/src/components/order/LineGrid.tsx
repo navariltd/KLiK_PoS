@@ -34,7 +34,7 @@ export interface LineGridHandle {
 }
 
 /** Where focus goes once React has rendered: a display position, or a line by id (its row may not exist yet). */
-type PendingFocus = { row: number; col: GridCol } | { id: string; col: GridCol };
+type PendingFocus = { row: number; col: GridCol } | { id: string; col: GridCol } | { entry: true };
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const parts: ReactNode[] = [];
@@ -141,6 +141,12 @@ const LineGrid = forwardRef<LineGridHandle, LineGridProps>(function LineGrid(pro
   const flushFocus = () => {
     const p = pending.current;
     if (!p) return;
+    if ("entry" in p) {
+      // A line zeroed out is gone, and the cell its Enter/Tab moved to went with it: back to scanning.
+      focusEntry();
+      pending.current = null;
+      return;
+    }
     if ("row" in p) {
       // One try only, on the render after the delete; never steal focus later. A row with one unit has no UOM stop.
       void (focusCell(p.row, p.col) || (p.col === "uom" && focusCell(p.row, "qty")));
@@ -330,7 +336,7 @@ const LineGrid = forwardRef<LineGridHandle, LineGridProps>(function LineGrid(pro
             selected={item.id === selectedId}
             compact={compact}
             onSelect={onSelect}
-            onUpdateQuantity={props.onUpdateQuantity}
+            onUpdateQuantity={(id, qty) => { if (qty <= 0) pending.current = { entry: true }; props.onUpdateQuantity(id, qty); }}
             onCustomRateChange={props.onCustomRateChange}
             onDiscountChange={props.onDiscountChange}
             onRemoveItem={onRemoveItem}
