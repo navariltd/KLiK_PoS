@@ -1896,6 +1896,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         const checkoutPayload = {
           ...paymentData,
           enable_background_invoice_submission: enableBackgroundSubmission,
+          // The cart's own order may be gone (sold at another till) while lines merged from
+          // other orders remain: the sale still retires those orders.
+          merged_held_order_ids: merged,
         };
         const attempt = getOrCreateCheckoutAttempt(
           getCheckoutCartFingerprint(

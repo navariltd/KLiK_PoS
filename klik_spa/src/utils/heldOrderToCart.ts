@@ -1,6 +1,6 @@
 import { getHeldOrderDetails } from '../services/salesOrder';
-import { cacheHeldOrder, getOriginalDraftInvoiceId, getOriginalHeldOrderId, getOriginalQuotationId, loadCachedItemsToCart, setCachedItems } from './draftInvoiceCache';
-import { mergeCartLines } from './mergeHeldOrder';
+import { cacheHeldOrder, getOriginalDraftInvoiceId, getOriginalHeldOrderId, getOriginalQuotationId, loadCachedItemsToCart, markCartAlreadyLoaded, setCachedItems } from './draftInvoiceCache';
+import { mergeCartLines, mergedOrderIds } from './mergeHeldOrder';
 import { PRICE_APPROVAL_PENDING } from './priceApproval';
 import { transformCustomerInfo } from './transformCustomerInfo';
 import { useCartStore } from '../stores/cartStore';
@@ -28,6 +28,7 @@ export async function fetchHeldOrder(orderId: string): Promise<any> {
 export function mergeRefusal(orderId: string, orderData: any): string | null {
   if (getOriginalDraftInvoiceId()) return 'The cart is a draft invoice: it can only be replaced.';
   if (getOriginalQuotationId()) return 'The cart is a quote: it can only be replaced.';
+  if (mergedOrderIds(useCartStore.getState().cartItems, null).includes(orderId)) return `${orderId} is already merged into the cart.`;
   if (orderData.mpesa_order) return `${orderId} is an M-Pesa order: it can only be opened on its own.`;
   if (orderData.approval_state === PRICE_APPROVAL_PENDING) return `${orderId} is waiting for price approval: it can only be opened on its own.`;
   return null;
@@ -44,11 +45,12 @@ export function mergeHeldOrderIntoCart(orderId: string, orderData: any, combine:
   const items = mergeCartLines(cart.cartItems, heldItemsToCart(orderData.items), orderId, combine);
   const customer = (cart.selectedCustomer ?? orderData.customer_data ?? null) as CacheCustomer | null;
   if (getOriginalHeldOrderId()) {
-    setCachedItems(items);
+    setCachedItems(items, customer);
   } else {
     // No approval or M-Pesa state carried: they were given for the order's lines alone.
     cacheHeldOrder(orderId, items, customer);
   }
+  markCartAlreadyLoaded();
   useCartStore.setState({ cartItems: items, selectedCustomer: customer as never });
 
   const dropped: string[] = [];

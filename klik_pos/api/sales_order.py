@@ -176,6 +176,14 @@ def _claim_merged_orders(data, *finishing):
     return ids
 
 
+def _delete_merged_orders(ids):
+    """Delete claimed merged orders. Unlike the cart's own order, a failure raises: swallowed,
+    the sale would commit with the order still held and its lines already sold."""
+    for order_id in ids:
+        with _keeping_naming_series():
+            frappe.delete_doc("Sales Order", order_id, ignore_permissions=True)
+
+
 def _remove_checked_out_order(order_id):
     """The order is now an invoice: take it off the Held tab."""
     try:
@@ -611,8 +619,7 @@ def create_held_order(data):
             so.flags.powerpack_request_list_approval = ask_manager
             so.insert(ignore_permissions=True)
 
-        for order_id in merged:
-            _remove_checked_out_order(order_id)
+        _delete_merged_orders(merged)
 
         # Sales Order.tax_id is fetched from Customer.tax_id on every save, which wipes the
         # walk-in buyer's PIN the cashier typed. Put it back, as the invoice path does.
@@ -1047,7 +1054,6 @@ def _checkout_held_order(order_id, data=None):
         gone = _claim_held_order(order_id)
         if gone:
             return gone
-        merged = _claim_merged_orders(data, order_id)
 
         # A POS that sends no remarks still gets the held order's onto the invoice.
         held_remarks = frappe.db.get_value("Sales Order", order_id, "remarks") if frappe.get_meta(
@@ -1061,8 +1067,7 @@ def _checkout_held_order(order_id, data=None):
         result = _queue_sales_invoice(data, source_order=order_id)
 
         if result.get("success"):
-            for done in (order_id, *merged):
-                _remove_checked_out_order(done)
+            _remove_checked_out_order(order_id)
 
         return result
 

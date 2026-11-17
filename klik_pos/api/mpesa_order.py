@@ -430,8 +430,7 @@ def submit_mpesa_order(order_id, data=None, held_order_id=None, remarks=None):
 			frappe.db.rollback(save_point=SAVEPOINT)
 			return result
 
-		for done in merged:
-			sales_order._remove_checked_out_order(done)
+		sales_order._delete_merged_orders(merged)
 		_hand_over_to_invoice(order_id, result.get("invoice_name") or draft)
 		return result
 	except Exception as e:

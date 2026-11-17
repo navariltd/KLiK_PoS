@@ -5,7 +5,8 @@ vi.mock("react-toastify", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(
 import { toast } from "react-toastify";
 import { useCartStore } from "../stores/cartStore";
 import { cacheHeldOrder, getCachedDraftInvoiceItems, getOriginalHeldOrderId } from "./draftInvoiceCache";
-import { mergeHeldOrderIntoCart } from "./heldOrderToCart";
+import { mergeHeldOrderIntoCart, mergeRefusal } from "./heldOrderToCart";
+import { takeCartAlreadyLoaded } from "./draftInvoiceCache";
 import { mergedOrderIds } from "./mergeHeldOrder";
 import type { CartItem } from "../../types";
 
@@ -40,5 +41,21 @@ describe("mergeHeldOrderIntoCart", () => {
     const items = useCartStore.getState().cartItems;
     expect(getOriginalHeldOrderId()).toBe("SO-B");
     expect(mergedOrderIds(items, getOriginalHeldOrderId())).toEqual([]);
+  });
+
+  it("refuses to merge the same order into the cart twice", () => {
+    cacheHeldOrder("SO-A", [pen], { id: "Walk In" } as never);
+    expect(mergeRefusal("SO-B", order)).toBeNull();
+    mergeHeldOrderIntoCart("SO-B", order, false);
+    expect(mergeRefusal("SO-B", order)).toMatch(/already merged/);
+  });
+
+  it("POS keeps the merged cart as it stands: the cache has its customer, and no reload follows", () => {
+    cacheHeldOrder("SO-A", [pen], { id: "Old Customer" } as never);
+    useCartStore.setState({ selectedCustomer: { id: "New Customer" } as never });
+    mergeHeldOrderIntoCart("SO-B", order, false);
+    expect(getCachedDraftInvoiceItems()?.customer?.id).toBe("New Customer");
+    expect(takeCartAlreadyLoaded()).toBe(true);
+    expect(takeCartAlreadyLoaded()).toBe(false); // once
   });
 });

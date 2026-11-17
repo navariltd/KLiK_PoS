@@ -224,10 +224,23 @@ export function hasCachedDraftInvoiceItems(): boolean {
   }
 }
 
-/** A merge changed the cart's lines: POS reloads the cache on mount, so it must carry them too. */
-export function setCachedItems(items: CartItem[]): void {
+/** A merge changed the cart: a page reload restores from the cache, so it must carry the cart as it stands. */
+export function setCachedItems(items: CartItem[], customer: Customer | null): void {
   const cache = readCacheIgnoringAge();
-  if (cache) localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, items, timestamp: Date.now() }));
+  if (cache) localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, items, customer, timestamp: Date.now() }));
+}
+
+// The cart already stands for the cache (a merge set both): POS must not reload it on mount,
+// which would also clear coupons and reset the sale type.
+let cartAlreadyLoaded = false;
+export function markCartAlreadyLoaded(): void {
+  cartAlreadyLoaded = true;
+}
+/** Read once by POS on mount. */
+export function takeCartAlreadyLoaded(): boolean {
+  const was = cartAlreadyLoaded;
+  cartAlreadyLoaded = false;
+  return was;
 }
 
 export function getOriginalDraftInvoiceId(): string | null {
