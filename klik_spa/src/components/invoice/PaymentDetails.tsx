@@ -42,6 +42,9 @@ const value = "text-orange-900 dark:text-orange-100";
 /** The invoice's payments: one row each, opening onto everything that identifies it. */
 export function PaymentDetails({ payments, modeLabel, currency, postingDate, paidAmount, outstanding, dueDate, status, statusClass }: Props) {
   const rows = payments ?? [];
+  // What the rows add up to: an M-Pesa advance never reaches the invoice's paid_amount, and a
+  // Cash row's change is already taken off. With no rows, the invoice's own figure.
+  const paid = rows.length ? rows.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) : paidAmount;
   return (
     <div className="px-6 py-4 bg-orange-50 dark:bg-orange-900/20 border-t border-gray-200 dark:border-gray-600">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
@@ -50,7 +53,7 @@ export function PaymentDetails({ payments, modeLabel, currency, postingDate, pai
           <h4 className="font-semibold text-orange-900 dark:text-orange-100">Payment Details</h4>
         </div>
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusClass}`}>{status}</span>
-        <span><span className={label}>Paid </span><span className={`${value} font-semibold`}>{formatCurrencyWithSymbol(paidAmount, currency)}</span></span>
+        <span><span className={label}>Paid </span><span className={`${value} font-semibold`}>{formatCurrencyWithSymbol(paid, currency)}</span></span>
         {outstanding > 0 && (
           <span><span className="text-red-700 dark:text-red-300">Outstanding </span><span className="text-red-900 dark:text-red-100 font-semibold">{formatCurrencyWithSymbol(outstanding, currency)}</span></span>
         )}
