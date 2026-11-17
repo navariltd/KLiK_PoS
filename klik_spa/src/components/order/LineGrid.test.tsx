@@ -147,6 +147,12 @@ describe("ItemResults (the entry row's search dropdown)", () => {
     expect(html(false)).not.toContain(formatCurrencyWithSymbol(80, "KES"));
   });
 
+  it("shows the unit the line is added in after the stock", () => {
+    const out = html(false, [{ ...pen, uom: "Box" }]);
+    expect(out.indexOf(">Stock</span>")).toBeLessThan(out.indexOf(">UOM</span>"));
+    expect(out).toMatch(/>5<\/span><span[^>]*>Box<\/span>/);
+  });
+
   it("shows ten rows and scrolls the rest", () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ ...pen, id: `P${i}`, item_code: `P${i}` }));
     const out = html(false, many);

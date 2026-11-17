@@ -76,6 +76,7 @@ export function ItemResults({ results, highlight, query, currencySymbol, showCos
         {showCost ? <span className={money}>Cost</span> : null}
         <span className={money}>Price</span>
         <span className="w-12 shrink-0 text-right">Stock</span>
+        <span className="w-16 shrink-0">UOM</span>
       </div>
       <ul ref={list} role="listbox" className="max-h-[17.5rem] overflow-y-auto">
         {results.map((r, i) => {
@@ -99,6 +100,8 @@ export function ItemResults({ results, highlight, query, currencySymbol, showCos
               ) : null}
               <span className={`${money} text-gray-700 dark:text-gray-300`}>{formatCurrencyWithSymbol(r.price, currencySymbol)}</span>
               <span className={`w-12 shrink-0 text-right tabular-nums ${r.available > 0 ? "text-green-600" : "text-red-600"}`}>{r.available}</span>
+              {/* Stock and price are both in this unit: the one a picked line starts in. */}
+              <span className="w-16 shrink-0 truncate text-gray-500 dark:text-gray-400" title={r.uom}>{r.uom}</span>
             </li>
           );
         })}
