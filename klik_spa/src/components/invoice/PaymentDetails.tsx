@@ -15,10 +15,13 @@ export interface PaymentDetail {
   phone_number?: string | null;
   payment_entry?: string | null;
   remarks?: string | null;
+  /** The till's Cash row when change was given: what was handed over, and what went back. */
+  tendered?: number;
+  change?: number;
 }
 
 interface Props {
-  payments: PaymentDetail[] | undefined;
+  payments: PaymentDetail[] | null | undefined;
   /** Shown when there are no payment rows at all (an unpaid credit sale). */
   modeLabel?: string;
   currency: string;
@@ -31,6 +34,9 @@ interface Props {
 }
 
 const label = "text-orange-700 dark:text-orange-300";
+// Mode | Reference | Date | Amount | chevron from sm up; on a phone each payment stacks in two lines.
+const GRID = "grid-cols-[1fr_1fr_6rem_7rem_1rem]";
+const GRID_SM = "sm:grid-cols-[1fr_1fr_6rem_7rem_1rem]";
 const value = "text-orange-900 dark:text-orange-100";
 
 /** The invoice's payments: one row each, opening onto everything that identifies it. */
@@ -57,30 +63,44 @@ export function PaymentDetails({ payments, modeLabel, currency, postingDate, pai
         <p className={`text-sm ${value}`}>{modeLabel && modeLabel !== "-" ? modeLabel : "No payments recorded."}</p>
       ) : (
         <div className="text-sm">
-          <div className={`grid grid-cols-[1fr_1fr_6rem_7rem_1rem] gap-2 px-2 pb-1 text-xs font-medium ${label}`}>
+          <div className={`hidden sm:grid ${GRID} gap-2 px-2 pb-1 text-xs font-medium ${label}`}>
             <span>Mode</span><span>Reference</span><span>Date</span><span className="text-right">Amount</span><span />
           </div>
           {rows.map((p, i) => {
-            const facts = detailFacts(p);
+            const facts = detailFacts(p, (n) => formatCurrencyWithSymbol(n, currency));
+            const key = p.payment_entry || `till-${i}`;
+            const cells = (
+              <>
+                <span className={`${value} font-medium truncate`}>{p.mode_of_payment || p.paid_to || "—"}</span>
+                <span className={`${value} text-right sm:text-left font-semibold sm:font-normal tabular-nums sm:order-none order-2`}>
+                  <span className="sm:hidden">{formatCurrencyWithSymbol(p.amount, currency)}</span>
+                  <span className="hidden sm:inline truncate" title={p.reference_no || undefined}>{p.reference_no || "—"}</span>
+                </span>
+                <span className={`${value} text-xs sm:text-sm tabular-nums order-3 sm:order-none truncate`} title={p.reference_no || undefined}>
+                  <span className="sm:hidden">{p.reference_no ? `${p.reference_no} · ` : ""}</span>
+                  {p.reference_date || p.posting_date || postingDate || "—"}
+                </span>
+                <span className={`${value} hidden sm:block text-right font-semibold tabular-nums`}>{formatCurrencyWithSymbol(p.amount, currency)}</span>
+              </>
+            );
+            const row = `grid grid-cols-[1fr_auto] ${GRID_SM} gap-x-2 gap-y-0.5 items-center px-2 py-1.5`;
+            if (!facts.length) {
+              return <div key={key} className={`${row} border-t border-orange-200/60 dark:border-orange-800/40`}>{cells}<span className="hidden sm:block" /></div>;
+            }
             return (
-              <details key={p.payment_entry || `till-${i}`} className="group border-t border-orange-200/60 dark:border-orange-800/40">
-                <summary className={`grid grid-cols-[1fr_1fr_6rem_7rem_1rem] gap-2 items-center px-2 py-1.5 list-none [&::-webkit-details-marker]:hidden ${facts.length ? "cursor-pointer hover:bg-orange-100/60 dark:hover:bg-orange-900/30" : ""}`}>
-                  <span className={`${value} font-medium truncate`}>{p.mode_of_payment || p.paid_to || "—"}</span>
-                  <span className={`${value} truncate tabular-nums`} title={p.reference_no || undefined}>{p.reference_no || "—"}</span>
-                  <span className={`${value} tabular-nums`}>{p.reference_date || p.posting_date || postingDate || "—"}</span>
-                  <span className={`${value} text-right font-semibold tabular-nums`}>{formatCurrencyWithSymbol(p.amount, currency)}</span>
-                  {facts.length ? <ChevronRight className="w-4 h-4 text-orange-600 dark:text-orange-400 transition-transform group-open:rotate-90" /> : <span />}
+              <details key={key} className="group border-t border-orange-200/60 dark:border-orange-800/40">
+                <summary className={`${row} list-none [&::-webkit-details-marker]:hidden cursor-pointer hover:bg-orange-100/60 dark:hover:bg-orange-900/30`}>
+                  {cells}
+                  <ChevronRight aria-hidden className="hidden sm:block w-4 h-4 text-orange-600 dark:text-orange-400 transition-transform group-open:rotate-90" />
                 </summary>
-                {facts.length > 0 && (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2 pb-2 pl-4 text-xs">
-                    {facts.map(([k, v]) => (
-                      <div key={k} className="contents">
-                        <dt className={label}>{k}</dt>
-                        <dd className={`${value} break-words whitespace-pre-line`}>{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2 pb-2 pl-4 text-xs">
+                  {facts.map(([k, v]) => (
+                    <div key={k} className="contents">
+                      <dt className={label}>{k}</dt>
+                      <dd className={`${value} break-words whitespace-pre-line`}>{v}</dd>
+                    </div>
+                  ))}
+                </dl>
               </details>
             );
           })}
@@ -91,8 +111,10 @@ export function PaymentDetails({ payments, modeLabel, currency, postingDate, pai
 }
 
 /** What else identifies a payment, beyond its row: only what is actually recorded. */
-export function detailFacts(p: PaymentDetail): [string, string][] {
+export function detailFacts(p: PaymentDetail, money: (n: number) => string = String): [string, string][] {
   const facts: [string, string | null | undefined][] = [
+    ["Tendered", p.change ? money(p.tendered ?? 0) : null],
+    ["Change", p.change ? money(p.change) : null],
     ["Payment Entry", p.payment_entry],
     ["Phone", p.phone_number],
     ["Cheque/Ref. date", p.reference_date],

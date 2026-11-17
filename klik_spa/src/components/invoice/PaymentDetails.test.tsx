@@ -20,6 +20,8 @@ describe("PaymentDetails", () => {
   });
 
   it("opens onto what identifies the payment, and nothing that is not recorded", () => {
+    const fmt = (n: number) => `KES ${n}`;
+    expect(detailFacts({ ...cash, amount: 800, tendered: 1000, change: 200 }, fmt)).toEqual([["Tendered", "KES 1000"], ["Change", "KES 200"]]);
     expect(detailFacts(mpesa)).toEqual([["Payment Entry", "ACC-PAY-0002"], ["Phone", "254700000901"], ["Received", "2026-11-15"]]);
     expect(detailFacts(cheque).map(([k]) => k)).toEqual(["Payment Entry", "Cheque/Ref. date", "Received", "Remarks"]);
     expect(detailFacts(cash)).toEqual([]);
@@ -31,5 +33,16 @@ describe("PaymentDetails", () => {
     expect(owed).toContain("Outstanding");
     expect(owed).toContain("2026-12-01");
     expect(owed).toContain("No payments recorded.");
+  });
+
+  it("stacks each payment on a phone: the column headings only show from sm up", () => {
+    const html = renderToStaticMarkup(<PaymentDetails payments={[cheque]} {...base} />);
+    expect(html).toMatch(/class="hidden sm:grid[^"]*"[^>]*>.*Mode/);
+    expect(html).toContain("sm:grid-cols-[1fr_1fr_6rem_7rem_1rem]");
+  });
+
+  it("a row with nothing more to show is not a disclosure", () => {
+    const html = renderToStaticMarkup(<PaymentDetails payments={[cash, mpesa]} {...base} />);
+    expect(html.match(/<details/g)).toHaveLength(1);
   });
 });

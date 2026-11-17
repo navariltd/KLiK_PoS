@@ -23,7 +23,6 @@ import {
   FileMinus,
   TrendingUp,
   Clock,
-  CreditCard,
   Banknote,
 } from "lucide-react";
 

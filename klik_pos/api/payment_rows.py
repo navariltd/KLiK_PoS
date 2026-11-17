@@ -109,72 +109,103 @@ def mode_label(payment_rows: list) -> str:
 def payment_details(invoice) -> list:
 	"""Every payment on the invoice with what identifies it, for the invoice page.
 
-	The till's own rows (money taken at checkout, with any reference typed there), then each
-	Payment Entry that paid it: allocated as an advance (M-Pesa) or made against it later
-	(a credit sale settled). A Payment Entry reconciled as an advance is also listed against
-	the invoice, so entries are taken once each.
+	The till's own rows (money taken at checkout - a refund on a return is negative), then
+	each Payment Entry that paid it. A submitted invoice's references are authoritative: an
+	advance is reconciled into them on submit, and payment terms may split one entry over
+	several rows, so they are summed per entry. An advance with no reference row (a draft, or
+	a site that keeps advances unreconciled) counts as allocated. A cancelled invoice lists no
+	entries: ERPNext leaves its advance rows behind, and the entry may now pay another sale.
 	"""
-	rows = [
-		{
+	rows = _till_rows(invoice)
+	if invoice.docstatus == 2:
+		return rows
+	fields = _entry_fields()
+	referenced = frappe.db.sql(
+		f"""
+		SELECT SUM(ref.allocated_amount) AS amount, {fields}
+		FROM `tabPayment Entry Reference` ref
+		INNER JOIN `tabPayment Entry` pe ON pe.name = ref.parent
+		WHERE ref.reference_doctype = 'Sales Invoice' AND ref.reference_name = %(inv)s
+			AND ref.allocated_amount != 0 AND pe.docstatus = 1
+		GROUP BY pe.name
+		ORDER BY pe.posting_date, pe.creation
+		""",
+		{"inv": invoice.name},
+		as_dict=True,
+	)
+	advanced = frappe.db.sql(
+		f"""
+		SELECT SUM(adv.allocated_amount) AS amount, {fields}
+		FROM `tabSales Invoice Advance` adv
+		INNER JOIN `tabPayment Entry` pe ON pe.name = adv.reference_name
+		WHERE adv.parenttype = 'Sales Invoice' AND adv.parent = %(inv)s
+			AND adv.reference_type = 'Payment Entry' AND adv.allocated_amount != 0 AND pe.docstatus = 1
+		GROUP BY pe.name
+		ORDER BY pe.posting_date, pe.creation
+		""",
+		{"inv": invoice.name},
+		as_dict=True,
+	)
+	seen = {e.payment_entry for e in referenced}
+	entries = [e for e in advanced if e.payment_entry not in seen] + referenced
+	entries.sort(key=lambda e: (str(e.posting_date or ""), e.payment_entry))
+	return rows + [_entry_row(e) for e in entries]
+
+
+def _till_rows(invoice) -> list:
+	"""The payments table. A row keeps what was tendered; the change handed back comes off the
+	row it left through - the Cash row first, else the one paying into the change account - as
+	payment._change_given_by_mode does, so the rows add up to what the sale kept."""
+	payments = [p for p in invoice.get("payments") or [] if flt(p.amount) != 0]
+	change = flt(invoice.get("change_amount"))
+	giver = None
+	if change > 0:
+		change_account = invoice.get("account_for_change_amount")
+		giver = next((p for p in payments if p.get("type") == "Cash"), None) or next(
+			(p for p in payments if change_account and p.get("account") == change_account), None
+		)
+	rows = []
+	for p in payments:
+		row = {
 			"source": "till",
 			"mode_of_payment": p.mode_of_payment,
 			"amount": flt(p.amount),
 			"reference_no": p.get("reference_no") or None,
 			"remarks": p.get("custom_reference_text") or None,
 		}
-		for p in invoice.get("payments") or []
-		if flt(p.amount) > 0
-	]
-	optional = {
-		"phone_number": "custom_mpesa_phone_number",
-		"receipt_number": "custom_mpesa_receipt_number",
-	}
+		if p is giver:
+			row.update({"amount": flt(p.amount) - change, "tendered": flt(p.amount), "change": change})
+		rows.append(row)
+	return rows
+
+
+def _entry_fields() -> str:
+	optional = {"phone_number": "custom_mpesa_phone_number", "receipt_number": "custom_mpesa_receipt_number"}
 	extra = ", ".join(
-		f"pe.{column} AS {alias}" if frappe.db.has_column("Payment Entry", column) else f"NULL AS {alias}"
+		f"MAX(pe.{column}) AS {alias}" if frappe.db.has_column("Payment Entry", column) else f"NULL AS {alias}"
 		for alias, column in optional.items()
 	)
-	pe_fields = f"""pe.name AS payment_entry, pe.mode_of_payment, pe.paid_to, pe.posting_date,
-		pe.reference_no, pe.reference_date, pe.clearance_date, pe.bank_account,
-		pe.custom_remarks, pe.remarks, {extra}"""
-	entries = frappe.db.sql(
-		f"""
-		SELECT 1 AS ord, adv.idx, adv.allocated_amount AS amount, {pe_fields}
-		FROM `tabSales Invoice Advance` adv
-		INNER JOIN `tabPayment Entry` pe ON pe.name = adv.reference_name
-		WHERE adv.parenttype = 'Sales Invoice' AND adv.parent = %(inv)s
-			AND adv.reference_type = 'Payment Entry' AND adv.allocated_amount > 0 AND pe.docstatus = 1
-		UNION ALL
-		SELECT 2 AS ord, ref.idx, ref.allocated_amount AS amount, {pe_fields}
-		FROM `tabPayment Entry Reference` ref
-		INNER JOIN `tabPayment Entry` pe ON pe.name = ref.parent
-		WHERE ref.reference_doctype = 'Sales Invoice' AND ref.reference_name = %(inv)s
-			AND ref.allocated_amount > 0 AND pe.docstatus = 1
-		ORDER BY ord, posting_date, idx
-		""",
-		{"inv": invoice.name},
-		as_dict=True,
-	)
-	seen = set()
-	for e in entries:
-		if e.payment_entry in seen:
-			continue
-		seen.add(e.payment_entry)
-		rows.append(
-			{
-				"source": "payment_entry",
-				"payment_entry": e.payment_entry,
-				"mode_of_payment": e.mode_of_payment,
-				"paid_to": e.paid_to,
-				"amount": flt(e.amount),
-				"posting_date": e.posting_date,
-				# Cheque/Reference No; an M-Pesa entry's is its receipt number.
-				"reference_no": e.reference_no or e.receipt_number or None,
-				"reference_date": e.reference_date,
-				"clearance_date": e.clearance_date,
-				"bank_account": e.bank_account,
-				"phone_number": e.phone_number,
-				# ERPNext writes its own remarks unless someone ticked Custom Remarks and typed them.
-				"remarks": e.remarks if e.custom_remarks else None,
-			}
-		)
-	return rows
+	return f"""pe.name AS payment_entry, MAX(pe.mode_of_payment) AS mode_of_payment, MAX(pe.paid_to) AS paid_to,
+		MAX(pe.posting_date) AS posting_date, MAX(pe.reference_no) AS reference_no,
+		MAX(pe.reference_date) AS reference_date, MAX(pe.clearance_date) AS clearance_date,
+		MAX(pe.bank_account) AS bank_account, MAX(pe.custom_remarks) AS custom_remarks,
+		MAX(pe.remarks) AS remarks, {extra}"""
+
+
+def _entry_row(e) -> dict:
+	return {
+		"source": "payment_entry",
+		"payment_entry": e.payment_entry,
+		"mode_of_payment": e.mode_of_payment,
+		"paid_to": e.paid_to,
+		"amount": flt(e.amount),
+		"posting_date": e.posting_date,
+		# Cheque/Reference No; an M-Pesa entry's is its receipt number.
+		"reference_no": e.reference_no or e.receipt_number or None,
+		"reference_date": e.reference_date,
+		"clearance_date": e.clearance_date,
+		"bank_account": e.bank_account,
+		"phone_number": e.phone_number,
+		# ERPNext writes its own remarks unless someone ticked Custom Remarks and typed them.
+		"remarks": e.remarks if e.custom_remarks else None,
+	}
