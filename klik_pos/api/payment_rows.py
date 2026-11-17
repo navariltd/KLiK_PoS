@@ -104,3 +104,77 @@ def mode_label(payment_rows: list) -> str:
 	modes = list(dict.fromkeys(row.get("mode_of_payment") or row.get("paid_to") for row in payment_rows))
 	modes = [m for m in modes if m]
 	return "/".join(modes) if modes else "-"
+
+
+def payment_details(invoice) -> list:
+	"""Every payment on the invoice with what identifies it, for the invoice page.
+
+	The till's own rows (money taken at checkout, with any reference typed there), then each
+	Payment Entry that paid it: allocated as an advance (M-Pesa) or made against it later
+	(a credit sale settled). A Payment Entry reconciled as an advance is also listed against
+	the invoice, so entries are taken once each.
+	"""
+	rows = [
+		{
+			"source": "till",
+			"mode_of_payment": p.mode_of_payment,
+			"amount": flt(p.amount),
+			"reference_no": p.get("reference_no") or None,
+			"remarks": p.get("custom_reference_text") or None,
+		}
+		for p in invoice.get("payments") or []
+		if flt(p.amount) > 0
+	]
+	optional = {
+		"phone_number": "custom_mpesa_phone_number",
+		"receipt_number": "custom_mpesa_receipt_number",
+	}
+	extra = ", ".join(
+		f"pe.{column} AS {alias}" if frappe.db.has_column("Payment Entry", column) else f"NULL AS {alias}"
+		for alias, column in optional.items()
+	)
+	pe_fields = f"""pe.name AS payment_entry, pe.mode_of_payment, pe.paid_to, pe.posting_date,
+		pe.reference_no, pe.reference_date, pe.clearance_date, pe.bank_account,
+		pe.custom_remarks, pe.remarks, {extra}"""
+	entries = frappe.db.sql(
+		f"""
+		SELECT 1 AS ord, adv.idx, adv.allocated_amount AS amount, {pe_fields}
+		FROM `tabSales Invoice Advance` adv
+		INNER JOIN `tabPayment Entry` pe ON pe.name = adv.reference_name
+		WHERE adv.parenttype = 'Sales Invoice' AND adv.parent = %(inv)s
+			AND adv.reference_type = 'Payment Entry' AND adv.allocated_amount > 0 AND pe.docstatus = 1
+		UNION ALL
+		SELECT 2 AS ord, ref.idx, ref.allocated_amount AS amount, {pe_fields}
+		FROM `tabPayment Entry Reference` ref
+		INNER JOIN `tabPayment Entry` pe ON pe.name = ref.parent
+		WHERE ref.reference_doctype = 'Sales Invoice' AND ref.reference_name = %(inv)s
+			AND ref.allocated_amount > 0 AND pe.docstatus = 1
+		ORDER BY ord, posting_date, idx
+		""",
+		{"inv": invoice.name},
+		as_dict=True,
+	)
+	seen = set()
+	for e in entries:
+		if e.payment_entry in seen:
+			continue
+		seen.add(e.payment_entry)
+		rows.append(
+			{
+				"source": "payment_entry",
+				"payment_entry": e.payment_entry,
+				"mode_of_payment": e.mode_of_payment,
+				"paid_to": e.paid_to,
+				"amount": flt(e.amount),
+				"posting_date": e.posting_date,
+				# Cheque/Reference No; an M-Pesa entry's is its receipt number.
+				"reference_no": e.reference_no or e.receipt_number or None,
+				"reference_date": e.reference_date,
+				"clearance_date": e.clearance_date,
+				"bank_account": e.bank_account,
+				"phone_number": e.phone_number,
+				# ERPNext writes its own remarks unless someone ticked Custom Remarks and typed them.
+				"remarks": e.remarks if e.custom_remarks else None,
+			}
+		)
+	return rows

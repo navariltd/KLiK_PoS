@@ -2092,6 +2092,9 @@ def get_invoice_details(invoice_id):
 		)
 		invoice_data["payment_methods"] = payments
 		invoice_data["mode_of_payment"] = mode_label(payments)
+		from klik_pos.api.payment_rows import payment_details
+
+		invoice_data["payment_details"] = payment_details(invoice)
 
 		return {
 			"success": True,

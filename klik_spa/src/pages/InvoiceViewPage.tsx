@@ -51,6 +51,7 @@ import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { MULTI_INVOICE_RETURN_ENABLED } from "../utils/featureFlags";
 import { formatCurrencyWithSymbol } from "../utils/currency";
+import { PaymentDetails } from "../components/invoice/PaymentDetails";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import { useCartStore } from "../stores/cartStore";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
@@ -780,38 +781,17 @@ export default function InvoiceViewPage() {
                   )}
 
                   {/* Payment Details */}
-                  <div className="px-6 py-4 bg-orange-50 dark:bg-orange-900/20 border-t border-gray-200 dark:border-gray-600">
-                    <div className="flex items-center space-x-2 mb-3">
-                      <CreditCard className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                      <h4 className="text-sm font-semibold text-orange-900 dark:text-orange-100">Payment Details</h4>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-orange-700 dark:text-orange-300">Payment Method:</span>
-                          <span className="text-orange-900 dark:text-orange-100 font-medium">{invoice.mode_of_payment || "—"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-orange-700 dark:text-orange-300">Status:</span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(invoice.status)}`}>
-                            {invoice.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-orange-700 dark:text-orange-300">Paid Amount:</span>
-                          <span className="text-orange-900 dark:text-orange-100 font-semibold">{formatCurrencyWithSymbol(invoice.paid_amount || 0, invoice.currency)}</span>
-                        </div>
-                        {invoice.outstanding_amount > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-red-700 dark:text-red-300">Outstanding:</span>
-                            <span className="text-red-900 dark:text-red-100 font-semibold">{formatCurrencyWithSymbol(invoice.outstanding_amount, invoice.currency)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <PaymentDetails
+                    payments={invoice.payment_details}
+                    modeLabel={invoice.mode_of_payment}
+                    currency={invoice.currency}
+                    postingDate={invoice.posting_date}
+                    paidAmount={invoice.paid_amount || 0}
+                    outstanding={invoice.outstanding_amount || 0}
+                    dueDate={invoice.due_date}
+                    status={invoice.status}
+                    statusClass={getStatusBadge(invoice.status)}
+                  />
 
                   {/* Notes */}
                   {invoice.notes && (
