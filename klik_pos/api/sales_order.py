@@ -524,6 +524,10 @@ def _rebuild_sales_order(so, customer, items, sales_and_tax_charges, cart_meta, 
     # _apply_pos_tax_treatment appends to "taxes"; without clearing it here, re-holding an
     # already-held order would duplicate every tax row instead of replacing them.
     so.set("taxes", [])
+    # ERPNext only builds a payment schedule when there is none; the old rows keep the day it
+    # was first held, which the new transaction_date now postdates ("Due Date ... cannot be
+    # before Posting Date"). Cleared, it is rebuilt from today and the new total.
+    so.set("payment_schedule", [])
 
     _apply_order_discount(so, pos_profile, order_discount_amount)
 
