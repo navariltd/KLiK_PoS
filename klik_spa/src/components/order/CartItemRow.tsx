@@ -866,6 +866,19 @@ export const CartItemRow = ({
         />
   );
 
+  const descriptionDialog = (
+    <DescriptionDialog
+      isOpen={showDescriptionDialog}
+      itemName={item.name}
+      initialValue={item.description || ""}
+      onSave={(value) => {
+        onDescriptionChange?.(item.id, value);
+        setShowDescriptionDialog(false);
+      }}
+      onClose={() => setShowDescriptionDialog(false)}
+    />
+  );
+
   if (facts) {
     const shown = visibleFacts(lineInfo, restrictCostVisibility);
     return (
@@ -875,6 +888,15 @@ export const CartItemRow = ({
             <p className="min-w-0 flex-1 font-medium leading-tight text-gray-900 dark:text-white line-clamp-2 break-words" title={item.name}>
               {getItemDisplayName(item, !!posDetails?.custom_use_item_code_as_display_name)}
             </p>
+            <button
+              type="button"
+              onClick={() => setShowDescriptionDialog(true)}
+              className="shrink-0 w-7 h-7 rounded flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              title="Edit description"
+              aria-label="Edit description"
+            >
+              <Pencil size={15} />
+            </button>
             <button
               type="button"
               onClick={() => setShowProductModal(true)}
@@ -915,6 +937,7 @@ export const CartItemRow = ({
         {bundleModal}
         {pricePopup}
         {productModal}
+        {descriptionDialog}
       </>
     );
   }
@@ -1242,16 +1265,7 @@ export const CartItemRow = ({
 
       {pricePopup}
 
-      <DescriptionDialog
-        isOpen={showDescriptionDialog}
-        itemName={item.name}
-        initialValue={item.description || ""}
-        onSave={(value) => {
-          onDescriptionChange?.(item.id, value);
-          setShowDescriptionDialog(false);
-        }}
-        onClose={() => setShowDescriptionDialog(false)}
-      />
+      {descriptionDialog}
 
       {productModal}
     </>
