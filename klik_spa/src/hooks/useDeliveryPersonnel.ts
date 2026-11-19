@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useState, useEffect } from "react";
 
 export interface DeliveryPersonnel {
@@ -25,7 +26,7 @@ export function useDeliveryPersonnel() {
           }
         );
 
-        const data = await response.json();
+        const data = await parseAPIResponse(response);
         if (response.ok && data.message && data.message.success) {
           setPersonnel(data.message.data || []);
         } else {

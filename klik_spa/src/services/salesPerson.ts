@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { extractErrorMessage } from "../utils/errorExtraction";
 
 export interface SalespersonIdentity {
@@ -40,7 +41,7 @@ export async function verifyPin(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok) {
     const errorMessage = extractErrorMessage(result, "Failed to verify PIN");
@@ -69,7 +70,7 @@ export async function getRememberedSalesperson(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok) {
     const errorMessage = extractErrorMessage(
@@ -98,7 +99,7 @@ export async function clearRememberedSalesperson(device_id: string) {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok) {
     const errorMessage = extractErrorMessage(
@@ -132,7 +133,7 @@ export async function listSalespeople(
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
 
   if (!response.ok) {
     const errorMessage = extractErrorMessage(result, "Failed to load salespeople");

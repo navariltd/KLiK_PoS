@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { extractErrorMessage } from "../utils/errorExtraction";
 
 export interface MpesaInitResponse {
@@ -86,7 +87,7 @@ export async function initiateKlikPosStkPush(payload: {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message || result.message.status !== "success") {
     const errorMessage = extractErrorMessage(result, "Failed to initiate M-Pesa STK push");
     throw new Error(errorMessage);
@@ -116,7 +117,7 @@ export async function fetchMpesaRegisterPayments(params: {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message) {
     const errorMessage = extractErrorMessage(result, "Failed to fetch Mpesa payments");
     throw new Error(errorMessage);
@@ -148,7 +149,7 @@ export async function processKlikPosMpesaPayments(payload: {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message || result.message.success !== true) {
     const errorMessage = extractErrorMessage(result, "Failed to reconcile Mpesa payments");
     throw new Error(errorMessage);
@@ -167,7 +168,7 @@ export async function fetchKlikPosStkStatus(requestName: string) {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message) {
     const errorMessage = extractErrorMessage(result, "Failed to fetch M-Pesa STK status");
     throw new Error(errorMessage);
@@ -195,7 +196,7 @@ export async function linkKlikPosRequestToInvoice(payload: {
     }
   );
 
-  const result = await response.json();
+  const result = await parseAPIResponse(response);
   if (!response.ok || !result.message || result.message.success !== true) {
     const errorMessage = extractErrorMessage(result, "Failed to link M-Pesa request to invoice");
     throw new Error(errorMessage);

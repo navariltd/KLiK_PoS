@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 
 
 import React, { useState, useMemo, useEffect } from "react"
@@ -53,7 +54,7 @@ export default function CustomersPage() {
     ;(async () => {
       try {
         const res = await fetch('/api/method/klik_pos.api.customer.get_global_totals')
-        const data = await res.json()
+        const data = await parseAPIResponse(res)
         if (data?.message?.success) {
           setGlobalTotals({ total_customers: data.message.total_customers, total_invoices: data.message.total_invoices })
         }

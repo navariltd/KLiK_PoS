@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useEffect, useState } from "react";
 
 interface PaymentMode {
@@ -28,7 +29,7 @@ export function usePaymentModes(posProfile: string) {
       setIsLoading(true);
       try {
         const res = await fetch(`/api/method/klik_pos.api.payment.get_payment_modes?pos_profile=${encodeURIComponent(posProfile)}`);
-        const data = await res.json();
+        const data = await parseAPIResponse(res);
 
         if (!data.message.success) {
           throw new Error(data.message.error || "Failed to fetch payment modes");
@@ -67,7 +68,7 @@ export function useAllPaymentModes() {
       try {
         const res = await fetch(`/api/method/klik_pos.api.payment.get_opening_entry_payment_summary`);
 
-        const data = await res.json();
+        const data = await parseAPIResponse(res);
 
         if (!data.message.data) {
           throw new Error(data.message.error || "Failed to fetch payment modes");

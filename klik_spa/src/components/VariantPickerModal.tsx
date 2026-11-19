@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -50,7 +51,7 @@ export default function VariantPickerModal({
         const response = await fetch(
           `/api/method/klik_pos.api.item.item_variants.get_template_variants?${params.toString()}`,
         );
-        const payload = await response.json();
+        const payload = await parseAPIResponse(response);
         if (!response.ok || !payload?.message) {
           throw new Error(payload?._server_messages || "Failed to load variants");
         }

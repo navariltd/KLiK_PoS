@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "./apiResponse";
 import { useCartStore } from '../stores/cartStore';
 import { useSalespersonStore } from '../stores/salespersonStore';
 import { clearDraftInvoiceCache } from './draftInvoiceCache';
@@ -75,7 +76,7 @@ async function clearBackendCache(): Promise<void> {
       credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (data.message?.success) {
     } else {

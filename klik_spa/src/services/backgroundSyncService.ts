@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 interface SyncStatus {
   isOnline: boolean;
   lastSync: Date | null;
@@ -72,7 +73,7 @@ class BackgroundSyncService {
 
     try {
       const response = await fetch('/api/method/klik_pos.api.item.item_stock.get_stock_updates');
-      const resData = await response.json();
+      const resData = await parseAPIResponse(response);
 
       if (resData?.message && typeof resData.message === 'object') {
         const stockUpdates = resData.message;

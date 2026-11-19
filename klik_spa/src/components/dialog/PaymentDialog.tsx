@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../../utils/apiResponse";
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1467,7 +1468,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const fetchCustomerDetails = async (customerId: string, existingEmail: string, existingPhone: string, existingName: string) => {
     try {
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${customerId}`);
-      const data = await response.json();
+      const data = await parseAPIResponse(response);
       if (data.message) {
         const customerData = data.message;
         setSharingData({

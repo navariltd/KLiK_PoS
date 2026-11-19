@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 export interface EmailTemplate {
   name: string;
   subject: string;
@@ -25,7 +26,7 @@ export async function fetchEmailTemplates(): Promise<EmailTemplate[]> {
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       throw new Error('Failed to fetch Email templates');
@@ -54,7 +55,7 @@ export async function getDefaultEmailTemplate(): Promise<string | null> {
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       throw new Error('Failed to fetch POS profile details');
@@ -85,7 +86,7 @@ export async function getEmailTemplate(templateName: string): Promise<EmailTempl
       credentials: 'include',
     });
 
-    const result = await response.json();
+    const result = await parseAPIResponse(response);
 
     if (!response.ok || !result.message) {
       return null;

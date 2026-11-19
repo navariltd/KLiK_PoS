@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "./apiResponse";
 type Invoice = {
   doctype: string;
   name: string;
@@ -23,6 +24,6 @@ export async function getPrintFormatHTML(
     }
   );
 
-  const data = await res.json();
+  const data = await parseAPIResponse(res);
   return data.message as PrintHTMLResponse;
 }

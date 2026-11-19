@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../../utils/apiResponse";
 "use client";
 
 import { AutoComplete } from "./AutoComplete";
@@ -27,7 +28,7 @@ export const LinkSelect = ({
     });
     
     const response = await fetch(`/api/method/klik_pos.api.links.get_link_options?${params}`);
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
     return data.message || [];
   };
 

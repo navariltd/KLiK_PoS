@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 interface UOMData {
   uom: string;
   conversion_factor: number;
@@ -19,7 +20,7 @@ export async function getItemUOMsAndPrices(itemCode: string): Promise<UOMsAndPri
       credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch UOMs and prices');
@@ -57,7 +58,7 @@ export async function getAllUOMs(): Promise<string[]> {
       })
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch UOMs');

@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 import { useCallback, useEffect, useState } from "react";
 
 export interface ClosingEntryPreviewPayment {
@@ -22,7 +23,7 @@ export function useClosingEntryPreview() {
         headers: { Accept: "application/json" },
         credentials: "include",
       });
-      const data = await res.json();
+      const data = await parseAPIResponse(res);
 
       if (!res.ok) {
         throw new Error(data.exception || `HTTP ${res.status}`);

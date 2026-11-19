@@ -1,3 +1,4 @@
+import { parseAPIResponse } from "../utils/apiResponse";
 export interface ReturnItem {
   item_code: string;
   item_name: string;
@@ -45,7 +46,7 @@ export async function getReturnedQty(customer: string, salesInvoice: string, ite
        credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to get returned quantity');
@@ -80,7 +81,7 @@ export async function getCustomerInvoicesForReturn(
     });
 
     const response = await fetch(`/api/method/klik_pos.api.sales_invoice.get_customer_invoices_for_return?${params}`);
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok || !data.message.success) {
       throw new Error(data.message.error || 'Failed to fetch customer invoices');
@@ -124,7 +125,7 @@ export async function createPartialReturn(
        credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to create partial return');
@@ -169,7 +170,7 @@ export async function createMultiInvoiceReturn(
        credentials: 'include'
     });
 
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to create multi-invoice return');
@@ -223,7 +224,7 @@ export async function getValidSalesInvoices(
     });
 
     const response = await fetch(`/api/method/klik_pos.api.sales_invoice.get_valid_sales_invoices?${params}`);
-    const data = await response.json();
+    const data = await parseAPIResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to fetch valid sales invoices');
