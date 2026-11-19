@@ -34,3 +34,26 @@ describe("held order calls", () => {
     expect(err.message).toBe("Stock is short");
   });
 });
+
+describe("a held checkout the server refused", () => {
+  // Unmarked, the payment dialog kept the checkout "pending" and the cart's recovery poll held
+  // the Checkout button on "Checking cart..." for up to 30s after a price-floor refusal.
+  it("says a response came back, so the dialog drops the attempt", async () => {
+    vi.stubGlobal("window", { csrf_token: "t" });
+    vi.stubGlobal("fetch", reply({ success: false, message: "Rate is below the minimum" }));
+
+    const err = await checkoutHeldOrder("SAL-ORD-1", {}).catch((e) => e);
+
+    expect(err.checkoutResponseReceived).toBe(true);
+    expect(err.checkoutResponse).toMatchObject({ success: false });
+  });
+
+  it("says nothing came back when the connection dropped, so recovery still runs", async () => {
+    vi.stubGlobal("window", { csrf_token: "t" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    const err = await checkoutHeldOrder("SAL-ORD-1", {}).catch((e) => e);
+
+    expect(err.checkoutResponseReceived).toBeUndefined();
+  });
+});

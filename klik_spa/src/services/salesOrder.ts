@@ -26,7 +26,10 @@ async function apiPost(endpoint: string, body: object) {
   }
   if (!response.ok || result.message?.success === false) {
     const msg = result.message?.message || result.message?.error || result._server_messages || 'Request failed';
-    throw new Error(msg);
+    // The server answered, so a checkout it refused created nothing to recover. Unmarked, the
+    // payment dialog keeps the attempt pending and the cart's recovery poll holds Checkout on
+    // "Checking cart..." for up to 30s. Same contract as createSalesInvoice.
+    throw Object.assign(new Error(msg), { checkoutResponseReceived: true, checkoutResponse: result.message });
   }
   return result.message;
 }
