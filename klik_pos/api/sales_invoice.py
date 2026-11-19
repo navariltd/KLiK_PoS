@@ -2323,33 +2323,42 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 				)
 
 		if has_batch_no and not has_serial_no:
-			batch_no = item.get("batchNumber") or item.get("batch_no")
-			if not batch_no:
-				batch_no = next((e.get("batch_no") for e in bundle_entries if e.get("batch_no")), None)
 			required_qty = abs(flt(item.get("quantity") or 0))
+			explicit_batch = item.get("batchNumber") or item.get("batch_no")
+			batch_entries = [e for e in bundle_entries if e.get("batch_no")]
 
-			if batch_no and required_qty:
+			# A line split across several batches is checked per batch, not each batch against
+			# the full line qty. A single batch covers the whole line, matching _normalize_bundle_qty_entries.
+			if explicit_batch:
+				needed_by_batch = {explicit_batch: required_qty}
+			elif len(batch_entries) == 1:
+				needed_by_batch = {batch_entries[0]["batch_no"]: required_qty}
+			else:
+				needed_by_batch = {}
+				for entry in batch_entries:
+					needed_by_batch[entry["batch_no"]] = flt(needed_by_batch.get(entry["batch_no"])) + abs(
+						flt(entry.get("qty") or 0)
+					)
+
+			for batch_no, needed_qty in needed_by_batch.items():
+				if not needed_qty:
+					continue
 				available_qty = flt(get_batch_qty(batch_no=batch_no, warehouse=pos_profile.warehouse) or 0)
-				if available_qty < required_qty:
-					batch_count = len([e for e in bundle_entries if e.get("batch_no")])
+				if available_qty >= needed_qty:
+					continue
 
-					if auto_fetch_enabled and batch_count <= 1:
-						new_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, required_qty)
-						if not new_batch:
-							frappe.throw(
-								_(
-									"Batch {0} of Item {1} has only {2} in {3}, and no other batch has {4}. Please restock or reduce the quantity."
-								).format(batch_no, item_code, available_qty, pos_profile.warehouse, required_qty)
-							)
-						item["batchNumber"] = new_batch
-						item["batch_no"] = new_batch
-						item["bundle_entries"] = [{"batch_no": new_batch, "qty": required_qty}]
-					else:
-						frappe.throw(
-							_(
-								"Batch {0} of Item {1} has only {2} in {3}, but {4} is needed. Please reselect the batch."
-							).format(batch_no, item_code, available_qty, pos_profile.warehouse, required_qty)
-						)
+				if auto_fetch_enabled:
+					new_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, required_qty)
+					item["batchNumber"] = new_batch
+					item["batch_no"] = new_batch
+					item["bundle_entries"] = [{"batch_no": new_batch, "qty": required_qty}]
+					break
+
+				frappe.throw(
+					_(
+						"Batch {0} of Item {1} has only {2} in {3}, but {4} is needed. Please reselect the batch."
+					).format(batch_no, item_code, available_qty, pos_profile.warehouse, needed_qty)
+				)
 
 
 def _validate_no_variant_templates(items):
