@@ -84,3 +84,18 @@ class TestReHoldingReplaces(FrappeTestCase):
 
 		self.assertFalse(result["success"])
 		self.assertIn("no longer a draft", result["message"])
+
+	def test_holding_again_redates_the_payment_schedule(self):
+		"""Held on an earlier day, its schedule row kept that day's due date: re-holding dated the
+		order today and ERPNext refused "Due Date ... cannot be before Posting Date"."""
+		first = create_held_order(_payload(qty=1))
+		earlier = add_days(nowdate(), -3)
+		name = first["order_name"]
+		frappe.db.set_value("Sales Order", name, {"transaction_date": earlier, "delivery_date": earlier})
+		frappe.db.set_value("Payment Schedule", {"parent": name, "parenttype": "Sales Order"}, "due_date", earlier)
+
+		second = create_held_order(_payload(qty=2, held_order_id=name))
+
+		self.assertTrue(second["success"], msg=second.get("message"))
+		due = frappe.get_all("Payment Schedule", filters={"parent": name, "parenttype": "Sales Order"}, pluck="due_date")
+		self.assertTrue(due and all(str(d) >= nowdate() for d in due), due)
