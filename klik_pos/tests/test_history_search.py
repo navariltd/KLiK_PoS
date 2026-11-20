@@ -5,7 +5,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate, nowdate
 
-from klik_pos.api import quotation
+from klik_pos.api import payment, quotation
 from klik_pos.api.sales_invoice import _matches_search, get_sales_invoices
 from klik_pos.api.sales_order import get_held_orders
 from klik_pos.setup.quote_fields import ensure_quote_fields
@@ -56,6 +56,39 @@ class TestHistorySearch(FrappeTestCase):
 		for search in (*self._searches(), "draft"):
 			self.assertTrue(found(search), search)
 		self.assertFalse(found(f"{CUSTOMER.split()[0]} 99999123"))
+
+	def test_outstanding_invoices_on_the_payments_page(self):
+		si = frappe.new_doc("Sales Invoice")
+		si.customer = CUSTOMER
+		si.company = frappe.db.get_value("POS Profile", _profile(), "company")
+		si.append("items", {"item_code": ITEM, "qty": 1, "rate": AMOUNT})
+		si.insert(ignore_permissions=True, ignore_mandatory=True)
+		frappe.db.set_value(
+			"Sales Invoice", si.name,
+			{"docstatus": 1, "outstanding_amount": AMOUNT, "status": "Overdue"}, update_modified=False,
+		)
+
+		def listed(**kwargs):
+			res = payment.get_outstanding_sales_invoices(limit=500, **kwargs)
+			self.assertTrue(res["success"], res)
+			return res
+
+		def found(**kwargs):
+			return si.name in [r["name"] for r in listed(**kwargs)["data"]]
+
+		for search in (*self._searches(), "overdue"):
+			if search != self.cashier.split()[0]:  # the table has no cashier column
+				self.assertTrue(found(search=search), search)
+		self.assertFalse(found(search=f"{CUSTOMER.split()[0]} 99999123"))
+
+		today, tomorrow = self.today.strftime("%Y-%m-%d"), frappe.utils.add_days(self.today, 1)
+		self.assertTrue(found(from_date=today, to_date=today))
+		self.assertFalse(found(from_date=tomorrow))
+		self.assertTrue(found(status="Overdue"))
+		self.assertFalse(found(status="Unpaid"))
+		# The dropdown's choices: every status the other filters leave, not just the chosen one.
+		self.assertIn("Overdue", listed(status="Unpaid")["statuses"])
+		self.assertNotIn("Overdue", listed(from_date=tomorrow)["statuses"])
 
 	def test_held_orders(self):
 		so = _held_order()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Banknote, CreditCard, FileText, Loader2, Search, User } from "lucide-react";
 import { toast } from "react-toastify";
 import BottomNavigation from "../components/BottomNavigation";
+import { DateRangeFilter } from "../components/DateRangeFilter";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 import CustomerReceivablesTable from "../components/customer/CustomerReceivablesTable";
 import StatementOfAccountsModal from "../components/customer/StatementOfAccountsModal";
@@ -78,6 +79,14 @@ export default function PaymentEntriesPage() {
   const { currencySymbol, posDetails } = usePOSProfileStore();
   const [activeTab, setActiveTab] = useState<PaymentTab>(getCachedPaymentTab);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceFromDate, setInvoiceFromDate] = useState("");
+  const [invoiceToDate, setInvoiceToDate] = useState("");
+  const [invoiceStatus, setInvoiceStatus] = useState("");
+  const [invoiceStatuses, setInvoiceStatuses] = useState<string[]>([]);
+  const invoiceFilters = useMemo(
+    () => ({ fromDate: invoiceFromDate, toDate: invoiceToDate, status: invoiceStatus }),
+    [invoiceFromDate, invoiceToDate, invoiceStatus]
+  );
   const [customerSearch, setCustomerSearch] = useState("");
   const [invoices, setInvoices] = useState<OutstandingSalesInvoice[]>([]);
   const [invoiceTotal, setInvoiceTotal] = useState(0);
@@ -131,9 +140,12 @@ export default function PaymentEntriesPage() {
       setIsLoadingInvoices(true);
       setInvoiceError(null);
       try {
-        const response = await getOutstandingSalesInvoices(invoiceSearch);
+        const response = await getOutstandingSalesInvoices(invoiceSearch, 0, 100, invoiceFilters);
         if (!isCurrent) return;
         setInvoices(response.data || []);
+        setInvoiceStatuses(response.statuses || []);
+        // A status the other filters no longer leave (its last invoice was paid) stops filtering.
+        if (invoiceFilters.status && !(response.statuses || []).includes(invoiceFilters.status)) setInvoiceStatus("");
         setInvoiceTotal(response.total_count || 0);
       } catch (err) {
         if (!isCurrent) return;
@@ -149,7 +161,7 @@ export default function PaymentEntriesPage() {
       isCurrent = false;
       window.clearTimeout(timer);
     };
-  }, [invoiceSearch]);
+  }, [invoiceSearch, invoiceFilters]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -242,7 +254,7 @@ export default function PaymentEntriesPage() {
   };
 
   const handlePaymentCreated = () => {
-    getOutstandingSalesInvoices(invoiceSearch)
+    getOutstandingSalesInvoices(invoiceSearch, 0, 100, invoiceFilters)
       .then((response) => {
         setInvoices(response.data || []);
         setInvoiceTotal(response.total_count || 0);
@@ -366,15 +378,37 @@ export default function PaymentEntriesPage() {
       <main className="px-4 py-4 sm:px-6">
         {activeTab === "invoice" ? (
           <section className="space-y-4">
-            <div className="relative max-w-xl">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative sm:min-w-[16rem] sm:max-w-xl sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="text"
                 value={invoiceSearch}
                 onChange={(event) => setInvoiceSearch(event.target.value)}
-                placeholder="Search invoice or customer"
+                placeholder="Search invoice, customer, date, status, amount..."
                 className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               />
+            </div>
+              <DateRangeFilter
+                from={invoiceFromDate}
+                to={invoiceToDate}
+                size="py-2 text-sm"
+                onChange={(from, to) => {
+                  setInvoiceFromDate(from);
+                  setInvoiceToDate(to);
+                }}
+              />
+              <select
+                aria-label="Status"
+                value={invoiceStatus}
+                onChange={(event) => setInvoiceStatus(event.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              >
+                <option value="">All Statuses</option>
+                {invoiceStatuses.map((st) => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
             </div>
 
             <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">

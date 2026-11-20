@@ -195,8 +195,8 @@ export default function InvoiceHistoryPage() {
   const [searchTerm, setSearchTerm] = useState(initialFilters.searchTerm);
   const [fromDate, setFromDate] = useState(initialFilters.fromDate);
   const [toDate, setToDate] = useState(initialFilters.toDate);
-  // The Held tab's Status filter; its choices are the statuses the held orders carry.
-  const [heldStatusFilter, setHeldStatusFilter] = useState("all");
+  // The Status filter; its choices are the statuses the open tab's rows carry.
+  const [statusFilterChoice, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState(initialFilters.paymentFilter);
   const [cashierFilter, setCashierFilter] = useState(initialFilters.cashierFilter);
   const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
@@ -589,9 +589,13 @@ const renderMpesaBadge = (invoice: SalesInvoice & HeldOrderExtras) =>
 
 
 
-  const heldStatuses = useMemo(() => [...new Set(heldOrders.map((o) => o.status))].sort(), [heldOrders]);
-  // A status no held order carries any more (approved since) stops filtering.
-  const heldStatus = heldStatuses.includes(heldStatusFilter) ? heldStatusFilter : "all";
+  const tabStatuses = useMemo(
+    () => [...new Set(rowsForTab(activeTab, { invoices, heldOrders, quotes })
+      .filter((row) => matchesInvoiceTab(row, activeTab)).map((row) => row.status).filter(Boolean))].sort(),
+    [activeTab, invoices, heldOrders, quotes]
+  );
+  // A status no row carries (another tab, or approved since) stops filtering.
+  const statusFilter = tabStatuses.includes(statusFilterChoice) ? statusFilterChoice : "all";
 
   const filteredInvoices = useMemo(() => {
     if (isLoading) return [];
@@ -607,13 +611,13 @@ const renderMpesaBadge = (invoice: SalesInvoice & HeldOrderExtras) =>
       const matchesCashier = cashierFilter === "all" || !!(invoice as SalesInvoice & HeldOrderExtras).isQuote || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
 
-      const matchesHeldStatus = activeTab !== "Held" || heldStatus === "all" || invoice.status === heldStatus;
+      const matchesStatusFilter = statusFilter === "all" || invoice.status === statusFilter;
 
-      return matchesPayment && matchesCashier && matchesStatus && matchesDate && matchesHeldStatus;
+      return matchesPayment && matchesCashier && matchesStatus && matchesDate && matchesStatusFilter;
     });
 
     return activeTab === "queued" ? sortFailedFirst(filtered) : filtered;
-  }, [invoices, heldOrders, quotes, activeTab, fromDate, toDate, paymentFilter, cashierFilter, heldStatus, isLoading, error, filterInvoiceByDate]);
+  }, [invoices, heldOrders, quotes, activeTab, fromDate, toDate, paymentFilter, cashierFilter, statusFilter, isLoading, error, filterInvoiceByDate]);
 
   const { sortedData: sortedInvoices, sortKey: invoiceSortKey, sortDirection: invoiceSortDirection, toggleSort: toggleInvoiceSort } = useTableSort(
     filteredInvoices,
@@ -719,12 +723,12 @@ const renderMpesaBadge = (invoice: SalesInvoice & HeldOrderExtras) =>
   // Filters are remembered across sessions, so a stale date or name can hide a whole tab
   // (a cashier on Allparts lost every held order to one). One click puts them back.
   const filtersActive = Boolean(
-    searchTerm || heldStatus !== "all" || fromDate || toDate || paymentFilter !== "all" ||
+    searchTerm || statusFilter !== "all" || fromDate || toDate || paymentFilter !== "all" ||
       (canViewOtherCashiers && cashierFilter !== "all")
   );
   const clearFilters = () => {
     setSearchTerm("");
-    setHeldStatusFilter("all");
+    setStatusFilter("all");
     setFromDate("");
     setToDate("");
     setPaymentFilter("all");
@@ -790,15 +794,15 @@ const renderMpesaBadge = (invoice: SalesInvoice & HeldOrderExtras) =>
             ))}
           </div>
         )}
-        {activeTab === "Held" && heldStatuses.length > 1 && (
+        {tabStatuses.length > 1 && (
           <select
             aria-label="Status"
-            value={heldStatus}
-            onChange={(e) => setHeldStatusFilter(e.target.value)}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="sm:w-auto px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
           >
             <option value="all">All Statuses</option>
-            {heldStatuses.map((st) => (
+            {tabStatuses.map((st) => (
               <option key={st} value={st}>{st}</option>
             ))}
           </select>
