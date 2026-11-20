@@ -1617,6 +1617,19 @@ def _may_read_invoice(invoice):
 	)
 
 
+# Invoice History's search box: a date matches as stored, as the table shows it ("Nov 5, 2026"),
+# and as usually typed. MySQL DATE_FORMAT; SEARCH_DATE_STRFTIME is the same in Python.
+SEARCH_DATE_FORMAT = "%Y-%m-%d %b %e, %Y %d-%m-%Y %d/%m/%Y"
+SEARCH_DATE_STRFTIME = "%Y-%m-%d %b %-d, %Y %d-%m-%Y %d/%m/%Y"
+
+
+def _matches_search(search, *values):
+	"""Every word typed is found in one of the row's values. A word also matches without its
+	commas, so "1,500" finds 1500.00. The SQL lists (invoices, quotes) apply the same rule."""
+	hay = " ".join(str(v) for v in values if v not in (None, "")).lower()
+	return all(w in hay or w.replace(",", "") in hay for w in (search or "").lower().split())
+
+
 @frappe.whitelist()
 def get_sales_invoices(
 	limit=100,
@@ -1778,14 +1791,22 @@ def get_sales_invoices(
 				conditions.append("si.pos_profile = %s")
 				params.append(current_pos_profile)
 
-		if search and search.strip():
-			search_term = f"%{search.strip()}%"
-			searched = ["si.name", "si.customer_name", "si.customer"]
-			# Walk-in sales all sit under one customer; the buyer's own name tells them apart.
-			if has_walkin_name:
-				searched.append("si.custom_walkin_customer_name")
-			conditions.append("(" + " OR ".join(f"{col} LIKE %s" for col in searched) + ")")
-			params.extend([search_term] * len(searched))
+		# One box searches every column the table shows; a row must match every word typed.
+		searched = [
+			"si.name", "si.customer_name", "si.customer", "si.status",
+			"(SELECT u.full_name FROM `tabUser` u WHERE u.name = si.owner)",
+			"(SELECT GROUP_CONCAT(p.mode_of_payment) FROM `tabSales Invoice Payment` p WHERE p.parent = si.name)",
+			"DATE_FORMAT(si.posting_date, '{}')".format(SEARCH_DATE_FORMAT.replace("%", "%%")),
+		]
+		# Walk-in sales all sit under one customer; the buyer's own name tells them apart.
+		if has_walkin_name:
+			searched.append("si.custom_walkin_customer_name")
+		for word in (search or "").split():
+			conditions.append(
+				"(" + " OR ".join(f"{col} LIKE %s" for col in searched) + " OR CAST(si.grand_total AS CHAR) LIKE %s)"
+			)
+			# The amount matches without the commas a cashier types into it.
+			params.extend([f"%{word}%"] * len(searched) + [f"%{word.replace(',', '')}%"])
 
 		if from_date:
 			conditions.append("si.posting_date >= %s")

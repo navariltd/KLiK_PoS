@@ -4,6 +4,7 @@ import frappe
 from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
 
 from klik_pos.api.sales_invoice import (
+    SEARCH_DATE_FORMAT,
     _apply_extra_fields,
     _apply_pos_tax_treatment,
     _apply_remarks,
@@ -206,6 +207,8 @@ def get_quotes(limit=50, start=0, search="", state="open"):
             frappe.throw(frappe._("Unknown quote state {0}.").format(state))
         company = _get_active_pos_profile().company
         from frappe.query_builder import Order
+        from pypika import CustomFunction
+        from pypika.functions import Cast
         from pypika.terms import ExistsCriterion
 
         q, si = frappe.qb.DocType("Quotation"), frappe.qb.DocType("Sales Invoice")
@@ -231,9 +234,16 @@ def get_quotes(limit=50, start=0, search="", state="open"):
         )
         if state != "all":
             query = query.where({"open": is_open, "converted": converted, "closed": closed}[state])
-        if search:
-            like = f"%{search}%"
-            query = query.where(q.name.like(like) | q.customer_name.like(like) | q.custom_walkin_customer_name.like(like))
+        # One box searches every column the Quotes tab shows; a row must match every word typed.
+        date_text = CustomFunction("DATE_FORMAT", ["date", "format"])(q.transaction_date, SEARCH_DATE_FORMAT)
+        for word in (search or "").split():
+            like = f"%{word}%"
+            query = query.where(
+                q.name.like(like) | q.customer_name.like(like) | q.custom_walkin_customer_name.like(like)
+                | q.status.like(like) | date_text.like(like)
+                # The amount matches without the commas a cashier types into it.
+                | Cast(q.grand_total, "char").like(f"%{word.replace(',', '')}%")
+            )
         rows = query.run(as_dict=True)
         for r in rows:
             r["state"] = (
