@@ -60,7 +60,7 @@ import {
   getHeldOrders,
 } from "../services/salesOrder";
 import { getOriginalHeldOrderId, loadCachedItemsToCart } from "../utils/draftInvoiceCache";
-import { approvalBadge, PRICE_APPROVED, WITHDRAW_APPROVAL } from "../utils/priceApproval";
+import { heldStatusLabel, PRICE_APPROVED, WITHDRAW_APPROVAL } from "../utils/priceApproval";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { handlePrintInvoice } from "../utils/printHandler";
 import { useCartStore } from "../stores/cartStore";
@@ -109,7 +109,6 @@ interface InvoiceHistoryFiltersState {
   searchTerm: string;
   fromDate: string;
   toDate: string;
-  customerFilter: string;
   paymentFilter: string;
   cashierFilter: string;
 }
@@ -119,7 +118,6 @@ const DEFAULT_INVOICE_HISTORY_FILTERS: InvoiceHistoryFiltersState = {
   searchTerm: "",
   fromDate: "",
   toDate: "",
-  customerFilter: "",
   paymentFilter: "all",
   cashierFilter: "all",
 };
@@ -145,7 +143,6 @@ const getInitialInvoiceHistoryFilters = (): InvoiceHistoryFiltersState => {
       toDate: storedDate(parsed.toDate),
       // The Held tab used to be called Draft; a tab remembered from then should still open it.
       activeTab: parsed.activeTab === "Draft" ? "Held" : normalizeInvoiceTab(parsed.activeTab || DEFAULT_INVOICE_HISTORY_FILTERS.activeTab),
-      customerFilter: parsed.customerFilter === "all" ? "" : (parsed.customerFilter || ""),
     };
   } catch {
     return DEFAULT_INVOICE_HISTORY_FILTERS;
@@ -198,7 +195,8 @@ export default function InvoiceHistoryPage() {
   const [searchTerm, setSearchTerm] = useState(initialFilters.searchTerm);
   const [fromDate, setFromDate] = useState(initialFilters.fromDate);
   const [toDate, setToDate] = useState(initialFilters.toDate);
-  const [customerFilter, setCustomerFilter] = useState(initialFilters.customerFilter);
+  // The Held tab's Status filter; its choices are the statuses the held orders carry.
+  const [heldStatusFilter, setHeldStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState(initialFilters.paymentFilter);
   const [cashierFilter, setCashierFilter] = useState(initialFilters.cashierFilter);
   const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
@@ -264,7 +262,7 @@ export default function InvoiceHistoryPage() {
         payment_methods: [],
         amountPaid: 0,
         changeGiven: 0,
-        status: "Held",
+        status: heldStatusLabel(o.approval_state, Number(o.price_breach) || 0),
         refundAmount: 0,
         currency: o.currency || "USD",
         notes: "",
@@ -464,12 +462,11 @@ export default function InvoiceHistoryPage() {
         searchTerm,
         fromDate,
         toDate,
-        customerFilter,
         paymentFilter,
         cashierFilter,
       })
     );
-  }, [activeTab, searchTerm, fromDate, toDate, customerFilter, paymentFilter, cashierFilter]);
+  }, [activeTab, searchTerm, fromDate, toDate, paymentFilter, cashierFilter]);
 
   // Keyboard event handler for Escape key
   useEffect(() => {
@@ -519,6 +516,7 @@ const getStatusBadge = (status: string) => {
     // Payment statuses
     case "paid":
       return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400`;
+    case "approval pending":
     case "unpaid":
       return `${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400`;
     case "partly paid":
@@ -527,8 +525,10 @@ const getStatusBadge = (status: string) => {
     case "expired":
       return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
     case "partially ordered":
+    case "price approved":
     case "ordered":
       return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400`;
+    case "needs approval":
     case "lost":
       return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
     case "draft":
@@ -576,32 +576,22 @@ const renderQueueStatusBadge = (invoice: SalesInvoice & { queueStatus?: string }
   return <span className={`px-2 py-1 rounded-full text-xs font-medium ${tone}`}>{label}</span>;
 };
 
-const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
-  if (!invoice.isHeldOrder) return null;
-  const badge = approvalBadge(invoice.approvalState, invoice.priceBreach);
-  if (!badge && !invoice.mpesaOrder) return null;
-  return (
-    <>
-      {badge && (
-        <span
-          className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${APPROVAL_BADGE_TONE_CLASSES[badge.tone]}`}
-        >
-          {badge.label}
-        </span>
-      )}
-      {invoice.mpesaOrder && (
-        <span
-          className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${APPROVAL_BADGE_TONE_CLASSES.green}`}
-          title="An M-Pesa request was sent for this order. Open it to finish the sale - don't charge the customer again."
-        >
-          M-Pesa
-        </span>
-      )}
-    </>
-  );
-};
+/** Beside a held order's status: an M-Pesa request went out for it. */
+const renderMpesaBadge = (invoice: SalesInvoice & HeldOrderExtras) =>
+  invoice.isHeldOrder && invoice.mpesaOrder ? (
+    <span
+      className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${APPROVAL_BADGE_TONE_CLASSES.green}`}
+      title="An M-Pesa request was sent for this order. Open it to finish the sale - don't charge the customer again."
+    >
+      M-Pesa
+    </span>
+  ) : null;
 
 
+
+  const heldStatuses = useMemo(() => [...new Set(heldOrders.map((o) => o.status))].sort(), [heldOrders]);
+  // A status no held order carries any more (approved since) stops filtering.
+  const heldStatus = heldStatuses.includes(heldStatusFilter) ? heldStatusFilter : "all";
 
   const filteredInvoices = useMemo(() => {
     if (isLoading) return [];
@@ -614,17 +604,16 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
       // Normalize status comparison to handle case and whitespace differences
       const matchesStatus = matchesInvoiceTab(invoice, activeTab);
       const matchesPayment = matchesPaymentFilter(invoice, paymentFilter);
-      const matchesCustomer = !customerFilter.trim()
-        || invoice.customer?.toLowerCase().includes(customerFilter.toLowerCase())
-        || invoice.walkinName?.toLowerCase().includes(customerFilter.toLowerCase());
       const matchesCashier = cashierFilter === "all" || !!(invoice as SalesInvoice & HeldOrderExtras).isQuote || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
 
-      return matchesPayment && matchesCustomer && matchesCashier && matchesStatus && matchesDate;
+      const matchesHeldStatus = activeTab !== "Held" || heldStatus === "all" || invoice.status === heldStatus;
+
+      return matchesPayment && matchesCashier && matchesStatus && matchesDate && matchesHeldStatus;
     });
 
     return activeTab === "queued" ? sortFailedFirst(filtered) : filtered;
-  }, [invoices, heldOrders, quotes, activeTab, fromDate, toDate, customerFilter, paymentFilter, cashierFilter, isLoading, error, filterInvoiceByDate]);
+  }, [invoices, heldOrders, quotes, activeTab, fromDate, toDate, paymentFilter, cashierFilter, heldStatus, isLoading, error, filterInvoiceByDate]);
 
   const { sortedData: sortedInvoices, sortKey: invoiceSortKey, sortDirection: invoiceSortDirection, toggleSort: toggleInvoiceSort } = useTableSort(
     filteredInvoices,
@@ -672,12 +661,9 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
     // First apply all filters except status
     const invoicesFilteredByOtherFilters = countSource.filter((invoice) => {
       const matchesPayment = matchesPaymentFilter(invoice, paymentFilter);
-      const matchesCustomer = !customerFilter.trim()
-        || invoice.customer?.toLowerCase().includes(customerFilter.toLowerCase())
-        || invoice.walkinName?.toLowerCase().includes(customerFilter.toLowerCase());
       const matchesCashier = cashierFilter === "all" || !!(invoice as SalesInvoice & HeldOrderExtras).isQuote || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
-      return matchesPayment && matchesCustomer && matchesCashier && matchesDate;
+      return matchesPayment && matchesCashier && matchesDate;
     });
 
     return invoicesFilteredByOtherFilters.filter((invoice) => matchesInvoiceTab(invoice, status));
@@ -733,12 +719,12 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
   // Filters are remembered across sessions, so a stale date or name can hide a whole tab
   // (a cashier on Allparts lost every held order to one). One click puts them back.
   const filtersActive = Boolean(
-    searchTerm || customerFilter || fromDate || toDate || paymentFilter !== "all" ||
+    searchTerm || heldStatus !== "all" || fromDate || toDate || paymentFilter !== "all" ||
       (canViewOtherCashiers && cashierFilter !== "all")
   );
   const clearFilters = () => {
     setSearchTerm("");
-    setCustomerFilter("");
+    setHeldStatusFilter("all");
     setFromDate("");
     setToDate("");
     setPaymentFilter("all");
@@ -755,7 +741,7 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
           <input
             type="text"
-            placeholder="Search invoices..."
+            placeholder="Search number, customer, cashier, amount, date..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
@@ -766,14 +752,7 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
             </div>
           )}
         </div>
-        <input
-          type="text"
-          placeholder="Filter customer..."
-          value={customerFilter}
-          onChange={(e) => setCustomerFilter(e.target.value)}
-          className="sm:w-44 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
-        />
-        <DateRangeFilter
+<DateRangeFilter
           from={fromDate}
           to={toDate}
           onChange={(from, to) => {
@@ -810,6 +789,19 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
               </button>
             ))}
           </div>
+        )}
+        {activeTab === "Held" && heldStatuses.length > 1 && (
+          <select
+            aria-label="Status"
+            value={heldStatus}
+            onChange={(e) => setHeldStatusFilter(e.target.value)}
+            className="sm:w-auto px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+          >
+            <option value="all">All Statuses</option>
+            {heldStatuses.map((st) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
         )}
         {/* Held orders and quotes have no payment yet, and the filter never applies to them. */}
         {activeTab !== "Held" && activeTab !== "Quotes" && (
@@ -886,7 +878,8 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   <SortableHeaderButton label="Invoice" sortKey="id" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
-                {/* Up front: the table scrolls under the pinned Actions, so a badge by Status went unseen. */}
+                {/* Up front: the table scrolls under the pinned Actions, so a badge by Status went unseen.
+                    On Held that is the Status column itself, which says where a price approval stands. */}
                 {activeTab === "queued" && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
                     Queue Status
@@ -894,7 +887,7 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                 )}
                 {activeTab === "Held" && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Approval
+                    <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                   </th>
                 )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
@@ -912,9 +905,11 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   <SortableHeaderButton label="Amount" sortKey="amount" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
-                </th>
+                {activeTab !== "Held" && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <SortableHeaderButton label="Status" sortKey="status" activeKey={invoiceSortKey} direction={invoiceSortDirection} onSort={toggleInvoiceSort} />
+                  </th>
+                )}
                 {posDetails?.is_zatca_enabled && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Zatca Status
@@ -935,7 +930,10 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                     <td className="px-6 py-4 whitespace-nowrap">{renderQueueStatusBadge(invoice)}</td>
                   )}
                   {activeTab === "Held" && (
-                    <td className="px-6 py-4 whitespace-nowrap [&>span:first-child]:ml-0">{renderApprovalBadge(invoice)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                      {renderMpesaBadge(invoice)}
+                    </td>
                   )}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900 dark:text-white">{formatDateTime(invoice.date, invoice.time)}</div>
@@ -965,9 +963,11 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
-                  </td>
+                  {activeTab !== "Held" && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                    </td>
+                  )}
                   {posDetails?.is_zatca_enabled && (
                     <td className="px-6 py-4 whitespace-nowrap">
                                   {/* @ts-expect-error just ignore */}
@@ -1073,7 +1073,7 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
                 <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
                 <div className="flex items-center gap-1">
                   <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
-                  {renderApprovalBadge(invoice)}
+                  {renderMpesaBadge(invoice)}
                   {activeTab === "queued" && renderQueueStatusBadge(invoice)}
                 </div>
               </div>

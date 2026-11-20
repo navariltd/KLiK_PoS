@@ -3,7 +3,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, nowdate
+from frappe.utils import cint, flt, getdate, nowdate
 
 
 from klik_pos.api.sales_invoice import (
@@ -959,17 +959,23 @@ def get_held_orders(limit=50, start=0, search="", skip_opening_entry_filter=Fals
             start=start,
         )
 
+        _attach_cashier_names(orders)
+
         if search and search.strip():
-            term = search.strip().lower()
+            # One box searches every column the Held tab shows; see _matches_search.
+            from klik_pos.api.sales_invoice import SEARCH_DATE_STRFTIME, _matches_search
+
             orders = [
                 o for o in orders
-                if term in (o.name or "").lower()
-                or term in (o.customer_name or "").lower()
-                or term in (o.customer or "").lower()
-                or term in (o.get("custom_walkin_customer_name") or "").lower()
+                if _matches_search(
+                    search, o.name, o.customer_name, o.customer, o.get("custom_walkin_customer_name"),
+                    o.get("cashier_name"), f"{flt(o.grand_total):.2f}",
+                    getdate(o.transaction_date).strftime(SEARCH_DATE_STRFTIME) if o.transaction_date else "",
+                    # As the Status column reads; the workflow's resting "Draft" state is not shown.
+                    "Held", (o.get(APPROVAL_STATE_FIELD) or "").replace("Draft", ""),
+                    "Needs approval" if o.get(PRICE_BREACH_FIELD) else "",
+                )
             ]
-
-        _attach_cashier_names(orders)
 
         order_names = [o.name for o in orders]
         items_map = {}

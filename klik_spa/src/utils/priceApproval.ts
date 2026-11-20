@@ -14,6 +14,12 @@ export function approvalBadge(
   return null;
 }
 
+/** The Held tab's Status: the approval state when there is one, else plain "Held". */
+export const heldStatusLabel = (
+  state: string | null | undefined,
+  priceBreach: number | boolean | null | undefined,
+): string => approvalBadge(state, priceBreach)?.label ?? "Held";
+
 /** Why a held order cannot be checked out yet, or null when it can. */
 export function priceApprovalMessage(
   state: string | null | undefined,

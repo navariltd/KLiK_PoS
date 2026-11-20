@@ -18,6 +18,12 @@ describe("Invoice History tabs", () => {
     expect(matchesInvoiceTab(row("Return"), "all")).toBe(true);
   });
 
+  it("Held holds every held order, whatever its approval status reads", () => {
+    expect(matchesInvoiceTab({ status: "Approval pending", isHeldOrder: true }, "Held")).toBe(true);
+    expect(matchesInvoiceTab({ status: "Held", isHeldOrder: true }, "Held")).toBe(true);
+    expect(matchesInvoiceTab(row("Paid"), "Held")).toBe(false);
+  });
+
   it("the old Failed Queue link opens the merged Queued tab", () => {
     expect(normalizeInvoiceTab("queue_failed")).toBe("queued");
     expect(normalizeInvoiceTab("Paid")).toBe("Paid");

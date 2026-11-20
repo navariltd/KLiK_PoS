@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   approvalBadge,
+  heldStatusLabel,
   priceApprovalMessage,
   PRICE_APPROVAL_PENDING,
   PRICE_APPROVED,
@@ -63,5 +64,14 @@ describe("priceApprovalMessage", () => {
     expect(priceApprovalMessage(null, 1)).toBe(
       "Prices below the minimum need approval. Hold the order to request it.",
     );
+  });
+});
+
+describe("heldStatusLabel", () => {
+  it("is the approval state when there is one, else Held", () => {
+    expect(heldStatusLabel(null, 0)).toBe("Held");
+    expect(heldStatusLabel(null, 1)).toBe("Needs approval");
+    expect(heldStatusLabel(PRICE_APPROVAL_PENDING, 1)).toBe("Approval pending");
+    expect(heldStatusLabel(PRICE_APPROVED, 1)).toBe("Price approved");
   });
 });
