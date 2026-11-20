@@ -2,7 +2,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import flt, getdate, nowdate
 
 from klik_pos.api.cashier_scope import assert_may_collect, restricted_to_own
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
@@ -302,8 +302,12 @@ def create_customer_payment_entry(
 
 
 @frappe.whitelist()
-def get_outstanding_sales_invoices(limit=100, start=0, search=""):
-	"""Return submitted Sales Invoices with outstanding customer balance."""
+def get_outstanding_sales_invoices(limit=100, start=0, search="", from_date=None, to_date=None, status=""):
+	"""Return submitted Sales Invoices with outstanding customer balance.
+
+	search matches every column the table shows, a row matching every word typed;
+	from_date/to_date bound posting_date, both inclusive. "statuses" lists the statuses those
+	filters leave - the Status dropdown's choices - whichever one `status` then narrows to."""
 	try:
 		limit = min(int(limit or 100), 500)
 		start = int(start or 0)
@@ -324,10 +328,32 @@ def get_outstanding_sales_invoices(limit=100, start=0, search=""):
 			conditions.append("si.owner = %s")
 			params.append(frappe.session.user)
 
-		if search and search.strip():
-			search_term = f"%{search.strip()}%"
-			conditions.append("(si.name LIKE %s OR si.customer LIKE %s OR si.customer_name LIKE %s)")
-			params.extend([search_term, search_term, search_term])
+		from klik_pos.api.sales_invoice import _search_conditions, _search_date_sql
+
+		word_conditions, word_params = _search_conditions(
+			search,
+			["si.name", "si.customer", "si.customer_name", "si.status", _search_date_sql("si.posting_date")],
+			"si.outstanding_amount",
+		)
+		conditions.extend(word_conditions)
+		params.extend(word_params)
+		if from_date:
+			conditions.append("si.posting_date >= %s")
+			params.append(getdate(from_date))
+		if to_date:
+			conditions.append("si.posting_date <= %s")
+			params.append(getdate(to_date))
+
+		statuses = frappe.db.sql(
+			apply_sql_permissions(
+				f"SELECT DISTINCT si.status FROM `tabSales Invoice` si WHERE {' AND '.join(conditions)} ORDER BY si.status"
+			),
+			tuple(params),
+			pluck=True,
+		)
+		if status:
+			conditions.append("si.status = %s")
+			params.append(status)
 
 		where_clause = " AND ".join(conditions)
 
@@ -364,6 +390,7 @@ def get_outstanding_sales_invoices(limit=100, start=0, search=""):
 		return {
 			"success": True,
 			"data": invoices,
+			"statuses": statuses,
 			"total_count": total_count,
 			"start": start,
 			"limit": limit,

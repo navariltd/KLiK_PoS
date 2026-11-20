@@ -43,6 +43,8 @@ export interface OutstandingSalesInvoice {
 export interface OutstandingSalesInvoicesResponse {
   success: boolean;
   data: OutstandingSalesInvoice[];
+  /** The statuses the search and dates leave: the Status filter's choices. */
+  statuses?: string[];
   total_count: number;
   start: number;
   limit: number;
@@ -143,13 +145,17 @@ export async function createCustomerPaymentEntry(
 export async function getOutstandingSalesInvoices(
   search = "",
   start = 0,
-  limit = 100
+  limit = 100,
+  filters: { fromDate?: string; toDate?: string; status?: string } = {}
 ): Promise<OutstandingSalesInvoicesResponse> {
   const params = new URLSearchParams({
     start: String(start),
     limit: String(limit),
   });
   if (search.trim()) params.set("search", search.trim());
+  if (filters.fromDate) params.set("from_date", filters.fromDate);
+  if (filters.toDate) params.set("to_date", filters.toDate);
+  if (filters.status) params.set("status", filters.status);
 
   const response = await fetch(
     `/api/method/klik_pos.api.payment.get_outstanding_sales_invoices?${params.toString()}`,

@@ -1623,6 +1623,23 @@ SEARCH_DATE_FORMAT = "%Y-%m-%d %b %e, %Y %d-%m-%Y %d/%m/%Y"
 SEARCH_DATE_STRFTIME = "%Y-%m-%d %b %-d, %Y %d-%m-%Y %d/%m/%Y"
 
 
+def _search_date_sql(column):
+	"""The column as searchable text, for a query run with parameters (hence the doubled %)."""
+	return "DATE_FORMAT({}, '{}')".format(column, SEARCH_DATE_FORMAT.replace("%", "%%"))
+
+
+def _search_conditions(search, columns, amount_column):
+	"""(conditions, params) for a list's search box: one condition per word typed, each met by
+	any of the columns. The amount also matches without the commas a cashier types into it."""
+	conditions, params = [], []
+	for word in (search or "").split():
+		conditions.append(
+			"(" + " OR ".join(f"{col} LIKE %s" for col in columns) + f" OR CAST({amount_column} AS CHAR) LIKE %s)"
+		)
+		params.extend([f"%{word}%"] * len(columns) + [f"%{word.replace(',', '')}%"])
+	return conditions, params
+
+
 def _matches_search(search, *values):
 	"""Every word typed is found in one of the row's values. A word also matches without its
 	commas, so "1,500" finds 1500.00. The SQL lists (invoices, quotes) apply the same rule."""
@@ -1796,17 +1813,14 @@ def get_sales_invoices(
 			"si.name", "si.customer_name", "si.customer", "si.status",
 			"(SELECT u.full_name FROM `tabUser` u WHERE u.name = si.owner)",
 			"(SELECT GROUP_CONCAT(p.mode_of_payment) FROM `tabSales Invoice Payment` p WHERE p.parent = si.name)",
-			"DATE_FORMAT(si.posting_date, '{}')".format(SEARCH_DATE_FORMAT.replace("%", "%%")),
+			_search_date_sql("si.posting_date"),
 		]
 		# Walk-in sales all sit under one customer; the buyer's own name tells them apart.
 		if has_walkin_name:
 			searched.append("si.custom_walkin_customer_name")
-		for word in (search or "").split():
-			conditions.append(
-				"(" + " OR ".join(f"{col} LIKE %s" for col in searched) + " OR CAST(si.grand_total AS CHAR) LIKE %s)"
-			)
-			# The amount matches without the commas a cashier types into it.
-			params.extend([f"%{word}%"] * len(searched) + [f"%{word.replace(',', '')}%"])
+		word_conditions, word_params = _search_conditions(search, searched, "si.grand_total")
+		conditions.extend(word_conditions)
+		params.extend(word_params)
 
 		if from_date:
 			conditions.append("si.posting_date >= %s")
