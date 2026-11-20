@@ -12,10 +12,11 @@ import { getQuoteDetails } from "../services/quotation";
 import { useCartStore } from "../stores/cartStore";
 
 describe("quoteStatusLabel", () => {
-  it("names each state the way the till reads it", () => {
-    expect(quoteStatusLabel({ state: "open", expired: false })).toBe("Quote");
+  it("names each state the way ERPNext names the Quotation status", () => {
+    expect(quoteStatusLabel({ state: "open", expired: false })).toBe("Open");
     expect(quoteStatusLabel({ state: "open", expired: true })).toBe("Expired");
-    expect(quoteStatusLabel({ state: "converted", invoice: "ACC-SINV-1", status: "Open" })).toBe("Converted");
+    expect(quoteStatusLabel({ state: "converted", invoice: "ACC-SINV-1", status: "Open" })).toBe("Ordered");
+    expect(quoteStatusLabel({ state: "converted", invoice: null, status: "Partially Ordered" })).toBe("Partially Ordered");
     expect(quoteStatusLabel({ state: "converted", invoice: null, status: "Ordered" })).toBe("Ordered");
     expect(quoteStatusLabel({ state: "closed", status: "Lost", docstatus: 1 })).toBe("Lost");
     expect(quoteStatusLabel({ state: "closed", status: "Cancelled", docstatus: 2 })).toBe("Cancelled");

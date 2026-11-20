@@ -526,14 +526,14 @@ const getStatusBadge = (status: string) => {
     case "overdue":
     case "expired":
       return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
-    case "converted":
+    case "partially ordered":
     case "ordered":
       return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400`;
     case "lost":
       return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400`;
     case "draft":
     case "held":
-    case "quote":
+    case "open":
       return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400`;
     case "return":
       return `${baseClasses} bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400`;
@@ -806,7 +806,7 @@ const renderApprovalBadge = (invoice: SalesInvoice & HeldOrderExtras) => {
             {(["open", "converted", "closed", "all"] as const).map((st) => (
               <button key={st} type="button" aria-pressed={quoteState === st} onClick={() => setQuoteState(st)}
                 className={`px-3 py-1.5 capitalize ${quoteState === st ? "bg-beveren-600 text-white" : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"}`}>
-                {st}
+                {st === "converted" ? "ordered" : st}
               </button>
             ))}
           </div>
